@@ -1,4 +1,15 @@
 #!/usr/bin/env python
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy>=1.24",
+#   "xarray>=2023.1",
+#   "netCDF4>=1.6",
+#   "pyyaml>=6.0",
+#   "torch>=2.0",
+#   "downscaling",
+# ]
+# ///
 """
 Inférence DL : applique le modèle entraîné sur ERA5/CERRA → champs 1 km.
 

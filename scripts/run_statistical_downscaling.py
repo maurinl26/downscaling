@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy>=1.24",
+#   "scipy>=1.10",
+#   "xarray>=2023.1",
+#   "netCDF4>=1.6",
+#   "rasterio>=1.3",
+#   "pyproj>=3.4",
+#   "pyyaml>=6.0",
+#   "downscaling",
+# ]
+# ///
 """
 Script de descente d'échelle statistique ERA5/CERRA → 1 km.
 

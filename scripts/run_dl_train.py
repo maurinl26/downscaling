@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "numpy>=1.24",
+#   "scipy>=1.10",
+#   "xarray>=2023.1",
+#   "netCDF4>=1.6",
+#   "rasterio>=1.3",
+#   "pyyaml>=6.0",
+#   "torch>=2.0",
+#   "downscaling",
+# ]
+# ///
 """
 Entraîne le U-Net de descente d'échelle conditionné par le MNT.
 
