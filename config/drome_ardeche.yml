@@ -1,0 +1,150 @@
+# Configuration descente d'échelle ERA5 / CERRA — Drôme-Ardèche
+# Cas d'étude : gel printanier, nuit du 27-28 avril 2021
+
+# ---------------------------------------------------------------------------
+# Domaine géographique
+# ---------------------------------------------------------------------------
+domain:
+  lat_min:  44.0
+  lat_max:  45.5
+  lon_min:   4.0
+  lon_max:   5.5
+  nx: 118
+  ny: 167
+  resolution_km: 1.0
+
+# ---------------------------------------------------------------------------
+# Fichiers de données
+# ---------------------------------------------------------------------------
+data:
+  era5_sl:    data/era5/era5_sl_20210427.nc
+  era5_pl:    data/era5/era5_pl_20210427.nc
+  cerra_sl:   data/cerra/cerra_sl_20210427.nc
+  dem_raw:    data/dem/copdem_drome_100m.tif
+  dem_attrs:  data/dem/dem_attributes.nc          # sortie de DEMLoader.terrain_attributes()
+  obs_ref:    data/cerra/cerra_sl_ref_2000-2020.nc  # référence pour calibration QDM
+
+# ---------------------------------------------------------------------------
+# Descente d'échelle statistique
+# ---------------------------------------------------------------------------
+statistical:
+  variables:
+    - t2m
+    - tp
+    - u10
+    - v10
+    - sp
+
+  lapse_rate:
+    # Gradient thermique vertical mensuel (K/m), négatif = T décroît avec z
+    # Valeurs calibrées sur stations SYNOP Drôme-Ardèche 2000–2020
+    monthly_gamma:
+      - -5.8e-3   # Janvier
+      - -5.9e-3   # Février
+      - -6.2e-3   # Mars
+      - -6.5e-3   # Avril  ← mois critique pour le gel printanier
+      - -6.8e-3   # Mai
+      - -7.1e-3   # Juin
+      - -7.2e-3   # Juillet
+      - -7.1e-3   # Août
+      - -6.8e-3   # Septembre
+      - -6.3e-3   # Octobre
+      - -5.9e-3   # Novembre
+      - -5.7e-3   # Décembre
+
+  quantile_mapping:
+    enabled: true
+    method: qdm           # 'qdm' ou 'eqm'
+    n_quantiles: 100
+    by_month: true
+    # Variables et type de correction
+    corrections:
+      t2m:  delta         # additif (température)
+      tp:   ratio         # multiplicatif (précipitations)
+      u10:  delta
+      v10:  delta
+
+  output:
+    file: output/stat_downscaled_{date}.nc
+    compression:
+      zlib: true
+      complevel: 4
+
+# ---------------------------------------------------------------------------
+# Descente d'échelle par deep learning
+# ---------------------------------------------------------------------------
+deep_learning:
+  architecture: unet    # 'unet' ou 'srcnn' (plus léger)
+  use_film: true        # FiLM conditioning par le MNT
+
+  # Canaux d'entrée
+  met_vars:
+    - t2m
+    - tp
+    - u10
+    - v10
+    - sp
+  met_in_ch: 5
+
+  # Attributs MNT en entrée
+  dem_vars:
+    - elevation
+    - slope
+    - aspect
+    - curvature
+  dem_in_ch: 4
+  dem_attributes_file: dem_attributes.nc
+
+  # Architecture U-Net
+  base_ch: 64
+  n_levels: 4
+
+  # Tuilage spatial (domaine 118×167 km → tuiles de 64×64)
+  patch_size: 64
+  overlap: 16
+
+  # Entraînement
+  epochs: 150
+  batch_size: 8
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  patience: 20           # early stopping
+
+  # Loss composite
+  loss_weights:
+    mse: 1.0
+    spectral: 0.1        # préserve les hautes fréquences spatiales
+    gradient: 0.05       # préserve les gradients (contours relief)
+
+  # Checkpoints
+  checkpoint_dir: checkpoints/drome_ardeche/
+  stats_file: checkpoints/drome_ardeche/normalization_stats.json
+
+  output:
+    file: output/dl_downscaled_{date}.nc
+    compression:
+      zlib: true
+      complevel: 4
+
+# ---------------------------------------------------------------------------
+# Indices d'assurance paramétrique
+# ---------------------------------------------------------------------------
+indices:
+  aggregation_freq: YS   # 'YS' = annuel, 'MS' = mensuel, 'QS' = trimestriel
+  unit_tp: m             # unité des précipitations dans ERA5 (m → converti en mm)
+
+  frost:
+    threshold_c: 0.0
+    spring_frost_gdd_threshold: 50.0   # GDD débourrement vigne Eichhorn-Lorenz B
+    spring_frost_temp_c: -2.0
+
+  precipitation:
+    extreme_threshold_mm: 20.0
+    dry_spell_threshold_mm: 1.0
+
+  wind:
+    storm_threshold_ms: 15.0           # Beaufort 7
+
+  gdd:
+    base_c: 10.0
+    cap_c: 30.0
