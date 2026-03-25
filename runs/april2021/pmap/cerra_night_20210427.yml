@@ -1,0 +1,113 @@
+# PMAP-LES — Nuit principale du gel, 27→28 avril 2021
+# Forçage : CERRA (5.5 km) — meilleure représentation de l'orographie Alpine ★
+# Période : 2021-04-27 18:00 UTC → 2021-04-28 06:00 UTC (12 h)
+#
+# Intérêt vs ERA5 :
+#   - CERRA résout mieux les vallées du Rhône et de l'Ardèche (5.5 km vs 31 km)
+#   - Meilleure représentation de la stratification nocturne et du vent
+#   - LBC plus réalistes → moins d'erreur de phase sur les cold pools
+#
+# Note sur les LBC CERRA :
+#   Les fichiers input_N.nc sont produits par era5_to_pmap_lbc.py avec
+#   les champs CERRA (même format NetCDF que ERA5 après conversion CDS).
+#   Utiliser --cerra flag pour activer la lecture spécifique CERRA
+#   (niveaux de pression légèrement différents d'ERA5).
+
+nx: 118
+xmin: 0.0
+xmax: 118000.0
+ny: 167
+ymin: 0.0
+ymax: 167000.0
+nz: 65
+zmin: 0.0
+zmax: 15000.0
+
+dt: 5.0
+model_starttime: "2021-04-27 18:00:00"
+model_endtime:   "2021-04-28 06:00:00"
+
+# ---------------------------------------------------------------------------
+# Initialisation depuis CERRA pressure-level 18 UTC
+# CERRA est fourni sur grille Lambert → re-projeté en lat/lon par le script CDS
+# Le lecteur ERA5 (isetup.testcase: era5) fonctionne si les variables
+# sont renommées à la convention ERA5 (z, t, q, u, v, sp)
+# ---------------------------------------------------------------------------
+isetup:
+  testcase: era5                   # le lecteur ERA5 accepte CERRA si variables standardisées
+  moist: true
+  era5_file: data/cerra/cerra_pl_20210427.nc
+  era5_timestep_index: 18
+  era5_surface_pressure: 95000.0   # Pa
+
+define_orography:
+  func: pmap.geometry.orography.from_file
+  args:
+    filename: data/orography/eudem_drome_ardeche_1km.nc
+    varname: orog
+
+define_vertical_coordinate_stretching:
+  func: pmap.geometry.vertical_coordinate_stretching.tanh_cst_dz
+  args:
+    dz_near_surface: 50.0
+
+phyex:
+  enabled: true
+  turb:         { enabled: true }
+  shallow_conv: { enabled: true, kice: 1, kbdia: 1, ktdia: 1, osettadj: false, ptadjs: 3600.0 }
+  ice_adjust:   { enabled: true, krr: 6 }
+  rain_ice:     { enabled: true, dzmin: 100.0, hcloud: "AROME" }
+
+surface:
+  roughness_length_definition: uniform
+  roughness_length_constant: 0.1
+
+surface_fluxes:
+  enabled: true
+  mode: surfex_offline
+  # SURFEX est forcé par ERA5 SL (même forcing que la run ERA5)
+  # → les fluxes de surface sont identiques entre les deux runs
+  # → seule la dynamique atmosphérique (LBC) change
+  surfex_output_file: data/surfex_output/OUTPUT_DIAG_ISBA_20210427.nc
+  surfex_update_interval: 3600.0
+  sfc_flux_3d: false
+  uvelx: true
+  uvely: true
+  theta: true
+  rvapour: true
+  prescribed_theta_flux: false
+  prescribed_rvapour_flux: false
+
+time_dependent_bc:
+  enabled: true
+  nstep: 13
+  nstep_start: 0
+  step_dtime: 3600.0
+  input_directory: data/lbc/cerra/nuit_20210427-28/   # ← LBC depuis CERRA
+  theta:   true
+  density: true
+  exner:   true
+  uvel:    true
+  rvapour: true
+
+output_directory: output/pmap/cerra/nuit_20210427-28/
+output_interval: 900.0
+
+output_fields:
+  - theta_total
+  - exner_total
+  - density_total
+  - uvelx_total
+  - uvely_total
+  - uvelz_total
+  - rvapour_total
+  - accumulated_precipitation
+
+output_diagnostics:
+  enabled: true
+  interval: 900.0
+  fields:
+    - surface_sensible_heat_flux
+    - surface_latent_heat_flux
+    - surface_temperature
+    - tke_surface

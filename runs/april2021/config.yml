@@ -1,0 +1,196 @@
+# Configuration master — Vérification gel Drôme-Ardèche, Avril 2021
+# Framework : production stat/DL → détection nuits critiques → vérification PMAP
+
+# ---------------------------------------------------------------------------
+# Domaine géographique (identique à PMAP-LES-shared)
+# ---------------------------------------------------------------------------
+domain:
+  lat_min:  44.0
+  lat_max:  45.5
+  lon_min:   4.0
+  lon_max:   5.5
+  lat_center: 44.75
+  lon_center:  4.75
+  nx: 118
+  ny: 167
+  resolution_km: 1.0
+
+# ---------------------------------------------------------------------------
+# Nuits critiques — détectées par descente d'échelle stat (post-débourrrement)
+# Critère : Tmin < -2 °C sur ≥ 10 % des pixels viticoles du domaine
+# Période nocturne : 18:00 UTC J → 06:00 UTC J+1 (12 h)
+# ---------------------------------------------------------------------------
+cold_nights:
+  - date:        "2021-04-26"
+    label:       "nuit_26-27_avril"
+    start_utc:   "2021-04-26 18:00:00"
+    end_utc:     "2021-04-27 06:00:00"
+    tmin_era5_valley_c:   -3.1
+    tmin_cerra_valley_c:  -3.8
+    severity:    "significant"
+    run_pmap:    true
+
+  - date:        "2021-04-27"
+    label:       "nuit_27-28_avril"
+    start_utc:   "2021-04-27 18:00:00"
+    end_utc:     "2021-04-28 06:00:00"
+    tmin_era5_valley_c:   -4.8
+    tmin_cerra_valley_c:  -5.2
+    severity:    "major"
+    run_pmap:    true
+
+  - date:        "2021-04-28"
+    label:       "nuit_28-29_avril"
+    start_utc:   "2021-04-28 18:00:00"
+    end_utc:     "2021-04-29 06:00:00"
+    tmin_era5_valley_c:   -2.1
+    tmin_cerra_valley_c:  -2.6
+    severity:    "moderate"
+    run_pmap:    true
+
+# ---------------------------------------------------------------------------
+# Chemins de données
+# (chemins relatifs depuis la racine du dépôt atmospheric_models)
+# ---------------------------------------------------------------------------
+data:
+  era5:
+    pressure_level:
+      "2021-04-26": "data/era5/era5_pl_20210426.nc"
+      "2021-04-27": "data/era5/era5_pl_20210427.nc"
+      "2021-04-28": "data/era5/era5_pl_20210428.nc"
+    single_level:
+      "2021-04-26": "data/era5/era5_sl_20210426.nc"
+      "2021-04-27": "data/era5/era5_sl_20210427.nc"
+      "2021-04-28": "data/era5/era5_sl_20210428.nc"
+      april2021:    "data/era5/era5_sl_april2021.nc"
+
+  cerra:
+    pressure_level:
+      "2021-04-26": "data/cerra/cerra_pl_20210426.nc"
+      "2021-04-27": "data/cerra/cerra_pl_20210427.nc"
+      "2021-04-28": "data/cerra/cerra_pl_20210428.nc"
+    single_level:
+      "2021-04-26": "data/cerra/cerra_sl_20210426.nc"
+      "2021-04-27": "data/cerra/cerra_sl_20210427.nc"
+      "2021-04-28": "data/cerra/cerra_sl_20210428.nc"
+
+  dem:
+    raw:    "data/dem/copdem_drome_100m.tif"
+    attrs:  "data/dem/dem_attributes.nc"      # sortie DEMLoader.terrain_attributes()
+    pmap:   "data/orography/eudem_drome_ardeche_1km.nc"  # grille PMAP 1 km
+
+  surfex:
+    pgd:     "data/surfex/PGD.nc"
+    prep:    "data/surfex/PREP_20210427.nc"   # état sol après spin-up 26j
+    forcing:
+      "2021-04-26": "data/surfex_forcing/FORCING_20210426.nc"
+      "2021-04-27": "data/surfex_forcing/FORCING_20210427.nc"
+      "2021-04-28": "data/surfex_forcing/FORCING_20210428.nc"
+    output:
+      "2021-04-26": "data/surfex_output/OUTPUT_DIAG_ISBA_20210426.nc"
+      "2021-04-27": "data/surfex_output/OUTPUT_DIAG_ISBA_20210427.nc"
+      "2021-04-28": "data/surfex_output/OUTPUT_DIAG_ISBA_20210428.nc"
+
+  lbc:
+    era5:
+      "2021-04-26": "data/lbc/era5/nuit_20210426-27/"
+      "2021-04-27": "data/lbc/era5/nuit_20210427-28/"
+      "2021-04-28": "data/lbc/era5/nuit_20210428-29/"
+    cerra:
+      "2021-04-26": "data/lbc/cerra/nuit_20210426-27/"
+      "2021-04-27": "data/lbc/cerra/nuit_20210427-28/"
+      "2021-04-28": "data/lbc/cerra/nuit_20210428-29/"
+
+  obs:
+    synop: "data/obs/synop_april2021.csv"
+
+  downscaling:
+    stat_output:   "output/stat/stat_downscaled_april2021.nc"
+    dl_output:     "output/dl/dl_downscaled_april2021.nc"
+
+# ---------------------------------------------------------------------------
+# Paramètres des runs PMAP
+# ---------------------------------------------------------------------------
+pmap:
+  executable: "pmap-les"           # dans le PATH si pmap[dev] est installé
+  config_dir: "runs/april2021/pmap/"
+
+  # Grille
+  nx: 118
+  ny: 167
+  nz: 65                           # +5 niveaux vs baseline pour résoudre BL terrain
+  xmax: 118000.0
+  ymax: 167000.0
+  zmax: 15000.0
+  dz_near_surface: 50.0            # m — résolution fine près de la surface (couche limite)
+  dt: 5.0                          # s
+
+  # Physique PHYEX (identique à production era5_drome_ardeche_surfex.yml)
+  phyex:
+    enabled: true
+    turb:         { enabled: true }
+    shallow_conv: { enabled: true, kice: 1, kbdia: 1, ktdia: 1, osettadj: false, ptadjs: 3600.0 }
+    ice_adjust:   { enabled: true, krr: 6 }
+    rain_ice:     { enabled: true, dzmin: 100.0, hcloud: "AROME" }
+
+  # Surface — SURFEX offline (mode production)
+  surface_fluxes:
+    mode: surfex_offline
+    surfex_update_interval: 3600.0
+    uvelx: true
+    uvely: true
+    theta: true
+    rvapour: true
+
+  # Sortie
+  output_interval: 900.0           # s = 15 min (4×/h pour capturer le minimum nocturne)
+  output_vars:
+    - theta_total
+    - exner_total
+    - uvelx_total
+    - uvely_total
+    - uvelz_total
+    - rvapour_total
+    - accumulated_precipitation
+
+# ---------------------------------------------------------------------------
+# Paramètres de préparation LBC (era5_to_pmap_lbc.py)
+# ---------------------------------------------------------------------------
+lbc_prep:
+  nstep: 13                        # 13 snapshots : 18h, 19h, …, 06h+1 (12h nocturne)
+  step_dtime: 3600.0               # 1h
+  lat_center: 44.75
+  lon_center:  4.75
+
+# ---------------------------------------------------------------------------
+# Détection automatique des nuits froides
+# ---------------------------------------------------------------------------
+detection:
+  tmin_threshold_c: -2.0           # seuil gel critique (dommages vigne)
+  pixel_fraction_min: 0.10         # ≥ 10% pixels < seuil pour déclencher run PMAP
+  gdd_base_c: 5.0                  # base GDD débourrement
+  gdd_threshold: 50.0              # somme thermique marquant le débourrement (Eichhorn-Lorenz B)
+  nocturnal_window:
+    start_h: 18                    # UTC
+    end_h:    6                    # UTC (J+1)
+
+# ---------------------------------------------------------------------------
+# Vérification — stations SYNOP
+# ---------------------------------------------------------------------------
+verification:
+  stations:
+    - { name: "Valence",             wmo: "07481", lat: 44.916, lon: 4.967, alt_m: 156 }
+    - { name: "Montélimar",          wmo: "07486", lat: 44.558, lon: 4.739, alt_m:  73 }
+    - { name: "Romans-sur-Isère",    wmo: "07471", lat: 45.050, lon: 5.067, alt_m: 162 }
+    - { name: "Aubenas",             wmo: "07558", lat: 44.622, lon: 4.387, alt_m: 303 }
+    - { name: "Privas",              wmo: "07552", lat: 44.735, lon: 4.600, alt_m: 317 }
+    - { name: "St-Martin-d'Ardèche", wmo: "07559", lat: 44.304, lon: 4.540, alt_m:  45 }
+
+  metrics:
+    - rmse_t2m                     # RMSE température 2m (K)
+    - bias_t2m                     # Biais T2m moyen (K)
+    - tmin_error                   # Erreur sur le minimum nocturne (K)
+    - frost_hit_rate               # Fraction pixels gel bien détectés
+    - frost_far                    # Faux alarmes gel
+    - skill_score_vs_era5          # Skill vs ERA5 brut (référence)
+    - skill_score_vs_cerra         # Skill vs CERRA brut

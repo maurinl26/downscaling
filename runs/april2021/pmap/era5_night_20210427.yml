@@ -1,0 +1,143 @@
+# PMAP-LES — Nuit principale du gel, 27→28 avril 2021
+# Forçage : ERA5 (31 km) — nuit critique majeure ★
+# Période : 2021-04-27 18:00 UTC → 2021-04-28 06:00 UTC (12 h)
+#
+# Contexte : Tmin ERA5 vallées ≈ −4.8 °C, CERRA ≈ −5.2 °C
+# Dégâts vignobles : ~80 % pertes Crozes-Hermitage / Côtes-du-Rhône
+#
+# Run depuis la racine du dépôt :
+#   pmap-les downscaling/runs/april2021/pmap/era5_night_20210427.yml
+
+# ---------------------------------------------------------------------------
+# Grille
+# ---------------------------------------------------------------------------
+nx: 118
+xmin: 0.0
+xmax: 118000.0
+ny: 167
+ymin: 0.0
+ymax: 167000.0
+nz: 65
+zmin: 0.0
+zmax: 15000.0
+
+# ---------------------------------------------------------------------------
+# Temps
+# ---------------------------------------------------------------------------
+dt: 5.0
+model_starttime: "2021-04-27 18:00:00"
+model_endtime:   "2021-04-28 06:00:00"
+
+# ---------------------------------------------------------------------------
+# Initialisation — ERA5 pressure-level 18 UTC 27 Avril
+# ---------------------------------------------------------------------------
+isetup:
+  testcase: era5
+  moist: true
+  era5_file: data/era5/era5_pl_20210427.nc
+  era5_timestep_index: 18          # heure 18 UTC dans le fichier journalier
+  era5_surface_pressure: 95000.0   # Pa — estimation pour le domaine Drôme (alt. moy. ~300 m)
+
+# ---------------------------------------------------------------------------
+# Orographie — EU-DEM Copernicus 1 km
+# ---------------------------------------------------------------------------
+define_orography:
+  func: pmap.geometry.orography.from_file
+  args:
+    filename: data/orography/eudem_drome_ardeche_1km.nc
+    varname: orog
+
+define_vertical_coordinate_stretching:
+  func: pmap.geometry.vertical_coordinate_stretching.tanh_cst_dz
+  args:
+    dz_near_surface: 50.0          # m — résolution fine BL (gel nocturne ≈ 20–100 m)
+
+# ---------------------------------------------------------------------------
+# Physique PHYEX
+# ---------------------------------------------------------------------------
+phyex:
+  enabled: true
+
+  turb:
+    enabled: true
+    # Schéma CBR (Cuxart–Bougeault–Redelsperger) — validé GABLS nocturne stable
+    # Critique pour la couche limite nocturne stable très stratifiée
+
+  shallow_conv:
+    enabled: true
+    kice: 1
+    kbdia: 1
+    ktdia: 1
+    osettadj: false
+    ptadjs: 3600.0                 # s — temps d'ajustement convection shallow
+
+  ice_adjust:
+    enabled: true
+    krr: 6                         # 6 catégories hydrométeores (eau nuageuse, glace, pluie, neige, graupel, grêle)
+
+  rain_ice:
+    enabled: true
+    dzmin: 100.0                   # m — épaisseur minimale de chute
+    hcloud: "AROME"                # paramétrisation microphysique AROME
+
+# ---------------------------------------------------------------------------
+# Surface — SURFEX offline (fluxes H, LE, Ts horaires)
+# ---------------------------------------------------------------------------
+surface:
+  roughness_length_definition: uniform
+  roughness_length_constant: 0.1   # m — représentatif vignes/chênes (Ardèche)
+
+surface_fluxes:
+  enabled: true
+  mode: surfex_offline             # lecture OUTPUT_DIAG_ISBA.nc
+  surfex_output_file: data/surfex_output/OUTPUT_DIAG_ISBA_20210427.nc
+  surfex_update_interval: 3600.0   # s — mise à jour horaire des flux
+  sfc_flux_3d: false
+  uvelx: true
+  uvely: true
+  theta: true
+  rvapour: true
+  prescribed_theta_flux: false     # désactivé : flux viennent de SURFEX
+  prescribed_rvapour_flux: false
+
+# ---------------------------------------------------------------------------
+# Conditions aux limites latérales — ERA5 horaires (18h → 06h+1)
+# ---------------------------------------------------------------------------
+time_dependent_bc:
+  enabled: true
+  nstep: 13                        # 13 snapshots : t=18h, 19h, …, 06h (fin)
+  nstep_start: 0
+  step_dtime: 3600.0               # s
+  input_directory: data/lbc/era5/nuit_20210427-28/
+  # Champs relaxés vers ERA5 dans la zone tampon 10 km
+  theta:   true
+  density: true
+  exner:   true
+  uvel:    true
+  rvapour: true
+
+# ---------------------------------------------------------------------------
+# Sortie
+# ---------------------------------------------------------------------------
+output_directory: output/pmap/era5/nuit_20210427-28/
+output_interval: 900.0             # s = 15 min — résolution temporelle fine (min nocturne)
+
+output_fields:
+  - theta_total
+  - exner_total
+  - density_total
+  - uvelx_total
+  - uvely_total
+  - uvelz_total
+  - rvapour_total
+  - accumulated_precipitation
+
+# Diagnostics 2D supplémentaires (sorties séparées)
+output_diagnostics:
+  enabled: true
+  interval: 900.0
+  fields:
+    - surface_sensible_heat_flux   # H [K m/s]
+    - surface_latent_heat_flux     # LE [kg/kg m/s]
+    - surface_temperature          # Ts [K]
+    - tke_surface                  # TKE proche surface [m²/s²]

@@ -1,0 +1,79 @@
+# PMAP-LES — Nuit 26→27 avril 2021 / Forçage CERRA
+nx: 118
+xmin: 0.0
+xmax: 118000.0
+ny: 167
+ymin: 0.0
+ymax: 167000.0
+nz: 65
+zmin: 0.0
+zmax: 15000.0
+dt: 5.0
+model_starttime: "2021-04-26 18:00:00"
+model_endtime:   "2021-04-27 06:00:00"
+isetup:
+  testcase: era5
+  moist: true
+  era5_file: data/cerra/cerra_pl_20210426.nc
+  era5_timestep_index: 18
+  era5_surface_pressure: 95000.0
+define_orography:
+  func: pmap.geometry.orography.from_file
+  args:
+    filename: data/orography/eudem_drome_ardeche_1km.nc
+    varname: orog
+define_vertical_coordinate_stretching:
+  func: pmap.geometry.vertical_coordinate_stretching.tanh_cst_dz
+  args:
+    dz_near_surface: 50.0
+phyex:
+  enabled: true
+  turb:         { enabled: true }
+  shallow_conv: { enabled: true, kice: 1, kbdia: 1, ktdia: 1, osettadj: false, ptadjs: 3600.0 }
+  ice_adjust:   { enabled: true, krr: 6 }
+  rain_ice:     { enabled: true, dzmin: 100.0, hcloud: "AROME" }
+surface:
+  roughness_length_definition: uniform
+  roughness_length_constant: 0.1
+surface_fluxes:
+  enabled: true
+  mode: surfex_offline
+  surfex_output_file: data/surfex_output/OUTPUT_DIAG_ISBA_20210426.nc
+  surfex_update_interval: 3600.0
+  sfc_flux_3d: false
+  uvelx: true
+  uvely: true
+  theta: true
+  rvapour: true
+  prescribed_theta_flux: false
+  prescribed_rvapour_flux: false
+time_dependent_bc:
+  enabled: true
+  nstep: 13
+  nstep_start: 0
+  step_dtime: 3600.0
+  input_directory: data/lbc/cerra/nuit_20210426-27/
+  theta:   true
+  density: true
+  exner:   true
+  uvel:    true
+  rvapour: true
+output_directory: output/pmap/cerra/nuit_20210426-27/
+output_interval: 900.0
+output_fields:
+  - theta_total
+  - exner_total
+  - density_total
+  - uvelx_total
+  - uvely_total
+  - uvelz_total
+  - rvapour_total
+  - accumulated_precipitation
+output_diagnostics:
+  enabled: true
+  interval: 900.0
+  fields:
+    - surface_sensible_heat_flux
+    - surface_latent_heat_flux
+    - surface_temperature
+    - tke_surface
