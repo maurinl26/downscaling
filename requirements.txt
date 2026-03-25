@@ -1,0 +1,21 @@
+# Descente d'échelle ERA5/CERRA — dépendances Python
+
+# Données / manipulation
+numpy>=1.24
+scipy>=1.10
+xarray>=2023.1
+netCDF4>=1.6
+rasterio>=1.3        # lecture GeoTIFF (MNT)
+pyproj>=3.4          # projections cartographiques
+pyyaml>=6.0
+
+# Deep learning
+torch>=2.0           # GPU CUDA ou Apple MPS
+# xesmf>=0.8          # regrillage avancé (optionnel, nécessite ESMPy)
+
+# Téléchargement données
+cdsapi>=0.6          # ERA5 et CERRA via CDS API
+
+# Visualisation (optionnel)
+matplotlib>=3.7
+cartopy>=0.21
