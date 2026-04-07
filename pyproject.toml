@@ -4,39 +4,74 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "downscaling"
-version = "0.1.0"
-description = "Descente d'échelle statistique et deep learning ERA5/CERRA → 1 km pour indices d'assurance paramétrique"
-requires-python = ">=3.10"
+version = "0.3.0"
+description = "Downscaling ERA5/CERRA → 1 km pour indices d'assurance paramétrique gel"
+authors = [{ name = "Loïc Maurin", email = "loic.maurin@karpos.pro" }]
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
 
 dependencies = [
-    # Données / manipulation
-    "numpy>=1.24",
-    "scipy>=1.10",
-    "xarray>=2023.1",
+    "numpy>=1.26",
+    "xarray>=2024.1",
+    "pandas>=2.1",
     "netCDF4>=1.6",
-    "rasterio>=1.3",       # lecture GeoTIFF (MNT)
-    "pyproj>=3.4",         # projections cartographiques
+    "zarr>=2.16",
+    "rasterio>=1.3",
+    "scipy>=1.12",
+    "pyproj>=3.4",
     "pyyaml>=6.0",
-    # Deep learning
-    "torch>=2.0",          # GPU CUDA ou Apple MPS
-    # Téléchargement données
-    "cdsapi>=0.6",         # ERA5 et CERRA via CDS API
+    "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
 viz = [
-    "matplotlib>=3.7",
-    "cartopy>=0.21",
+    "matplotlib>=3.8",
+    "cartopy>=0.22",
+    "jupyter>=1.0",
 ]
 regrid = [
-    "xesmf>=0.8",          # regrillage avancé (nécessite ESMPy)
+    "xesmf>=0.8",
+]
+
+# Pipeline statistique (lapse-rate + QDM) — pas de GPU requis
+statistical = [
+    "scikit-learn>=1.4",
+]
+
+# Pipeline deep learning — U-Net FiLM (architecture maison)
+dl = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+]
+
+# Prithvi WxC (NASA/IBM) — foundation model downscaling
+# Installation Prithvi WxC depuis GitHub (pas encore sur PyPI)
+# pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'
+prithvi = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "huggingface-hub>=0.22",
+    "safetensors>=0.4",
+    # TerraTorch pour fine-tuning (optionnel — inférence sans TerraTorch possible)
+    # "terratorch[wxc]>=1.2; python_version>='3.11'",
+]
+
+# Toutes les dépendances pour développement complet
+all = [
+    "downscaling[statistical,dl,prithvi]",
+    "jupyter>=1.0",
+    "matplotlib>=3.8",
+    "cartopy>=0.22",
+    "dask>=2024.1",
+    "cdsapi>=0.6",           # Téléchargement ERA5/CERRA via CDS API
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=7",
-    "pytest-cov",
-    "ruff",
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.3",
+    "mypy>=1.9",
 ]
 
 [project.scripts]
@@ -53,7 +88,31 @@ package = true
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["downscaling*", "shared*", "statistical*", "deep_learning*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=. --cov-report=term-missing"
+
+# ---------------------------------------------------------------------------
+# Notes d'installation
+# ---------------------------------------------------------------------------
+# Installation de base (pipeline statistique) :
+#   pip install -e .
+#
+# Avec Prithvi WxC :
+#   pip install -e ".[prithvi]"
+#   pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'
+#
+# Sur RunPod (image pytorch:2.x-cuda12.x) :
+#   pip install -e ".[prithvi]" --break-system-packages
+#   pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git' --break-system-packages
+#
+# Le modèle (~9GB) est téléchargé automatiquement depuis HuggingFace
+# lors du premier appel à PrithviWxCDownscaler.from_pretrained().
+# Pour pré-télécharger sur volume RunPod :
+#   huggingface-cli download Prithvi-WxC/prithvi.wxc.2300m.v1 --local-dir ./hf_cache

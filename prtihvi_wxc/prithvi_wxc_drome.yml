@@ -1,0 +1,76 @@
+# config/prithvi_wxc_drome.yml
+# Configuration inférence Prithvi WxC — Réanalyse nuits de gel Drôme/Ardèche
+# Référence : Yu et al. (2025), NASA NTRS 20250006603
+
+# --- Données d'entrée -------------------------------------------------
+data:
+  # ERA5 surface (t2m, u10, v10, sp, q, tcwv) — NetCDF ou Zarr
+  era5_path: data/era5/era5_drome_ardeche.zarr
+
+  # Alternative CERRA (5.5 km, 1985–2021) — meilleure résolution intermédiaire
+  # era5_path: data/cerra/cerra_drome_ardeche.zarr
+  source: era5   # "era5" | "cerra"
+
+  # COP-DEM 25m rééchantillonné à la résolution cible (voir scripts/prep_dem.py)
+  dem_path: data/dem/copdem_drome_ardeche_200m.tif
+
+  # Climatologie MERRA-2 pour normalisation (optionnel — téléchargée si absent)
+  # climatology_path: data/climatology/merra2_climatology.pkl
+
+# --- Fenêtre temporelle -----------------------------------------------
+period:
+  start: "2000-10-01"
+  end:   "2024-05-31"
+  frost_only: true         # Filtre nuits d'octobre–mai, 20h–08h UTC
+
+# --- Modèle -----------------------------------------------------------
+model:
+  # Facteur d'upscaling : 6 pour ERA5→1km, 3 pour CERRA→1km
+  scale_factor: 6
+
+  # Checkpoint local fine-tuné (laisser vide pour IBM Granite pré-entraîné)
+  # checkpoint: checkpoints/prithvi_adapter_drome.pt
+
+  # Utiliser IBM Granite downscaling (fine-tuné sur PRISM, US)
+  # Note : fine-tuning CERRA→SAFRAN sur Drôme recommandé pour précision maximale
+  use_granite_downscaling: true
+
+  # Rolling temporel : 8 pas × 3h = 24h (couvre une nuit complète)
+  rolling_steps: 8
+
+# --- Inférence --------------------------------------------------------
+inference:
+  batch_size: 4          # Réduire à 2 si OOM sur L4 (24GB)
+  num_workers: 2
+  device: cuda           # "cuda" | "cpu"
+
+  # Chunks Zarr — optimisés pour requêtes DuckDB par date
+  output_chunks:
+    time: 30
+    lat: 128
+    lon: 128
+
+# --- Indices paramétriques --------------------------------------------
+indices:
+  # Seuil de gel (°C) pour frost_flag
+  frost_threshold_celsius: 0.0
+
+  # Seuil GDD pour spring_frost (débourrement approximatif)
+  # Abricotier : ~50 GDD ; Cerisier : ~80 GDD ; Pêcher : ~60 GDD
+  gdd_threshold: 50
+  gdd_base_temp_celsius: 5.0   # Température de base calcul GDD
+
+# --- Sorties ----------------------------------------------------------
+output:
+  zarr_path: output/frost_reanalysis_prithvi.zarr
+
+  # Variables exportées
+  variables:
+    - T2m_min_night      # Tmin nocturne HR (°C)
+    - frost_flag         # Gel binaire (0/1)
+    - spring_frost_flag  # Gel post-débourrement (calculé si GDD fourni)
+
+  # Métadonnées
+  title: "Réanalyse nuits de gel Drôme/Ardèche — Prithvi WxC"
+  institution: "Karpos / Prokarpos"
+  contact: "loic.maurin@karpos.pro"

@@ -76,6 +76,8 @@ python scripts/run_statistical_downscaling.py \
 
 ## Approche 2 — Descente d'échelle par deep learning
 
+La descente d'échelle par deep learning utilisant `prithvi_wxc` a été ajoutée au dépôt pour prendre en compte l'orographie.
+
 ### Architecture : U-Net conditionné par le MNT
 
 ```
