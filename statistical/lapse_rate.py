@@ -91,8 +91,8 @@ class LapseRateCorrector:
             gamma_series = self.lapse_rate[months]
             # Broadcaster sur les dims spatiales
             return xr.DataArray(
-                gamma_series[:, np.newaxis, np.newaxis],
-                dims=["time"] + [d for d in t_coarse.dims if d != "time"],
+                gamma_series,
+                dims=["time"],
                 coords={"time": t_coarse.time},
             )
 
