@@ -100,7 +100,8 @@ def main():
 
     for file_path in files:
         log.info(f"Processing {file_path.name}...")
-        ds_source = xr.open_dataset(file_path, engine="netcdf4")
+        # Use explicit dask chunks on the time dimension to avoid OOM on massive DEM regridding
+        ds_source = xr.open_dataset(file_path, engine="netcdf4", chunks={"valid_time": 24})
         
         # Rename dimensions to match pipeline expectations
         rename_dict = {}
@@ -136,6 +137,9 @@ def main():
             # We are interested in frost
             ds_idx.to_netcdf(idx_path)
             log.info(f"Indices -> {idx_path}")
+            
+        # Break after processing the first file for rapid testing
+        break
 
 if __name__ == "__main__":
     main()

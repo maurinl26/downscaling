@@ -180,10 +180,10 @@ class DEMLoader:
             data[data == src.nodata] = np.nan
             rows, cols = np.meshgrid(np.arange(src.height), np.arange(src.width), indexing="ij")
             lons, lats = rasterio.transform.xy(src.transform, rows, cols)
-            lons = np.array(lons)
-            lats = np.array(lats)
+            lons = np.array(lons).reshape(src.height, src.width)
+            lats = np.array(lats).reshape(src.height, src.width)
 
-        # Créer DataArray avec lat/lon 1D si grille régulière
+        # Créer DataArray avec lat/lon 2D
         da = xr.DataArray(
             data,
             dims=["y", "x"],
