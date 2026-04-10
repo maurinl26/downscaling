@@ -25,7 +25,11 @@ period:
 
 # --- Modèle -----------------------------------------------------------
 model:
-  # Facteur d'upscaling : 6 pour ERA5→1km, 3 pour CERRA→1km
+  # Facteur d'upscaling spatial :
+  #   source=era5  (31 km) → scale_factor=6  → résolution sortie ~5 km
+  #   source=cerra (5.5 km) → scale_factor=6  → résolution sortie ~1 km
+  # Pour atteindre 1 km depuis ERA5, utiliser CERRA comme source intermédiaire
+  # (disponible 1985–2021 via CDS) ou un downscaling en deux étapes.
   scale_factor: 6
 
   # Checkpoint local fine-tuné (laisser vide pour IBM Granite pré-entraîné)
@@ -38,11 +42,16 @@ model:
   # Rolling temporel : 8 pas × 3h = 24h (couvre une nuit complète)
   rolling_steps: 8
 
-# --- Inférence --------------------------------------------------------
+# --- Inférence (RunPod spot) ------------------------------------------
 inference:
-  batch_size: 4          # Réduire à 2 si OOM sur L4 (24GB)
-  num_workers: 2
-  device: cuda           # "cuda" | "cpu"
+  # RunPod spot : L4 (24 GB) → batch_size=4 | H100 (80 GB) → batch_size=16
+  batch_size: 4
+  num_workers: 4         # Augmenter si stockage NVMe rapide (RunPod)
+  device: cuda
+
+  # Reprise après interruption spot : checkpoint toutes les N nuits traitées
+  # Le runner reprend automatiquement depuis le dernier checkpoint Zarr écrit.
+  checkpoint_every_n_nights: 50
 
   # Chunks Zarr — optimisés pour requêtes DuckDB par date
   output_chunks:
