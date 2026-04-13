@@ -35,8 +35,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import yaml
 import xarray as xr
 
-from deep_learning.inference import DLInferencePipeline
-from shared.indices import compute_all_indices
+from downscaling.deep_learning.inference import DLInferencePipeline
+from downscaling.shared.indices import compute_all_indices
 
 
 def parse_args():

@@ -37,7 +37,7 @@ import xarray as xr
 from scipy.linalg import solve
 from scipy.spatial import cKDTree
 
-from shared.netatmo_qc import NetatmoObs, tmin_nocturnal
+from downscaling.shared.netatmo_qc import NetatmoObs, tmin_nocturnal
 
 log = logging.getLogger(__name__)
 

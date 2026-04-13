@@ -41,9 +41,9 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset, random_split
 
-from deep_learning.prithvi_wxc.loader import PrithviWxCDownscaler
-from deep_learning.prithvi_wxc.dataset import FrostNightDataset, ERA5_VARS
-from shared.netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
+from downscaling.deep_learning.prithvi_wxc.loader import PrithviWxCDownscaler
+from downscaling.deep_learning.prithvi_wxc.dataset import FrostNightDataset, ERA5_VARS
+from downscaling.shared.netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
 
 log = logging.getLogger(__name__)
 
