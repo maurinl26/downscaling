@@ -1,0 +1,177 @@
+# ============================================================
+# Configuration master — Campagne backtesting gel arboricole
+# Drôme-Ardèche, saisons de gel 2000–2024
+#
+# Sources : ERA5Land (0.1°, ~9 km) et CERRALand (0.05°, ~5.5 km)
+# Downscaling stat → 1 km → détection nuits de gel → PMAP-LES
+#
+# Usage :
+#   python runs/scripts/run_campaign.py \
+#       --config runs/campaign/config.yml \
+#       --source era5land \
+#       --step all
+#
+# Prérequis :
+#   pip install -e ../PMAP-LES-shared    # installe pmap-les CLI
+#   pip install -e .                     # installe le package downscaling
+# ============================================================
+
+# ------------------------------------------------------------------
+# Domaine géographique (identique à PMAP-LES-shared)
+# ------------------------------------------------------------------
+domain:
+  lat_min:   44.0
+  lat_max:   45.5
+  lon_min:    4.0
+  lon_max:    5.5
+  lat_center: 44.75
+  lon_center:  4.75
+  nx: 118
+  ny: 167
+  resolution_km: 1.0
+
+# ------------------------------------------------------------------
+# Campagne multi-années
+# Saison de gel : octobre (année N) → mai (année N+1)
+# ------------------------------------------------------------------
+campaign:
+  name: "backtesting_frost_2000_2024"
+  start_year: 2000    # première saison : oct 2000 → mai 2001
+  end_year:   2024    # dernière saison  : oct 2023 → mai 2024
+  start_month: 10     # octobre
+  end_month:    5     # mai
+
+  sources:
+    era5land:
+      enabled: true
+      data_root: "data/era5land"
+      # Pattern fichiers mensuels : {data_root}/era5land_sl_{YYYY}{MM:02d}.nc
+      file_pattern: "era5land_sl_{year}{month:02d}.nc"
+      download_if_missing: true   # appel cdsapi automatique si absent
+    cerraland:
+      enabled: true
+      data_root: "data/cerraland"
+      file_pattern: "cerraland_sl_{year}{month:02d}.nc"
+      download_if_missing: false  # CERRALand pas encore sur CDS automatiquement
+
+# ------------------------------------------------------------------
+# Données statiques (terrain, SURFEX)
+# ------------------------------------------------------------------
+data:
+  dem:
+    raw:   "data/dem/copdem_drome_100m.tif"
+    attrs: "data/dem/dem_attributes.nc"
+    pmap:  "data/orography/eudem_drome_ardeche_1km.nc"   # grille PMAP 1 km
+
+  surfex:
+    pgd:  "data/surfex/PGD.nc"
+    # PREP sera généré/mis à jour par spin-up saisonnier
+    prep_template: "data/surfex/PREP_{YYYYMMDD}.nc"
+    # FORCING.nc : généré dynamiquement par era5_to_surfex_forcing.py
+    forcing_dir:   "data/surfex_forcing"
+    output_dir:    "data/surfex_output"
+
+  lbc_root: "data/lbc"
+  stat_output_dir: "output/stat"
+
+# ------------------------------------------------------------------
+# Détection des nuits de gel
+# Critères : Tmin < seuil sur ≥ fraction du domaine, post-débourrement
+# ------------------------------------------------------------------
+detection:
+  tmin_threshold_c:   -2.0    # °C — seuil gel critique (vignes/arbres fruitiers)
+  pixel_fraction_min:  0.10   # ≥ 10 % des pixels sous le seuil
+  gdd_base_c:          5.0    # température de base GDD (°C)
+  gdd_threshold:      50.0    # GDD cumulés marquant le débourrement
+  nocturnal_window:
+    start_h: 18               # UTC
+    end_h:    6               # UTC (J+1)
+
+# ------------------------------------------------------------------
+# Paramètres PMAP-LES
+# Les configs sont générées dynamiquement depuis les templates
+# ------------------------------------------------------------------
+pmap:
+  repo_path:       "../PMAP-LES-shared"
+  executable:      "pmap-les"
+  lbc_script:      "../PMAP-LES-shared/scripts/era5_to_pmap_lbc.py"
+  surfex_script:   "../PMAP-LES-shared/scripts/era5_to_surfex_forcing.py"
+  orography_file:  "data/orography/eudem_drome_ardeche_1km.nc"
+  output_root:     "runs/campaign/outputs"
+  template_dir:    "runs/campaign"
+
+  # Grille — identique à era5_drome_ardeche_surfex.yml
+  nx: 118
+  ny: 167
+  nz: 65
+  xmax: 118000.0
+  ymax: 167000.0
+  zmax: 15000.0
+  dz_near_surface: 50.0
+  dt: 5.0
+
+  # Fenêtre nocturne : 12h (18h UTC → 06h UTC J+1)
+  # 12 outer steps × 3600 s, nstep_bc = 13 snapshots horaires
+  outer_nstep: 12
+  nstep_bc: 13
+  step_dtime_bc: 3600.0    # s
+
+  # Physique PHYEX (identique à production — ice3 activé via feature_ice3_physics)
+  phyex:
+    turb:         { enabled: true }
+    shallow_conv: { enabled: true, kice: 1, kbdia: 1, ktdia: 1,
+                    osettadj: false, ptadjs: 3600.0 }
+    ice_adjust:   { enabled: true, krr: 6 }
+    rain_ice:     { enabled: true, dzmin: 50.0, hcloud: "AROME" }
+
+  # Surface
+  surface_fluxes:
+    mode: surfex_offline
+    surfex_update_interval: 3600.0
+
+  # Sorties : 15-min pour capturer le minimum nocturne
+  output_interval: 900.0
+  output_fields:
+    - theta_total
+    - exner_total
+    - uvelx_total
+    - uvely_total
+    - uvelz_total
+    - rvapour_total
+    - rliquid
+    - rrain
+    - rice
+    - rsnow
+    - rgraupel
+    - surface_temperature
+    - surface_sensible_heat_flux
+    - surface_latent_heat_flux
+    - accumulated_precipitation
+    - accumulated_surface_sensible_heat_flux
+    - accumulated_surface_latent_heat_flux
+
+# ------------------------------------------------------------------
+# Préparation LBC
+# ------------------------------------------------------------------
+lbc_prep:
+  nstep: 13              # 13 snapshots : 18h, 19h, …, 06h+1 (fenêtre nocturne)
+  step_dtime: 3600.0     # 1h entre chaque snapshot
+  lat_center: 44.75
+  lon_center:  4.75
+
+# ------------------------------------------------------------------
+# Indices paramétriques calculés sur les outputs PMAP
+# ------------------------------------------------------------------
+indices:
+  frost_threshold_c: 0.0      # gel standard (Tmin < 0°C)
+  spring_frost_threshold_c: -2.0   # gel fort (dommages)
+  gdd_base_c: 5.0
+
+# ------------------------------------------------------------------
+# Agrégation saisonnière et rapport
+# ------------------------------------------------------------------
+output:
+  report_dir:   "runs/campaign/reports"
+  per_night:    true   # sauvegarder indices par nuit détectée
+  per_season:   true   # agréger par saison (oct–mai)
+  format:       "zarr" # zarr pour les gros datasets, netcdf4 pour les petits

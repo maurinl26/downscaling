@@ -1,0 +1,258 @@
+# ============================================================
+# Template PMAP-LES — Forçage CERRALand, nuit de gel nocturne
+# Généré dynamiquement par run_campaign.py
+#
+# Champs à substituer ({{ ... }}) :
+#   night_date       : "YYYY-MM-DD" (début de nuit)
+#   start_datetime   : "YYYY-MM-DD 18:00:00" UTC
+#   end_datetime     : "YYYY-MM-DD 06:00:00" UTC (J+1)
+#   era5_file        : chemin absolu CERRALand pressure-level (format ERA5-compatible)
+#   lbc_directory    : chemin absolu dossier LBC (input_0.nc, …, input_12.nc)
+#   surfex_output    : chemin absolu OUTPUT_DIAG_ISBA.nc
+#   output_directory : chemin absolu dossier de sortie PMAP
+#
+# Note CERRALand : les fichiers sont prétraités pour correspondre
+# à la convention ERA5 avant génération des LBC (via era5_to_pmap_lbc.py).
+# ============================================================
+
+# ------------------------------------------------------------------
+# Grille
+# ------------------------------------------------------------------
+nx: 118
+xmin: 0.0
+xmax: 118000.0
+bcx_kind: 1
+
+ny: 167
+ymin: 0.0
+ymax: 167000.0
+bcy_kind: 1
+
+nz: 65
+zmin: 0.0
+zmax: 15000.0
+
+# ------------------------------------------------------------------
+# Temps — fenêtre nocturne 18h UTC → 06h UTC (12h)
+# ------------------------------------------------------------------
+dt: 5.0
+model_starttime: "{{ start_datetime }}"
+model_endtime:   "{{ end_datetime }}"
+
+tout_info: 3600.0
+outer_nstep: 12
+
+# ------------------------------------------------------------------
+# Sorties
+# ------------------------------------------------------------------
+loutput_data: True
+output_directory: "{{ output_directory }}"
+output_dimorder: zyx
+output_interval: 900.0
+output_fields:
+  - theta_total
+  - exner_total
+  - uvelx_total
+  - uvely_total
+  - uvelz_total
+  - rvapour_total
+  - rliquid
+  - rrain
+  - rice
+  - rsnow
+  - rgraupel
+  - surface_temperature
+  - surface_sensible_heat_flux
+  - surface_latent_heat_flux
+  - accumulated_precipitation
+  - accumulated_surface_sensible_heat_flux
+  - accumulated_surface_latent_heat_flux
+
+# ------------------------------------------------------------------
+# Initialisation CERRALand (format ERA5-compatible après standardisation)
+# ------------------------------------------------------------------
+isetup:
+  testcase: era5
+  moist: True
+  era5_file: "{{ era5_file }}"
+  era5_lat_min: 44.0
+  era5_lat_max: 45.5
+  era5_lon_min: 4.0
+  era5_lon_max: 5.5
+  era5_surface_pressure: 95000.0
+
+total_fields: &cerra_fields
+  thermodynamic_definition: era5
+  velocity_definition: era5
+
+ambient_fields: *cerra_fields
+relaxation_fields: *cerra_fields
+
+# ------------------------------------------------------------------
+# Constantes physiques
+# ------------------------------------------------------------------
+constants:
+  gravity0: 9.80665
+  Rd: 287.05
+  Rv: 461.5
+  cpd: 1004.0
+  latheat_vap: 2.501e6
+  fcoriolis0: 1.028e-4
+
+# ------------------------------------------------------------------
+# Physique PHYEX (ice3)
+# ------------------------------------------------------------------
+phyex:
+  enabled: true
+  turb:
+    enabled: true
+  shallow_conv:
+    enabled: true
+    kice: 1
+    kbdia: 1
+    ktdia: 1
+    osettadj: false
+    ptadjs: 3600.0
+  ice_adjust:
+    enabled: true
+    krr: 6
+  rain_ice:
+    enabled: true
+    dzmin: 50.0
+    hcloud: "AROME"
+
+cloud_microphysics:
+  enabled: false
+
+diffusion:
+  enabled: false
+
+# ------------------------------------------------------------------
+# Advection
+# ------------------------------------------------------------------
+advection:
+  scheme: ppm_macho_x_y_z
+  rvapour: true
+  rliquid: true
+  rrain: true
+  rice: true
+  rsnow: true
+  rgraupel: true
+  cloud_fraction: true
+  tke: true
+
+courant:
+  mode: max_dim_xy_z
+  max_value: 1.0
+  max_value_z: 1.0
+
+ppm:
+  fields:
+    default_moist:
+      clipneg: true
+    tke:
+      clipneg: true
+
+# ------------------------------------------------------------------
+# Schéma semi-implicite
+# ------------------------------------------------------------------
+sischeme:
+  enabled: true
+  outer_nit: 2
+
+krylov:
+  exit_condition: "divergence"
+
+# ------------------------------------------------------------------
+# Surface (SURFEX offline)
+# ------------------------------------------------------------------
+surface:
+  roughness_length_definition: uniform
+  roughness_length_constant: 0.1
+
+  surface_temperature_definition: uniform
+  surface_temperature_constant: 283.0
+
+surface_fluxes:
+  enabled: true
+  mode: surfex_offline
+  surfex_output_file: "{{ surfex_output }}"
+  surfex_update_interval: 3600.0
+  sfc_flux_3d: false
+  uvelx: true
+  uvely: true
+  theta: true
+  rvapour: true
+  prescribed_theta_flux: false
+  prescribed_rvapour_flux: false
+
+# ------------------------------------------------------------------
+# Orographie
+# ------------------------------------------------------------------
+define_horizontal_coordinates:
+  func: pmap.geometry.horizontal_coordinates.identity
+
+define_orography:
+  func: pmap.geometry.orography.from_file
+  args:
+    filename: data/orography/eudem_drome_ardeche_1km.nc
+    varname: orog
+
+define_vertical_coordinate_stretching:
+  func: pmap.geometry.vertical_coordinate_stretching.tanh_cst_dz
+  args:
+    dz_near_surface: 50.0
+
+define_vertical_coordinate:
+  func: pmap.geometry.vertical_coordinate.btf_levels
+
+# ------------------------------------------------------------------
+# Couches absorbantes
+# ------------------------------------------------------------------
+absorber:
+  top: true
+  tscale: 600.0
+  depth: 4000.0
+  xboundaries: true
+  tscalex: 1800.0
+  widthx: 10000.0
+  yboundaries: true
+  tscaley: 1800.0
+  widthy: 10000.0
+  absorbux: true
+  absorbuy: true
+  absorbuz: true
+  absorbth: true
+
+# ------------------------------------------------------------------
+# Perturbations aléatoires
+# ------------------------------------------------------------------
+random_perturbations:
+  enabled: true
+  bottom: 0.0
+  top: 2000.0
+  theta_total: true
+  theta_total_scale: 0.02
+  rvapour: true
+  rvapour_scale: 1.0e-5
+
+# ------------------------------------------------------------------
+# Conditions aux limites latérales temporelles (CERRALand, horaires)
+# ------------------------------------------------------------------
+time_dependent_bc:
+  enabled: true
+  nstep: 13
+  nstep_start: 0
+  step_dtime: 3600.0
+  input_directory: "{{ lbc_directory }}"
+  theta: true
+  density: true
+  exner: true
+  uvel: true
+  rvapour: true
+  rliquid: false
+  rice: false
+  rsnow: false
+  rgraupel: false
+  cloud_fraction: false
+  tke: false

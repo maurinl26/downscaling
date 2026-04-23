@@ -56,9 +56,16 @@ prithvi = [
     # "terratorch[wxc]>=1.2; python_version>='3.11'",
 ]
 
+# PMAP-LES — modèle LES dynamique (JAX + GT4Py + PHYEX ice3)
+# Source : git@github.com:maurinl26/PMAP-LES-shared.git, branche feature_ice3_physics
+# Résolu via [tool.uv.sources] ci-dessous
+pmap = [
+    "pmap",
+]
+
 # Toutes les dépendances pour développement complet
 all = [
-    "downscaling[statistical,dl,prithvi]",
+    "downscaling[statistical,dl,prithvi,pmap]",
     "jupyter>=1.0",
     "matplotlib>=3.8",
     "cartopy>=0.22",
@@ -78,13 +85,17 @@ dev = [
 run-stat-downscaling = "downscaling.scripts.run_statistical_downscaling:main"
 run-dl-train         = "downscaling.deep_learning.train:main"
 run-dl-inference     = "downscaling.deep_learning.inference:main"
+run-campaign         = "downscaling.scripts.run_campaign:main"
 
 [tool.uv]
 package = true
 
 [tool.uv.sources]
-# Décommenter pour pointer vers une version locale de PHYEX ou pmap
-# phyex = { path = "../PHYEX", editable = true }
+pmap = { git = "git@github.com:maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
+# Variante HTTPS (si SSH non disponible) :
+# pmap = { git = "https://github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
+# Variante locale (développement simultané des deux repos) :
+# pmap = { path = "../PMAP-LES-shared", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -99,20 +110,37 @@ testpaths = ["tests"]
 addopts = "--cov=. --cov-report=term-missing"
 
 # ---------------------------------------------------------------------------
-# Notes d'installation
+# Notes d'installation (uv recommandé)
 # ---------------------------------------------------------------------------
-# Installation de base (pipeline statistique) :
-#   pip install -e .
+#
+# Pipeline statistique seul :
+#   uv sync
+#
+# + PMAP-LES (dynamique LES, branche feature_ice3_physics) :
+#   uv sync --extra pmap
+#
+# + Tout (stat + DL + Prithvi + PMAP) :
+#   uv sync --extra all
+#
+# Développement simultané downscaling + PMAP-LES (local editable) :
+#   Décommenter la ligne "pmap = { path = ... }" dans [tool.uv.sources]
+#   uv sync --extra pmap
+#
+# Lancement de la campagne après installation :
+#   run-campaign --config runs/campaign/config.yml --source era5land --step all
+#
+# Ou sans installation via uv run (inline script metadata) :
+#   uv run runs/scripts/detect_cold_nights.py --stat-out ... --config ... --out ...
+#   uv run runs/scripts/orchestrate.py --config runs/april2021/config.yml --step all
 #
 # Avec Prithvi WxC :
-#   pip install -e ".[prithvi]"
+#   uv sync --extra prithvi
 #   pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'
 #
 # Sur RunPod (image pytorch:2.x-cuda12.x) :
-#   pip install -e ".[prithvi]" --break-system-packages
-#   pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git' --break-system-packages
+#   uv sync --extra prithvi --extra pmap --system
 #
-# Le modèle (~9GB) est téléchargé automatiquement depuis HuggingFace
+# Le modèle Prithvi WxC (~9 GB) est téléchargé automatiquement depuis HuggingFace
 # lors du premier appel à PrithviWxCDownscaler.from_pretrained().
 # Pour pré-télécharger sur volume RunPod :
 #   huggingface-cli download Prithvi-WxC/prithvi.wxc.2300m.v1 --local-dir ./hf_cache
