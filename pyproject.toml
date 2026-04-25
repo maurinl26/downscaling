@@ -83,9 +83,11 @@ dev = [
 
 [project.scripts]
 run-stat-downscaling = "downscaling.scripts.run_statistical_downscaling:main"
-run-dl-train         = "downscaling.deep_learning.train:main"
-run-dl-inference     = "downscaling.deep_learning.inference:main"
+run-dl-train         = "downscaling.scripts.run_dl_train:main"
+run-dl-inference     = "downscaling.scripts.run_dl_inference:main"
 run-campaign         = "downscaling.scripts.run_campaign:main"
+launch-dl-job        = "downscaling.scripts.launch_dl_job:main"
+run-on-mac           = "downscaling.scripts.run_on_mac:main"
 
 [tool.uv]
 package = true

@@ -1,0 +1,65 @@
+name: Deploy RunPod Infra (Terraform)
+
+# Provisionne le network volume RunPod pour les jobs DL downscaling.
+# Séparé de deploy-infra.yml (Scaleway) car provider différent.
+# Idempotent : si le volume existe déjà, terraform ne fait rien.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Taper 'runpod' pour confirmer le déploiement Terraform RunPod"
+        required: true
+        default: ""
+      action:
+        description: "Action Terraform"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+jobs:
+  terraform-runpod:
+    name: Terraform RunPod volumes
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'runpod'
+
+    defaults:
+      run:
+        working-directory: ./infra
+
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      # Cible uniquement la ressource runpod pour éviter d'impacter l'infra Scaleway
+      TF_TARGET: -target=runpod_network_volume.downscaling_workspace
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -no-color $TF_TARGET
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve -input=false $TF_TARGET
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve -input=false $TF_TARGET
+
+# ── Secrets requis ────────────────────────────────────────────────────────────
+#   RUNPOD_API_KEY   — RunPod API key (runpod.io → Settings → API Keys)
+#
+# ── Notes ─────────────────────────────────────────────────────────────────────
+# Le volume "downscaling-workspace" (100 GB, US-TX-3) est partagé entre tous
+# les pods DL (unet-train, prithvi-finetune, prithvi-inference).
+# Il persiste entre les runs — ne pas détruire sans avoir sauvegardé les checkpoints.

@@ -1,0 +1,102 @@
+name: Launch DL Job (RunPod — manuel)
+
+# Lance un job de downscaling DL sur RunPod depuis GitHub Actions.
+# Le pod démarre, exécute la commande, puis s'arrête automatiquement.
+# Suivre les logs via : python downscaling/launch_dl_job.py --status <POD_ID>
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Tâche DL à lancer"
+        required: true
+        type: choice
+        options:
+          - prithvi-inference
+          - prithvi-finetune
+          - unet-train
+      years:
+        description: "Années (prithvi-inference uniquement, ex: 2015-2021)"
+        required: false
+        default: "2015-2021"
+      gpu:
+        description: "GPU override (vide = recommandé par tâche : L4 ou A100)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry-run — affiche la config sans créer de pod"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  launch:
+    name: "Launch ${{ github.event.inputs.task }}"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv + runpod SDK
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pip install runpod --quiet
+
+      - name: Install downscaling package
+        working-directory: ./downscaling
+        run: uv sync --no-dev --frozen
+
+      - name: Launch DL job
+        env:
+          RUNPOD_API_KEY:       ${{ secrets.RUNPOD_API_KEY }}
+          MLFLOW_TRACKING_URI:  ${{ secrets.MLFLOW_TRACKING_URI }}
+          SCW_ACCESS_KEY:       ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY:       ${{ secrets.SCW_SECRET_KEY }}
+        run: |
+          ARGS="--task ${{ github.event.inputs.task }}"
+
+          if [ "${{ github.event.inputs.task }}" = "prithvi-inference" ] && \
+             [ -n "${{ github.event.inputs.years }}" ]; then
+            ARGS="$ARGS --years ${{ github.event.inputs.years }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.gpu }}" ]; then
+            ARGS="$ARGS --gpu ${{ github.event.inputs.gpu }}"
+          fi
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          python downscaling/launch_dl_job.py $ARGS
+
+      - name: List running pods
+        if: github.event.inputs.dry_run == 'false'
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: python downscaling/launch_dl_job.py --list
+
+# ── Secrets requis (Settings → Secrets → Actions) ────────────────────────────
+#   RUNPOD_API_KEY        — RunPod API key
+#   MLFLOW_TRACKING_URI   — ex: http://<scaleway-ip>:5500
+#   SCW_ACCESS_KEY        — Scaleway S3 access key (upload résultats)
+#   SCW_SECRET_KEY        — Scaleway S3 secret key
+#
+# ── Workflow des tâches ───────────────────────────────────────────────────────
+#   unet-train          → A100 spot, ~2h, checkpoints → S3
+#   prithvi-finetune    → A100 spot, ~3h, adapter → S3
+#   prithvi-inference   → L4 spot, ~45min, zarr T_min → S3
+#
+# ── Après le lancement ───────────────────────────────────────────────────────
+#   Le pod ID est affiché dans les logs du job Actions.
+#   Pour suivre : python downscaling/launch_dl_job.py --status <POD_ID>
+#   Pour arrêter : python downscaling/launch_dl_job.py --stop <POD_ID>
