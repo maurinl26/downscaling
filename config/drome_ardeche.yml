@@ -52,6 +52,25 @@ statistical:
       - -5.9e-3   # Novembre
       - -5.7e-3   # Décembre
 
+  nocturnal_lapse_rate:
+    # Gradient T nuits de gel (couche limite stable, 20h–06h UTC, T_obs < 2°C)
+    # Inversions thermiques en fond de vallée → gradient effectif ≈ −3 à −4 K/km
+    # vs −6 K/km régime diurne bien mélangé
+    # Valeurs indicatives — recalibrer via calibrate_nocturnal_gamma() sur SYNOP 2015–2021
+    monthly_gamma:
+      - -3.0e-3   # Janvier
+      - -3.1e-3   # Février
+      - -3.5e-3   # Mars
+      - -4.0e-3   # Avril   ← mois critique gel printanier
+      - -4.2e-3   # Mai
+      - -4.5e-3   # Juin
+      - -4.5e-3   # Juillet
+      - -4.3e-3   # Août
+      - -4.0e-3   # Septembre
+      - -3.5e-3   # Octobre
+      - -3.2e-3   # Novembre
+      - -3.0e-3   # Décembre
+
   quantile_mapping:
     enabled: true
     method: qdm           # 'qdm' ou 'eqm'

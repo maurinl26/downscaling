@@ -1,0 +1,99 @@
+# GABLS3 — Global Atmospheric Boundary Layer Study, intercomparison case 3
+#
+# Référence principale :
+#   Bosveld, F. C., et al. (2014). "The third GABLS intercomparison case for
+#   evaluation studies of boundary-layer models. Part B: Results and process
+#   understanding." Boundary-Layer Meteorology, 152(1–2), 157–187.
+#   DOI: 10.1007/s10546-014-9919-1
+#
+#   Kleczek, M. A., Steeneveld, G. J., & Holtslag, A. A. M. (2014).
+#   "Evaluation of the WRF model for GABLS3: Impact of boundary-layer schemes,
+#   boundary conditions and domain."
+#   Boundary-Layer Meteorology, 152(1–2), 213–243.
+#   DOI: 10.1007/s10546-014-9912-8
+#
+# Pourquoi GABLS3 pour pmap/PHYEX :
+#   - Seul cas GABLS validé contre Meso-NH et AROME (même schéma PHYEX)
+#   - Conditions nocturnes (CL stable, inversion T, jet basse couche) —
+#     mécanismes physiques identiques aux nuits de gel printanier en Drôme
+#   - Données initiales ECMWF disponibles, forçage géostrophique connu
+#   - Critère d'acceptation : RMSE profil T < 0.5 K à t = 9h
+#
+# Résultat attendu :
+#   - Inversion thermique 100–300 m au-dessus du sol après 9h de run
+#   - Jet basse couche à ~150–200 m, maximum ~9 m/s vers 02:00 UTC
+#   - Bilan H négatif (−20 à −30 W/m²) en surface dès 14:00 UTC
+
+# ---------------------------------------------------------------------------
+# Site et période
+# ---------------------------------------------------------------------------
+site:
+  name: Cabauw
+  country: Netherlands
+  lat: 51.971      # °N
+  lon: 4.927       # °E
+  altitude: 0.7    # m ASL (polder, terrain plat)
+  roughness_length: 0.14    # m (prairie — Beljaars & Bosveld 1997)
+  roughness_length_heat: 0.014  # m (rapport z0/z0h = 10, standard MOST)
+  coriolis: 1.154e-4  # s^-1  (= 2Ω sin(51.97°))
+
+period:
+  start: "2006-07-01 12:00:00"   # UTC — début après-midi (convectif → stable)
+  end:   "2006-07-02 06:00:00"   # UTC — fin de nuit (18h de run total)
+  evaluation_time: "2006-07-01 21:00:00"   # t = 9h → pic de stabilité nocturne
+  spinup_hours: 3   # 12:00–15:00 UTC : CL convective, spinup TKE
+
+# ---------------------------------------------------------------------------
+# Profil initial (sondage ECMWF 12:00 UTC 1er juillet 2006)
+# Tableau 1 de Bosveld et al. (2014)
+# ---------------------------------------------------------------------------
+initial_sounding:
+  # Couche mélangée (0–200 m) : θ = 285 K, humidité spécifique = 7.5 g/kg
+  theta_surface: 285.0      # K
+  theta_gradient_above: 0.01  # K/m pour z > 200 m
+  theta_inversion_base: 200.0  # m
+  q_surface: 7.5e-3         # kg/kg
+  q_gradient_above: -1.0e-6  # kg/kg/m pour z > 400 m
+  q_inversion_base: 400.0   # m
+  pressure_surface: 101300.0  # Pa (Cabauw, quasi sea-level)
+
+# Vent géostrophique (Annexe A, Bosveld et al. 2014)
+# Varie lentement entre 12:00 UTC et 06:00 UTC
+geostrophic_wind:
+  # Tableau de couples (heure UTC, Ug m/s, Vg m/s)
+  time_series:
+    - [12, 9.5,  0.0]
+    - [15, 9.5,  0.0]
+    - [18, 9.0, -1.0]
+    - [21, 8.5, -1.5]
+    - [00, 8.0, -2.0]
+    - [03, 7.5, -2.0]
+    - [06, 7.0, -2.0]
+
+# Flux de chaleur sensible en surface (observations Cabauw)
+# Prescrit pour s'affranchir du schéma sol et isoler la physique CL
+prescribed_surface_heat_flux:
+  time_series:
+    # (heure UTC, H W/m²)  — positif = vers l'atmosphère
+    - [12,  80.0]
+    - [14,  30.0]
+    - [16,  -5.0]
+    - [18, -15.0]
+    - [20, -20.0]
+    - [22, -22.0]
+    - [00, -23.0]
+    - [03, -22.0]
+    - [06, -20.0]
+
+# ---------------------------------------------------------------------------
+# Critères de validation (intercomparison GABLS3, Bosveld et al. 2014 Fig. 5)
+# ---------------------------------------------------------------------------
+validation:
+  reference_dataset: data/gabls3/gabls3_intercomparison_profiles.nc
+  time: 9h    # t = 21:00 UTC
+  metrics:
+    theta_rmse_max: 0.5    # K — critère d'acceptation pmap/PHYEX
+    u_rmse_max: 1.0        # m/s
+    llj_height_range: [100, 300]   # m — hauteur du jet basse couche attendue
+    llj_speed_range:  [7, 11]      # m/s — amplitude du jet
+    inversion_base_range: [80, 200]  # m — base de l'inversion thermique

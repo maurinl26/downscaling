@@ -1,0 +1,214 @@
+# PMAP-LES — GABLS3 intercomparison case
+#
+# Référence : Bosveld et al. (2014) Boundary-Layer Meteorology 152, 157–187
+#             DOI: 10.1007/s10546-014-9919-1
+#
+# Objectif : valider le schéma de turbulence PHYEX (couche limite stable)
+# avant la campagne de downscaling Drôme-Ardèche 2000–2024.
+# Critère : RMSE profil θ < 0.5 K à t = 9h (21:00 UTC) vs profils GABLS3.
+#
+# Différences vs configs opérationnelles (april2021, campaign) :
+#   - Terrain plat (orographie = 0), conditions périodiques latérales
+#   - Pas de SURFEX — flux de chaleur H(t) prescrit depuis observations Cabauw
+#   - Physique réduite : turbulence uniquement (pas de microphysique ice3)
+#   - Initialisation depuis sondage analytique (testcase: gabls3)
+#   - Coriolis Cabauw : f = 1.154e-4 s^-1
+
+# ------------------------------------------------------------------
+# Grille — domaine périodique 6 km × 6 km × 3 km à 100 m horizontal
+# Résolution horizontale 100 m : compromis coût/résolution CL stable
+# (LES de référence GABLS3 tourne à 6.25 m, NWP-mode à 100–400 m)
+# ------------------------------------------------------------------
+nx: 60
+xmin: 0.0
+xmax: 6000.0
+bcx_kind: 0    # 0 = périodique (pas de LBC latérales)
+
+ny: 60
+ymin: 0.0
+ymax: 6000.0
+bcy_kind: 0    # 0 = périodique
+
+nz: 80
+zmin: 0.0
+zmax: 3000.0
+
+# ------------------------------------------------------------------
+# Temps — 18h total (12:00 UTC → 06:00 UTC), évaluation à t = 9h
+# ------------------------------------------------------------------
+dt: 2.0
+model_starttime: "2006-07-01 12:00:00"
+model_endtime:   "2006-07-02 06:00:00"
+
+tout_info: 3600.0
+outer_nstep: 18
+
+# ------------------------------------------------------------------
+# Initialisation depuis sondage analytique GABLS3
+# (θ = 285 K sous 200 m, gradient 0.01 K/m au-dessus)
+# ------------------------------------------------------------------
+isetup:
+  testcase: gabls3
+  moist: false    # GABLS3 standard : sec (pas de condensation)
+  theta_surface: 285.0
+  theta_gradient_above: 0.01
+  theta_inversion_base: 200.0
+  ug_surface: 9.5    # m/s — vent géostrophique initial (Bosveld 2014, Annexe A)
+  vg_surface: 0.0
+  pressure_surface: 101300.0
+
+# ------------------------------------------------------------------
+# Constantes physiques (standard PHYEX / Meso-NH)
+# ------------------------------------------------------------------
+constants:
+  gravity0: 9.80665
+  Rd: 287.05
+  Rv: 461.5
+  cpd: 1004.0
+  latheat_vap: 2.501e6
+  fcoriolis0: 1.154e-4   # Cabauw : f = 2Ω sin(51.97°) — différent de Drôme (1.028e-4)
+
+# ------------------------------------------------------------------
+# Physique PHYEX — turbulence seule (pas de microphysique pour GABLS3)
+# La microphysique ice3 est désactivée pour isoler le schéma de CL stable
+# ------------------------------------------------------------------
+phyex:
+  enabled: true
+  turb:
+    enabled: true
+  shallow_conv:
+    enabled: false   # pas de convection peu profonde — CL stable nocturne
+  ice_adjust:
+    enabled: false
+  rain_ice:
+    enabled: false
+
+cloud_microphysics:
+  enabled: false
+
+diffusion:
+  enabled: false
+
+# ------------------------------------------------------------------
+# Advection (minimal — cas 1D quasi-homogène)
+# ------------------------------------------------------------------
+advection:
+  scheme: ppm_macho_x_y_z
+  rvapour: false
+  tke: true
+
+courant:
+  mode: max_dim_xy_z
+  max_value: 0.8
+  max_value_z: 0.8
+
+# ------------------------------------------------------------------
+# Schéma semi-implicite
+# ------------------------------------------------------------------
+sischeme:
+  enabled: true
+  outer_nit: 2
+
+krylov:
+  exit_condition: "divergence"
+
+# ------------------------------------------------------------------
+# Surface — flux de chaleur sensible prescrit depuis observations Cabauw
+# (Bosveld et al. 2014, Fig. 2b) — évite d'introduire les biais du schéma sol
+# ------------------------------------------------------------------
+surface:
+  roughness_length_definition: uniform
+  roughness_length_constant: 0.14    # m — prairie Cabauw
+
+surface_fluxes:
+  enabled: true
+  mode: prescribed_heat_flux
+  # H(t) prescrit en W/m² (positif vers l'atmosphère)
+  # Interpolé linéairement entre les points ci-dessous
+  heat_flux_time_series:
+    - [0,    80.0]    # 12:00 UTC — après-midi convectif
+    - [2,    30.0]    # 14:00 UTC — transition
+    - [4,    -5.0]    # 16:00 UTC — début stabilisation
+    - [6,   -15.0]    # 18:00 UTC — couche stable établie
+    - [8,   -20.0]    # 20:00 UTC
+    - [10,  -22.0]    # 22:00 UTC — plateau nocturne
+    - [12,  -23.0]    # 00:00 UTC
+    - [15,  -22.0]    # 03:00 UTC
+    - [18,  -20.0]    # 06:00 UTC — fin de nuit
+  uvelx: true
+  uvely: true
+  theta: true
+
+# ------------------------------------------------------------------
+# Orographie — terrain plat (GABLS3 est un cas idéalisé sans relief)
+# ------------------------------------------------------------------
+define_orography:
+  func: pmap.geometry.orography.flat
+
+define_vertical_coordinate_stretching:
+  func: pmap.geometry.vertical_coordinate_stretching.tanh_cst_dz
+  args:
+    dz_near_surface: 10.0    # m — résolution fine en CL (vs 50 m opérationnel)
+
+define_vertical_coordinate:
+  func: pmap.geometry.vertical_coordinate.btf_levels
+
+# ------------------------------------------------------------------
+# Vent géostrophique variable (Annexe A, Bosveld et al. 2014)
+# Décroît légèrement pendant la nuit (backing du vent)
+# ------------------------------------------------------------------
+geostrophic_wind:
+  enabled: true
+  time_series:
+    - [0,    9.5,  0.0]
+    - [3,    9.5,  0.0]
+    - [6,    9.0, -1.0]
+    - [9,    8.5, -1.5]
+    - [12,   8.0, -2.0]
+    - [15,   7.5, -2.0]
+    - [18,   7.0, -2.0]
+
+# ------------------------------------------------------------------
+# Perturbations aléatoires (spinup TKE couche convective, 12–15 UTC)
+# ------------------------------------------------------------------
+random_perturbations:
+  enabled: true
+  bottom: 0.0
+  top: 1500.0
+  theta_total: true
+  theta_total_scale: 0.1    # K — plus fort que cas frost (CL convective à t=0)
+
+# ------------------------------------------------------------------
+# Couche absorbante (sommet uniquement — pas de LBC latérales)
+# ------------------------------------------------------------------
+absorber:
+  top: true
+  tscale: 600.0
+  depth: 500.0
+  xboundaries: false
+  yboundaries: false
+
+# ------------------------------------------------------------------
+# Sorties — profils verticaux toutes les 30 min pour comparaison GABLS3
+# ------------------------------------------------------------------
+loutput_data: true
+output_directory: output/gabls3/
+output_dimorder: zyx
+output_interval: 1800.0    # 30 min — résolution temporelle profils GABLS3
+
+output_fields:
+  - theta_total
+  - exner_total
+  - uvelx_total
+  - uvely_total
+  - uvelz_total
+  - tke_surface
+
+output_diagnostics:
+  enabled: true
+  interval: 1800.0
+  fields:
+    - surface_sensible_heat_flux
+    - surface_temperature
+    - tke_surface
+    - boundary_layer_height
