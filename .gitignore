@@ -1,2 +1,17 @@
 data/
 __pycache__/
+
+# Artefacts de build / packaging
+*.egg-info/
+build/
+dist/
+
+# Tests & couverture
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Environnements virtuels
+.venv/

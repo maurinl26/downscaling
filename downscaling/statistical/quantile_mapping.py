@@ -176,6 +176,7 @@ class QuantileDeltaMapping:
 
         # Fonctions de transfert calibrées
         self._mod_cdf: dict[int, interp1d] = {}   # F_mod_ref(x)  → quantile
+        self._mod_ppf: dict[int, interp1d] = {}   # F_mod_ref⁻¹(q) → valeur
         self._obs_ppf: dict[int, interp1d] = {}   # F_obs_ref⁻¹(q) → valeur
 
     # ------------------------------------------------------------------
@@ -218,6 +219,11 @@ class QuantileDeltaMapping:
                 mod_q, q01, kind="linear", bounds_error=False,
                 fill_value=(q01[0], q01[-1])
             )
+            # PPF modèle : quantile → valeur (nécessaire au terme delta de QDM)
+            self._mod_ppf[m] = interp1d(
+                q01, mod_q, kind="linear", bounds_error=False,
+                fill_value=(mod_q[0], mod_q[-1])
+            )
             # PPF observations : quantile → valeur
             self._obs_ppf[m] = interp1d(
                 q01, obs_q, kind="linear", bounds_error=False,
@@ -248,15 +254,17 @@ class QuantileDeltaMapping:
             idx = slice(None) if m == 0 else (modeled_future.time.dt.month == m)
             block = modeled_future.sel(time=idx).values  # numpy
 
-            tau = self._mod_cdf[m](block)           # quantile dans distribution de ref
-            x_ref = self._obs_ppf[m](tau)           # valeur correspondante dans obs_ref
+            tau = self._mod_cdf[m](block)           # quantile du futur dans la CDF modèle de réf
+            x_ref = self._obs_ppf[m](tau)           # valeur bias-corrigée (PPF observations)
+            x_mod = self._mod_ppf[m](tau)           # valeur modèle de réf au même quantile
 
             if self.kind == "delta":
-                delta = block - self._obs_ppf[m](tau)
+                # Anomalie additive du futur p/r au modèle de réf, préservée (Cannon 2015).
+                delta = block - x_mod
                 corrected = x_ref + delta
             else:
-                # Ratio : évite division par zéro
-                denom = np.where(np.abs(x_ref) > self.wet_threshold, x_ref, self.wet_threshold)
+                # Anomalie multiplicative ; évite la division par zéro.
+                denom = np.where(np.abs(x_mod) > self.wet_threshold, x_mod, self.wet_threshold)
                 corrected = x_ref * np.where(np.abs(denom) > 0, block / denom, 1.0)
                 corrected = np.maximum(corrected, 0.0)
 

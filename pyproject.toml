@@ -93,7 +93,7 @@ run-on-mac           = "downscaling.scripts.run_on_mac:main"
 package = true
 
 [tool.uv.sources]
-pmap = { git = "git@github.com:maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
+pmap = { git = "ssh://git@github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
 # Variante HTTPS (si SSH non disponible) :
 # pmap = { git = "https://github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
 # Variante locale (développement simultané des deux repos) :
