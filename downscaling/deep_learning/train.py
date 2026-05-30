@@ -1,13 +1,16 @@
 """
-Boucle d'entraînement du modèle de descente d'échelle par deep learning.
+Entraînement du modèle de descente d'échelle par deep learning (Lightning).
 
 Fonctionnalités
 ---------------
 - Loss composite : MSE + loss spectrale (sur T2m) + loss de gradient spatial
-- Scheduler cosine annealing avec warmup linéaire
-- Sauvegarde du meilleur modèle (val RMSE)
-- Logging tensorboard (optionnel)
-- Early stopping
+- Scheduler cosine annealing avec warmup linéaire (``configure_optimizers``)
+- Meilleur checkpoint (``ModelCheckpoint(monitor="val/rmse")``) + early stopping
+- Logger MLflow si ``MLFLOW_TRACKING_URI`` est défini, sinon CSV
+- Accelerator / precision pilotés par le groupe Hydra ``cluster=`` (local / cloud)
+
+La boucle ``torch`` manuelle a été remplacée par un ``LightningModule`` +
+``LightningDataModule`` (cf. :mod:`downscaling.deep_learning.lightning_module`).
 
 Usage
 -----
@@ -15,7 +18,7 @@ Usage
         --data-dir data/training/ \
         --epochs 100 --batch-size 8 \
         --checkpoint-dir checkpoints/ \
-        --override dl.base_ch=64
+        --override cluster=cloud dl.base_ch=64
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -30,9 +34,9 @@ import numpy as np
 try:
     import torch
     import torch.nn as nn
-    from torch.utils.data import DataLoader, random_split
+    import lightning.pytorch as pl
 except ImportError as e:
-    raise ImportError("PyTorch requis : pip install torch") from e
+    raise ImportError("PyTorch + Lightning requis : pip install 'downscaling[dl]'") from e
 
 from downscaling.config import load_config
 from .dataset import DownscalingDataset
@@ -141,178 +145,48 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float
 
 
 # ---------------------------------------------------------------------------
-# Boucle d'entraînement principale
+# Trainer Lightning (callbacks + logger pilotés par la config cluster)
 # ---------------------------------------------------------------------------
 
-class Trainer:
-    """
-    Gère l'entraînement complet du modèle de descente d'échelle.
+def _build_logger(checkpoint_dir: Path):
+    """MLflow si ``MLFLOW_TRACKING_URI`` est défini, sinon CSV local (sans dép)."""
+    uri = os.environ.get("MLFLOW_TRACKING_URI")
+    if uri:
+        try:
+            from lightning.pytorch.loggers import MLFlowLogger
 
-    Parameters
-    ----------
-    model:
-        Modèle PyTorch (DownscalingUNet ou LightSRCNN).
-    train_dataset, val_dataset:
-        Datasets d'entraînement et de validation.
-    batch_size:
-        Taille des lots.
-    lr:
-        Taux d'apprentissage initial.
-    epochs:
-        Nombre d'époques maximum.
-    checkpoint_dir:
-        Répertoire pour sauvegarder les checkpoints.
-    device:
-        'cuda', 'mps' (Apple Silicon) ou 'cpu'.
-    patience:
-        Nombre d'époques sans amélioration avant early stopping.
-    loss_weights:
-        Dictionnaire des pondérations de la loss (mse, spectral, gradient).
-    """
+            return MLFlowLogger(experiment_name="downscaling", tracking_uri=uri)
+        except Exception:  # pragma: no cover - dépend de l'install mlflow
+            log.warning("MLflow indisponible — repli sur CSVLogger.")
+    from lightning.pytorch.loggers import CSVLogger
 
-    def __init__(
-        self,
-        model: torch.nn.Module,
-        train_dataset: DownscalingDataset,
-        val_dataset: DownscalingDataset,
-        batch_size: int = 8,
-        lr: float = 1e-4,
-        epochs: int = 100,
-        checkpoint_dir: str | Path = "checkpoints/",
-        device: str | None = None,
-        patience: int = 15,
-        loss_weights: dict | None = None,
-    ):
-        self.model = model
-        self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
-        self.batch_size = batch_size
-        self.lr = lr
-        self.epochs = epochs
-        self.checkpoint_dir = Path(checkpoint_dir)
-        self.patience = patience
+    return CSVLogger(save_dir=str(checkpoint_dir), name="logs")
 
-        # Device auto-detect
-        if device is None:
-            if torch.cuda.is_available():
-                device = "cuda"
-            elif torch.backends.mps.is_available():
-                device = "mps"
-            else:
-                device = "cpu"
-        self.device = torch.device(device)
-        log.info(f"Device : {self.device}")
 
-        self.model = self.model.to(self.device)
+def build_trainer(cluster: dict, *, max_epochs: int, patience: int,
+                  checkpoint_dir: str | Path) -> pl.Trainer:
+    """Construit le ``pl.Trainer`` : accelerator/precision viennent de ``cluster=``."""
+    from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-        # Loss
-        lw = loss_weights or {}
-        self.criterion = DownscalingLoss(
-            lambda_mse=lw.get("mse", 1.0),
-            lambda_spectral=lw.get("spectral", 0.1),
-            lambda_gradient=lw.get("gradient", 0.05),
-        )
-
-        # Optimiseur + scheduler
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
-        self.scheduler = cosine_with_warmup(self.optimizer, warmup_epochs=5, total_epochs=epochs)
-
-        self.best_val_rmse = float("inf")
-        self.epochs_no_improve = 0
-
-    def train(self) -> dict:
-        """Lance l'entraînement complet. Retourne l'historique des métriques."""
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-        train_loader = DataLoader(
-            self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4
-        )
-        val_loader = DataLoader(
-            self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2
-        )
-
-        history = {"train_loss": [], "val_rmse": [], "val_mae": []}
-
-        for epoch in range(1, self.epochs + 1):
-            # ---- Entraînement -------------------------------------------
-            self.model.train()
-            train_loss = 0.0
-            for x_coarse, dem, y_fine in train_loader:
-                x_coarse = x_coarse.to(self.device)
-                dem = dem.to(self.device)
-                y_fine = y_fine.to(self.device)
-
-                self.optimizer.zero_grad()
-                pred = self.model(x_coarse, dem)
-                loss, breakdown = self.criterion(pred, y_fine)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer.step()
-                train_loss += loss.item()
-
-            train_loss /= len(train_loader)
-            self.scheduler.step()
-
-            # ---- Validation ---------------------------------------------
-            val_metrics = self._validate(val_loader)
-            val_rmse = val_metrics["rmse"]
-
-            history["train_loss"].append(train_loss)
-            history["val_rmse"].append(val_rmse)
-            history["val_mae"].append(val_metrics["mae"])
-
-            log.info(
-                f"Epoch {epoch:3d}/{self.epochs} | "
-                f"train_loss={train_loss:.4f} | "
-                f"val_rmse={val_rmse:.4f} | "
-                f"val_mae={val_metrics['mae']:.4f} | "
-                f"lr={self.scheduler.get_last_lr()[0]:.2e}"
-            )
-
-            # ---- Checkpoint + early stopping ----------------------------
-            if val_rmse < self.best_val_rmse:
-                self.best_val_rmse = val_rmse
-                self.epochs_no_improve = 0
-                self._save_checkpoint(epoch, val_rmse, best=True)
-            else:
-                self.epochs_no_improve += 1
-                if self.epochs_no_improve >= self.patience:
-                    log.info(f"Early stopping à l'époque {epoch} (patience={self.patience}).")
-                    break
-
-            if epoch % 10 == 0:
-                self._save_checkpoint(epoch, val_rmse, best=False)
-
-        return history
-
-    def _validate(self, loader: DataLoader) -> dict[str, float]:
-        self.model.eval()
-        all_preds, all_targets = [], []
-        with torch.no_grad():
-            for x_coarse, dem, y_fine in loader:
-                x_coarse = x_coarse.to(self.device)
-                dem = dem.to(self.device)
-                pred = self.model(x_coarse, dem)
-                all_preds.append(pred.cpu())
-                all_targets.append(y_fine)
-        preds = torch.cat(all_preds)
-        targets = torch.cat(all_targets)
-        return compute_metrics(preds, targets)
-
-    def _save_checkpoint(self, epoch: int, val_rmse: float, best: bool):
-        name = "best_model.pt" if best else f"checkpoint_epoch{epoch:04d}.pt"
-        path = self.checkpoint_dir / name
-        torch.save(
-            {
-                "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "val_rmse": val_rmse,
-            },
-            path,
-        )
-        if best:
-            log.info(f"  → Meilleur modèle sauvegardé : {path} (val_rmse={val_rmse:.4f})")
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    callbacks = [
+        ModelCheckpoint(
+            dirpath=str(checkpoint_dir), filename="best_model",
+            monitor="val/rmse", mode="min", save_top_k=1,
+        ),
+        EarlyStopping(monitor="val/rmse", mode="min", patience=patience),
+    ]
+    return pl.Trainer(
+        max_epochs=max_epochs,
+        accelerator=cluster.get("accelerator", "auto"),
+        devices=cluster.get("devices", 1),
+        precision=cluster.get("precision", "32-true"),
+        gradient_clip_val=1.0,
+        callbacks=callbacks,
+        logger=_build_logger(checkpoint_dir),
+        log_every_n_steps=1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +202,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--lr", type=float, default=1e-4)
-    p.add_argument("--device", default=None)
     p.add_argument("--no-film", action="store_true", help="Désactive FiLM (ablation)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -341,7 +214,7 @@ def main():
     cfg = load_config(args.override)
 
     dl_cfg = cfg.get("deep_learning", {})
-    domain = cfg.get("domain", {})
+    cluster = cfg.get("cluster", {})
     data_dir = Path(args.data_dir)
 
     # Fichiers d'entraînement
@@ -369,11 +242,6 @@ def main():
         log.info("Calcul des statistiques de normalisation…")
         dataset.compute_stats()
 
-    # Split train / val (80/20)
-    n_val = max(1, len(dataset) // 5)
-    n_train = len(dataset) - n_val
-    train_ds, val_ds = random_split(dataset, [n_train, n_val])
-
     model = build_model(
         architecture=dl_cfg.get("architecture", "unet"),
         met_in_ch=len(met_vars),
@@ -383,20 +251,33 @@ def main():
         use_film=not args.no_film,
     )
 
-    trainer = Trainer(
-        model=model,
-        train_dataset=train_ds,
-        val_dataset=val_ds,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        epochs=args.epochs,
-        checkpoint_dir=args.checkpoint_dir,
-        device=args.device,
-        patience=dl_cfg.get("patience", 15),
-    )
+    # Import tardif : Lightning n'est requis que pour l'entraînement effectif.
+    from .lightning_module import DownscalingDataModule, DownscalingLitModule
 
-    history = trainer.train()
-    log.info(f"Entraînement terminé. Meilleur val RMSE : {trainer.best_val_rmse:.4f}")
+    lit = DownscalingLitModule(
+        model,
+        lr=args.lr,
+        weight_decay=dl_cfg.get("weight_decay", 1e-4),
+        warmup_epochs=dl_cfg.get("warmup_epochs", 5),
+        max_epochs=args.epochs,
+        loss_weights=dl_cfg.get("loss_weights"),
+    )
+    datamodule = DownscalingDataModule(
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=cluster.get("num_workers", 0),
+    )
+    trainer = build_trainer(
+        cluster,
+        max_epochs=args.epochs,
+        patience=dl_cfg.get("patience", 15),
+        checkpoint_dir=args.checkpoint_dir,
+    )
+    trainer.fit(lit, datamodule=datamodule)
+
+    best = trainer.checkpoint_callback.best_model_score
+    log.info("Entraînement terminé. Meilleur val/rmse : %s",
+             f"{best:.4f}" if best is not None else "n/a")
 
 
 if __name__ == "__main__":

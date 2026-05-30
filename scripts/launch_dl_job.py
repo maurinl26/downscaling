@@ -42,7 +42,7 @@ TASKS = {
         "vram_gb": 20,
         "cmd": (
             "uv run python downscaling/downscaling/scripts/run_dl_train.py"
-            " --data-dir data/training/ --epochs 150"
+            " --data-dir data/training/ --epochs 150 --override cluster=cloud"
         ),
         "desc": "U-Net FiLM training — Drôme-Ardèche 2000-2021 (~2h, A100)",
     },

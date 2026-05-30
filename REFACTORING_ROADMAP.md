@@ -94,9 +94,10 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 - [x] Figer `uv.lock` (généré par `uv sync`). URL git `pmap` corrigée en forme
       `ssh://` (la forme SCP `git@github.com:` n'est pas parsée par uv).
 - [ ] Passer le build à uv (build-backend reste `setuptools`), garder les extras.
-- [ ] `[project.scripts]` : exposer les entry points (prépare la Phase 2).
+- [x] `[project.scripts]` : entry points exposés (`downscaling-run`, `run-dl-train`,
+      `run-dl-inference`, `run-campaign`, `launch-dl-job`, `run-on-mac`).
 
-### Phase 2 — Hydra (configuration) 🟡 en cours
+### Phase 2 — Hydra (configuration) ✅ terminée
 - [x] Éclater `config/drome_ardeche.yml` en groupes : `configs/{domain,data,
       statistical,dl,indices,cluster}/` + `experiment/`.
 - [x] `drome_ardeche` devient `experiment=drome_ardeche` (pattern experiment
@@ -125,16 +126,24 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       stat) passe tous les mensuels d'une saison. Couvert par
       `tests/test_run_downscaling.py`.
 
-### Phase 3 — Lightning (entraînement DL)
-- [ ] `LightningModule` enveloppant le U-Net FiLM (`build_model`) ; migrer
-      SpectralLoss / gradient loss dans `training_step`.
-- [ ] `configure_optimizers` : warmup linéaire → cosine (réutiliser le pattern
-      `SequentialLR` de `weather_routing`).
-- [ ] Callbacks natifs : `ModelCheckpoint(monitor="val/rmse")`, early stopping,
-      logger MLflow (déjà en place).
-- [ ] `cluster=local` (Mac MPS) / `cluster=cloud` (RunPod A100).
-- [ ] Smoke test : 1 epoch sur micro-jeu, comme `scripts/run_local.sh`.
-- [ ] Idem pour `prtihvi_wxc/finetune.py`.
+### Phase 3 — Lightning (entraînement DL) 🟡 en cours
+- [x] `LightningModule` enveloppant le U-Net FiLM (`build_model`) :
+      `DownscalingLitModule` (`deep_learning/lightning_module.py`). SpectralLoss /
+      gradient loss appliqués dans `training_step` via `DownscalingLoss`
+      (réutilisée, source unique). Boucle `torch` manuelle (`train.Trainer`)
+      supprimée — `train.main` construit désormais un `pl.Trainer`.
+- [x] `configure_optimizers` : warmup linéaire → cosine (`cosine_with_warmup`,
+      `LambdaLR`, `interval: epoch`). Optimiseur instancié dans
+      `configure_optimizers` (pattern « modèle injecté »).
+- [x] Callbacks natifs : `ModelCheckpoint(monitor="val/rmse")`, `EarlyStopping`,
+      logger MLflow si `MLFLOW_TRACKING_URI` sinon `CSVLogger` (sans dép).
+- [x] `cluster=local` (Mac MPS, `32-true`) / `cluster=cloud` (RunPod GPU,
+      `bf16-mixed`) : `build_trainer` lit accelerator/precision/num_workers du
+      groupe `cluster=`. `launch_dl_job` (unet-train) passe `cluster=cloud`.
+- [x] Smoke test : `fast_dev_run` sur modèle jouet + dataset aléatoire, sans GPU
+      ni réseau (`tests/test_lightning.py`, gardé par `importorskip`).
+- [x] Ajout `lightning>=2.2` à l'extra `dl` + `uv.lock` régénéré.
+- [ ] Idem pour `prtihvi_wxc/finetune.py` (pas encore de boucle/CLI Lightning).
 
 ### Phase 4 — Checkpoints Prithvi WxC (`modelstore/`)
 - [ ] `scripts/fetch_pretrained.py` : récupère les poids Prithvi WxC (HF) dans une
