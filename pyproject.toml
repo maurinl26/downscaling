@@ -52,6 +52,7 @@ dl = [
 prithvi = [
     "torch>=2.2",
     "torchvision>=0.17",
+    "lightning>=2.2",
     "huggingface-hub>=0.22",
     "safetensors>=0.4",
     # TerraTorch pour fine-tuning (optionnel — inférence sans TerraTorch possible)

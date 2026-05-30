@@ -126,7 +126,7 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       stat) passe tous les mensuels d'une saison. Couvert par
       `tests/test_run_downscaling.py`.
 
-### Phase 3 — Lightning (entraînement DL) 🟡 en cours
+### Phase 3 — Lightning (entraînement DL) ✅ terminée
 - [x] `LightningModule` enveloppant le U-Net FiLM (`build_model`) :
       `DownscalingLitModule` (`deep_learning/lightning_module.py`). SpectralLoss /
       gradient loss appliqués dans `training_step` via `DownscalingLoss`
@@ -142,8 +142,18 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       groupe `cluster=`. `launch_dl_job` (unet-train) passe `cluster=cloud`.
 - [x] Smoke test : `fast_dev_run` sur modèle jouet + dataset aléatoire, sans GPU
       ni réseau (`tests/test_lightning.py`, gardé par `importorskip`).
-- [x] Ajout `lightning>=2.2` à l'extra `dl` + `uv.lock` régénéré.
-- [ ] Idem pour `prtihvi_wxc/finetune.py` (pas encore de boucle/CLI Lightning).
+- [x] Ajout `lightning>=2.2` aux extras `dl` et `prithvi` + `uv.lock` régénéré.
+- [x] Idem pour `prtihvi_wxc/finetune.py` : `PrithviFinetuneLitModule` +
+      `PrithviFinetuneDataModule` (`prtihvi_wxc/lightning_finetune.py`). Modèle
+      injecté, **adapter seul optimisé**, backbone gelé en `eval()`
+      (`on_train_epoch_start`), checkpoint réduit à l'adapter
+      (`on_save_checkpoint`), supervision sparse Netatmo. `PrithviWxCFinetuner.run`
+      délègue à un `pl.Trainer` (callbacks `val/rmse`, logger CSV).
+      Smoke test `tests/test_lightning_prithvi.py` (4 invariants : fast_dev_run,
+      backbone gelé, optim adapter-only, checkpoint adapter-only).
+      Bonus : imports cassés du package `prtihvi_wxc` réparés
+      (`downscaling.deep_learning.prithvi_wxc` → relatifs ; `spring_frost` →
+      `spring_frost_index`) ; `__init__` tolérant à l'absence de l'extra `prithvi`.
 
 ### Phase 4 — Checkpoints Prithvi WxC (`modelstore/`)
 - [ ] `scripts/fetch_pretrained.py` : récupère les poids Prithvi WxC (HF) dans une

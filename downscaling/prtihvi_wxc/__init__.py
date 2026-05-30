@@ -19,8 +19,20 @@ Exemple rapide :
 """
 
 from .dataset import FrostNightDataset
-from .inference import FrostReanalysisRunner, load_config
-from .loader import PrithviWxCDownscaler, DEMConditionedAdapter
+
+# loader/inference tirent l'extra `prithvi` (huggingface_hub, poids HF). On les
+# rend optionnels — en blocs séparés pour qu'une indispo de l'un ne masque pas
+# l'autre — afin que les sous-modules légers (lightning_finetune, netatmo_qc)
+# restent importables sans l'extra complet (ex. en CI).
+try:
+    from .loader import PrithviWxCDownscaler, DEMConditionedAdapter
+except ImportError:  # pragma: no cover - dépend de l'install de l'extra prithvi
+    PrithviWxCDownscaler = DEMConditionedAdapter = None
+
+try:
+    from .inference import FrostReanalysisRunner, load_config
+except ImportError:  # pragma: no cover - dépend de l'install de l'extra prithvi
+    FrostReanalysisRunner = load_config = None
 
 __all__ = [
     "FrostNightDataset",

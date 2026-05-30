@@ -38,7 +38,7 @@ from pathlib import Path
 # Ajouter la racine du projet au PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from downscaling.deep_learning.prithvi_wxc import FrostReanalysisRunner, FrostNightDataset, load_config
+from downscaling.prtihvi_wxc import FrostReanalysisRunner, FrostNightDataset, load_config
 
 
 logging.basicConfig(

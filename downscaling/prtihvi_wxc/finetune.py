@@ -33,17 +33,18 @@ import logging
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
-import torch.nn as nn
-import xarray as xr
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import Dataset
 
-from downscaling.deep_learning.prithvi_wxc.loader import PrithviWxCDownscaler
-from downscaling.deep_learning.prithvi_wxc.dataset import FrostNightDataset, ERA5_VARS
-from downscaling.shared.netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
+from .loader import PrithviWxCDownscaler
+from .dataset import FrostNightDataset, ERA5_VARS
+from .netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
+# Loss sparse + collate vivent désormais dans lightning_finetune (source unique).
+# Réexport pour compat des imports historiques.
+from .lightning_finetune import SparseSupervisedLoss, sparse_collate_fn
+
+# Alias historique (l'ancien nom était préfixé _).
+_sparse_collate_fn = sparse_collate_fn
 
 log = logging.getLogger(__name__)
 
@@ -147,74 +148,6 @@ class NetatmoFineTuneDataset(Dataset):
 
 
 # ---------------------------------------------------------------------------
-# Loss fonction
-# ---------------------------------------------------------------------------
-
-class SparseSupervisedLoss(nn.Module):
-    """
-    Loss combinée pour supervision sparse (stations Netatmo).
-
-    L = λ_obs × L_obs + λ_tv × L_TV + λ_smooth × L_smooth
-
-    L_obs   : RMSE aux pixels des stations
-    L_TV    : Total Variation — régularisation spatiale
-    L_smooth: Pénalité Laplacien — anti-bruit haute fréquence
-    """
-
-    def __init__(
-        self,
-        lambda_obs: float = 1.0,
-        lambda_tv: float = 0.01,
-        lambda_smooth: float = 0.001,
-    ):
-        super().__init__()
-        self.lambda_obs = lambda_obs
-        self.lambda_tv = lambda_tv
-        self.lambda_smooth = lambda_smooth
-
-    def forward(
-        self,
-        pred: torch.Tensor,        # (B, 1, H_hr, W_hr)
-        obs_tmin: torch.Tensor,    # (n_obs,) — valeurs aux stations
-        obs_row: torch.Tensor,     # (n_obs,) — indices ligne grille
-        obs_col: torch.Tensor,     # (n_obs,) — indices colonne grille
-        batch_idx: int = 0,        # Indice batch pour extraction
-    ) -> tuple[torch.Tensor, dict]:
-
-        # L_obs : supervision aux stations
-        pred_at_obs = pred[batch_idx, 0, obs_row, obs_col]  # (n_obs,)
-        l_obs = torch.sqrt(torch.mean((pred_at_obs - obs_tmin) ** 2))
-
-        # L_TV : Total Variation (cohérence spatiale)
-        diff_h = pred[:, :, 1:, :] - pred[:, :, :-1, :]
-        diff_w = pred[:, :, :, 1:] - pred[:, :, :, :-1]
-        l_tv = torch.mean(torch.abs(diff_h)) + torch.mean(torch.abs(diff_w))
-
-        # L_smooth : pénalité Laplacien discret
-        laplacian = (
-            pred[:, :, 1:-1, 1:-1] * (-4)
-            + pred[:, :, :-2, 1:-1]
-            + pred[:, :, 2:, 1:-1]
-            + pred[:, :, 1:-1, :-2]
-            + pred[:, :, 1:-1, 2:]
-        )
-        l_smooth = torch.mean(laplacian ** 2)
-
-        loss = (
-            self.lambda_obs * l_obs
-            + self.lambda_tv * l_tv
-            + self.lambda_smooth * l_smooth
-        )
-
-        return loss, {
-            "loss_total": loss.item(),
-            "loss_obs": l_obs.item(),
-            "loss_tv": l_tv.item(),
-            "loss_smooth": l_smooth.item(),
-        }
-
-
-# ---------------------------------------------------------------------------
 # Boucle de fine-tuning
 # ---------------------------------------------------------------------------
 
@@ -256,151 +189,62 @@ class PrithviWxCFinetuner:
         lr: float = 1e-4,
         weight_decay: float = 1e-5,
     ) -> dict:
-        """
-        Lance le fine-tuning et sauvegarde les checkpoints.
+        """Fine-tune l'adapter via Lightning et sauvegarde le meilleur checkpoint.
 
-        Returns: dict avec historique de loss train/val
+        Le scheduler warmup→cosine, le clipping de gradient, le meilleur
+        checkpoint (adapter seul) et l'early stopping sont des briques Lightning
+        (cf. :mod:`downscaling.prtihvi_wxc.lightning_finetune`).
+
+        Returns: ``{"best_val_rmse": float | None}``.
         """
+        import lightning.pytorch as pl
+        from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+        from lightning.pytorch.loggers import CSVLogger
+
+        from .lightning_finetune import PrithviFinetuneDataModule, PrithviFinetuneLitModule
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Split train/val par nuit (pas par heure — évite la fuite temporelle)
-        n_val = max(1, int(len(finetune_dataset) * val_fraction))
-        n_train = len(finetune_dataset) - n_val
-        train_ds, val_ds = random_split(
-            finetune_dataset, [n_train, n_val],
-            generator=torch.Generator().manual_seed(42)
-        )
-        log.info(f"Train: {n_train} nuits | Val: {n_val} nuits")
-
-        train_loader = DataLoader(
-            train_ds,
-            batch_size=1,           # 1 nuit à la fois (obs sparse variables)
-            shuffle=True,
-            num_workers=self.config.get("num_workers", 2),
-            collate_fn=_sparse_collate_fn,
-        )
-        val_loader = DataLoader(
-            val_ds, batch_size=1, shuffle=False, collate_fn=_sparse_collate_fn
-        )
-
-        # Optimiseur sur l'adapter uniquement
-        optimizer = AdamW(
-            self.model.adapter.parameters(),
+        lit = PrithviFinetuneLitModule(
+            self.model,
             lr=lr,
             weight_decay=weight_decay,
-        )
-        scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
-        criterion = SparseSupervisedLoss(
-            lambda_obs=self.config.get("lambda_obs", 1.0),
-            lambda_tv=self.config.get("lambda_tv", 0.01),
-            lambda_smooth=self.config.get("lambda_smooth", 0.001),
-        )
-
-        history = {"train": [], "val": [], "best_val": float("inf")}
-
-        for epoch in range(epochs):
-            # --- Train ---
-            self.model.train()
-            # Backbone gelé même en mode train
-            self.model.backbone.eval()
-
-            train_losses = []
-            for batch in train_loader:
-                optimizer.zero_grad()
-
-                era5_t0 = batch["era5_t0"].to(self.device)
-                era5_t1 = batch["era5_t1"].to(self.device)
-                dem_hr = batch["dem_hr"].to(self.device)
-                obs_tmin = batch["obs_tmin"][0].to(self.device)  # (n_obs,)
-                obs_row = batch["obs_row"][0].to(self.device)
-                obs_col = batch["obs_col"][0].to(self.device)
-
-                # Forward (backbone.encode en no_grad via loader.py)
-                pred = self.model(era5_t0, era5_t1, dem_hr)  # (1,1,H,W) en K
-                pred_c = pred - 273.15  # Kelvin → Celsius pour comparer Netatmo
-
-                loss, metrics = criterion(pred_c, obs_tmin, obs_row, obs_col)
-                loss.backward()
-
-                # Gradient clipping (adapter peut avoir des gradients instables)
-                nn.utils.clip_grad_norm_(self.model.adapter.parameters(), max_norm=1.0)
-
-                optimizer.step()
-                train_losses.append(metrics["loss_obs"])
-
-            # --- Validation ---
-            self.model.eval()
-            val_losses = []
-            with torch.no_grad():
-                for batch in val_loader:
-                    era5_t0 = batch["era5_t0"].to(self.device)
-                    era5_t1 = batch["era5_t1"].to(self.device)
-                    dem_hr = batch["dem_hr"].to(self.device)
-                    obs_tmin = batch["obs_tmin"][0].to(self.device)
-                    obs_row = batch["obs_row"][0].to(self.device)
-                    obs_col = batch["obs_col"][0].to(self.device)
-
-                    pred = self.model(era5_t0, era5_t1, dem_hr)
-                    pred_c = pred - 273.15
-                    _, metrics = criterion(pred_c, obs_tmin, obs_row, obs_col)
-                    val_losses.append(metrics["loss_obs"])
-
-            train_rmse = np.mean(train_losses)
-            val_rmse = np.mean(val_losses)
-            history["train"].append(train_rmse)
-            history["val"].append(val_rmse)
-
-            scheduler.step()
-
-            log.info(
-                f"Epoch {epoch+1:3d}/{epochs} — "
-                f"Train RMSE: {train_rmse:.3f}°C | Val RMSE: {val_rmse:.3f}°C"
-            )
-
-            # Checkpoint si meilleure val
-            if val_rmse < history["best_val"]:
-                history["best_val"] = val_rmse
-                self._save_checkpoint(output_dir / "best_adapter.pt", epoch, val_rmse)
-
-        # Checkpoint final
-        self._save_checkpoint(output_dir / "last_adapter.pt", epochs - 1, val_rmse)
-
-        log.info(
-            f"Fine-tuning terminé. Best val RMSE: {history['best_val']:.3f}°C\n"
-            f"Checkpoint : {output_dir / 'best_adapter.pt'}"
-        )
-        return history
-
-    def _save_checkpoint(self, path: Path, epoch: int, val_rmse: float) -> None:
-        torch.save(
-            {
-                "epoch": epoch,
-                "val_rmse": val_rmse,
-                # Sauvegarder uniquement l'adapter (backbone reste sur HuggingFace)
-                "adapter": {
-                    f"adapter.{k}": v
-                    for k, v in self.model.adapter.state_dict().items()
-                },
+            warmup_epochs=self.config.get("warmup_epochs", 5),
+            max_epochs=epochs,
+            loss_weights={
+                "obs": self.config.get("lambda_obs", 1.0),
+                "tv": self.config.get("lambda_tv", 0.01),
+                "smooth": self.config.get("lambda_smooth", 0.001),
             },
-            path,
         )
+        datamodule = PrithviFinetuneDataModule(
+            finetune_dataset,
+            val_fraction=val_fraction,
+            num_workers=self.config.get("num_workers", 2),
+        )
+        trainer = pl.Trainer(
+            max_epochs=epochs,
+            accelerator=self.config.get("accelerator", "auto"),
+            devices=self.config.get("devices", 1),
+            precision=self.config.get("precision", "32-true"),
+            gradient_clip_val=1.0,  # seul l'adapter a des gradients (backbone gelé)
+            callbacks=[
+                ModelCheckpoint(
+                    dirpath=str(output_dir), filename="best_adapter",
+                    monitor="val/rmse", mode="min", save_top_k=1,
+                ),
+                EarlyStopping(
+                    monitor="val/rmse", mode="min",
+                    patience=self.config.get("patience", 10),
+                ),
+            ],
+            logger=CSVLogger(save_dir=str(output_dir), name="logs"),
+        )
+        trainer.fit(lit, datamodule=datamodule)
 
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _sparse_collate_fn(samples: list[dict]) -> dict:
-    """Collate pour batch de taille 1 avec obs sparse (longueurs variables)."""
-    batch = {
-        "era5_t0": torch.stack([s["era5_t0"] for s in samples]),
-        "era5_t1": torch.stack([s["era5_t1"] for s in samples]),
-        "dem_hr": torch.stack([s["dem_hr"] for s in samples]),
-        # obs_tmin / obs_row / obs_col : longueurs variables → liste
-        "obs_tmin": [s["obs_tmin"] for s in samples],
-        "obs_row": [s["obs_row"] for s in samples],
-        "obs_col": [s["obs_col"] for s in samples],
-        "date": [s["date"] for s in samples],
-    }
-    return batch
+        best = trainer.checkpoint_callback.best_model_score
+        best = float(best) if best is not None else None
+        log.info("Fine-tuning terminé. Best val/rmse : %s",
+                 f"{best:.3f}°C" if best is not None else "n/a")
+        return {"best_val_rmse": best}

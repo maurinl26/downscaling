@@ -1477,6 +1477,7 @@ pmap = [
 ]
 prithvi = [
     { name = "huggingface-hub" },
+    { name = "lightning" },
     { name = "safetensors" },
     { name = "torch" },
     { name = "torchvision" },
@@ -1513,6 +1514,7 @@ requires-dist = [
     { name = "jupyter", marker = "extra == 'all'", specifier = ">=1.0" },
     { name = "jupyter", marker = "extra == 'viz'", specifier = ">=1.0" },
     { name = "lightning", marker = "extra == 'dl'", specifier = ">=2.2" },
+    { name = "lightning", marker = "extra == 'prithvi'", specifier = ">=2.2" },
     { name = "matplotlib", marker = "extra == 'all'", specifier = ">=3.8" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.8" },
     { name = "netcdf4", specifier = ">=1.6" },

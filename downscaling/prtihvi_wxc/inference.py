@@ -32,9 +32,9 @@ import xarray as xr
 import yaml
 from torch.utils.data import DataLoader
 
-from downscaling.deep_learning.prithvi_wxc.loader import PrithviWxCDownscaler
-from downscaling.deep_learning.prithvi_wxc.dataset import FrostNightDataset
-from downscaling.shared.indices import spring_frost, frost_hours
+from .loader import PrithviWxCDownscaler
+from .dataset import FrostNightDataset
+from downscaling.shared.indices import spring_frost_index, frost_hours
 
 log = logging.getLogger(__name__)
 
