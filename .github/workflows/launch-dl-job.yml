@@ -2,7 +2,7 @@ name: Launch DL Job (RunPod — manuel)
 
 # Lance un job de downscaling DL sur RunPod depuis GitHub Actions.
 # Le pod démarre, exécute la commande, puis s'arrête automatiquement.
-# Suivre les logs via : python downscaling/launch_dl_job.py --status <POD_ID>
+# Suivre les logs via : uv run launch-dl-job --status <POD_ID>
 
 on:
   workflow_dispatch:
@@ -56,6 +56,7 @@ jobs:
         run: uv sync --no-dev --frozen
 
       - name: Launch DL job
+        working-directory: ./downscaling
         env:
           RUNPOD_API_KEY:       ${{ secrets.RUNPOD_API_KEY }}
           MLFLOW_TRACKING_URI:  ${{ secrets.MLFLOW_TRACKING_URI }}
@@ -77,13 +78,14 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
 
-          python downscaling/launch_dl_job.py $ARGS
+          uv run launch-dl-job $ARGS
 
       - name: List running pods
         if: github.event.inputs.dry_run == 'false'
+        working-directory: ./downscaling
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-        run: python downscaling/launch_dl_job.py --list
+        run: uv run launch-dl-job --list
 
 # ── Secrets requis (Settings → Secrets → Actions) ────────────────────────────
 #   RUNPOD_API_KEY        — RunPod API key

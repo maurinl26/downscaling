@@ -23,7 +23,7 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 | Dimension | État | Détail |
 |---|---|---|
 | Layout package | ✅ bon | `downscaling/` installable, sous-modules clairs, 0 notebook, 34 `.py` |
-| Build/deps | 🟡 mixte | `setuptools` + `[tool.uv.sources]` ; extras propres (`statistical`/`dl`/`prithvi`/`pmap`) mais build non-uv |
+| Build/deps | ✅ bon | Build piloté par uv (`uv build`, backend `setuptools`, `[tool.uv] package`) ; extras propres (`statistical`/`dl`/`prithvi`/`pmap`) ; 6 console_scripts résolus |
 | Configuration | 🔴 manque | `argparse` dans **10** fichiers + **1 YAML monolithique** (`config/drome_ardeche.yml`). Pas de Hydra/OmegaConf. Ajouter une région = copier tout le fichier |
 | Boucle d'entraînement | 🔴 manque | Boucle torch **manuelle** (`deep_learning/train.py` : SpectralLoss, warmup+cosine, early stopping, best-ckpt, tensorboard — tout réinventé). Pas de Lightning |
 | Tests | 🔴 **absent** | **Aucun** dossier `tests/`, 0 test. Produit propriétaire sans filet |
@@ -90,12 +90,20 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 > 35 tests passent. Bonus : bug QDM corrigé (terme delta de Cannon 2015 — voir
 > `quantile_mapping.py`, ajout de `_mod_ppf`) découvert en écrivant les tests.
 
-### Phase 1 — uv + packaging
+### Phase 1 — uv + packaging ✅ terminée
 - [x] Figer `uv.lock` (généré par `uv sync`). URL git `pmap` corrigée en forme
       `ssh://` (la forme SCP `git@github.com:` n'est pas parsée par uv).
-- [ ] Passer le build à uv (build-backend reste `setuptools`), garder les extras.
-- [x] `[project.scripts]` : entry points exposés (`downscaling-run`, `run-dl-train`,
-      `run-dl-inference`, `run-campaign`, `launch-dl-job`, `run-on-mac`).
+- [x] Build piloté par uv : `uv build --wheel` produit
+      `downscaling-*.whl` (build-backend `setuptools`, `[tool.uv] package = true`),
+      extras conservés. Les 6 `console_scripts` sont bien embarqués dans le wheel.
+- [x] `[project.scripts]` : les 6 entry points **résolvent réellement**. Bug
+      corrigé : `launch_dl_job.py` et `run_on_mac.py` vivaient hors package
+      (`scripts/` racine) alors que les entry points pointaient sur
+      `downscaling.scripts.*` → déplacés dans `downscaling/scripts/`.
+      `run_on_mac.main` réparé (résidus Phase 2 : `CONFIG_DEFAULT` supprimé,
+      `--config` retiré, appels recâblés sur `load_config`). Docstrings + workflow
+      `launch-dl-job.yml` basculés sur `uv run <entry-point>`. Vérifié :
+      `run-on-mac --task smoke-test` tourne de bout en bout (MPS).
 
 ### Phase 2 — Hydra (configuration) ✅ terminée
 - [x] Éclater `config/drome_ardeche.yml` en groupes : `configs/{domain,data,

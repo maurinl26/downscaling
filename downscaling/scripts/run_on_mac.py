@@ -4,11 +4,11 @@ DL inference on Mac Mini (Apple Silicon MPS).
 Suitable for: QC Netatmo, re-scoring, single-night inference, interactive testing.
 NOT suitable for: full-campaign training or Prithvi fine-tuning (use RunPod for those).
 
-Usage:
-    python downscaling/run_on_mac.py --task smoke-test
-    python downscaling/run_on_mac.py --task netatmo-qc
-    python downscaling/run_on_mac.py --task unet-inference --night 2021-04-27
-    python downscaling/run_on_mac.py --task interactive
+Usage (console entry point installé via `uv sync`) :
+    uv run run-on-mac --task smoke-test
+    uv run run-on-mac --task netatmo-qc
+    uv run run-on-mac --task unet-inference --night 2021-04-27
+    uv run run-on-mac --task interactive
 
 Device selection (automatic):
     MPS  — Apple Silicon (M1/M2/M3 Mac Mini), batch_size 1-2, ~16-32 GB unified memory
@@ -21,7 +21,9 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
+# Racine du dépôt (downscaling/scripts/run_on_mac.py → parents[2]), exposée dans
+# la session interactive. La config se charge via Hydra (downscaling.config).
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _get_device():
@@ -45,7 +47,6 @@ def smoke_test(device) -> None:
 
 def netatmo_qc(device) -> None:
     """Run Netatmo quality-control re-scoring for the full archive."""
-    sys.path.insert(0, str(ROOT / "downscaling"))
     from downscaling.config import load_config
 
     cfg = load_config()
@@ -56,7 +57,6 @@ def netatmo_qc(device) -> None:
 
 def unet_inference(night: str, device) -> None:
     """Run U-Net inference for a single night (fast, ~30s on MPS)."""
-    sys.path.insert(0, str(ROOT / "downscaling"))
     from downscaling.config import load_config
 
     cfg = load_config()
@@ -92,8 +92,6 @@ def main() -> None:
                         help="Task to run")
     parser.add_argument("--night", metavar="YYYY-MM-DD",
                         help="Target night for unet-inference")
-    parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT,
-                        metavar="PATH", help="Downscaling config YAML")
     args = parser.parse_args()
 
     device = _get_device()
@@ -101,11 +99,11 @@ def main() -> None:
     if args.task == "smoke-test":
         smoke_test(device)
     elif args.task == "netatmo-qc":
-        netatmo_qc(args.config, device)
+        netatmo_qc(device)
     elif args.task == "unet-inference":
         if not args.night:
             sys.exit("ERROR: --night YYYY-MM-DD required for unet-inference")
-        unet_inference(args.night, args.config, device)
+        unet_inference(args.night, device)
     elif args.task == "interactive":
         interactive(device)
     else:

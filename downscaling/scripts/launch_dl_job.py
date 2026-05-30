@@ -1,14 +1,14 @@
 """
 Launch DL downscaling pods on RunPod.
 
-Usage:
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --task prithvi-inference --years 2015-2021
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --task unet-train
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --task prithvi-finetune
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --list
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --list-gpus
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --stop <POD_ID>
-    RUNPOD_API_KEY=<key> python downscaling/launch_dl_job.py --status <POD_ID>
+Usage (console entry point installé via `uv sync`) :
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --task prithvi-inference --years 2015-2021
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --task unet-train
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --task prithvi-finetune
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --list
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --list-gpus
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --stop <POD_ID>
+    RUNPOD_API_KEY=<key> uv run launch-dl-job --status <POD_ID>
 
 TASK choices:
     unet-train          U-Net FiLM training on Drôme-Ardèche 2000-2021 (A100, ~2h)
@@ -239,8 +239,8 @@ def create_pod(task: str, years: str | None, ssh_key_path: str,
 
     pod_id = pod["id"]
     print(f"\nPod created  id={pod_id}")
-    print(f"Watch : python downscaling/launch_dl_job.py --status {pod_id}")
-    print(f"Stop  : python downscaling/launch_dl_job.py --stop {pod_id}")
+    print(f"Watch : uv run launch-dl-job --status {pod_id}")
+    print(f"Stop  : uv run launch-dl-job --stop {pod_id}")
 
 
 def main() -> None:
