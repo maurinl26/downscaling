@@ -25,7 +25,7 @@ from .dataset import FrostNightDataset
 # l'autre — afin que les sous-modules légers (lightning_finetune, netatmo_qc)
 # restent importables sans l'extra complet (ex. en CI).
 try:
-    from .loader import PrithviWxCDownscaler, DEMConditionedAdapter
+    from .loader import DEMConditionedAdapter, PrithviWxCDownscaler
 except ImportError:  # pragma: no cover - dépend de l'install de l'extra prithvi
     PrithviWxCDownscaler = DEMConditionedAdapter = None
 

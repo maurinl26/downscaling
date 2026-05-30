@@ -29,12 +29,12 @@ import xarray as xr
 
 try:
     import torch
-    import torch.nn.functional as F
 except ImportError as e:
     raise ImportError("PyTorch requis : pip install torch") from e
 
 from downscaling.config import load_config
-from .dataset import prepare_inference_batch, DEFAULT_MET_VARS, DEFAULT_DEM_VARS
+
+from .dataset import DEFAULT_MET_VARS, prepare_inference_batch
 from .model import build_model
 
 log = logging.getLogger(__name__)
@@ -261,8 +261,10 @@ class DLInferencePipeline:
             else:
                 da = xr.DataArray(results[0, ci], dims=["y", "x"])
 
-            if lat is not None:
-                da = da.assign_coords(lat=(["y", "x"], lat.values if lat.ndim == 2 else None))
+            if lat is not None and lat.ndim == 2:
+                da = da.assign_coords(lat=(["y", "x"], lat.values))
+            if lon is not None and lon.ndim == 2:
+                da = da.assign_coords(lon=(["y", "x"], lon.values))
             data_vars[v] = da
 
         ds_out = xr.Dataset(data_vars)

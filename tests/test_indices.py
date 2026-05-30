@@ -9,11 +9,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import xarray as xr
+from conftest import c2k, daily_series, hourly_series
 
 from downscaling.shared import indices as idx
-
-from conftest import K0, c2k, daily_series, hourly_series
-
 
 # ---------------------------------------------------------------------------
 # Gel

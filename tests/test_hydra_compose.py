@@ -7,7 +7,6 @@ filet qui empêche un override de région de casser la chaîne silencieusement.
 
 from __future__ import annotations
 
-import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 

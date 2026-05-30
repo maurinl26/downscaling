@@ -49,7 +49,7 @@ def netatmo_qc(device) -> None:
     """Run Netatmo quality-control re-scoring for the full archive."""
     from downscaling.config import load_config
 
-    cfg = load_config()
+    load_config()  # valide la composition Hydra avant le run réel
     print(f"netatmo-qc: device={device}")
     print("  → (stub) load Netatmo obs, score with U-Net, write QC flags")
     # TODO: implement with downscaling.deep_learning.inference.UNetInference
@@ -59,7 +59,7 @@ def unet_inference(night: str, device) -> None:
     """Run U-Net inference for a single night (fast, ~30s on MPS)."""
     from downscaling.config import load_config
 
-    cfg = load_config()
+    load_config()  # valide la composition Hydra avant le run réel
     print(f"unet-inference: night={night}  device={device}")
     print("  → (stub) load CERRA-Land, run U-Net FiLM, write T_min zarr")
     # TODO: implement with downscaling.deep_learning.inference.run_night()
@@ -68,6 +68,7 @@ def unet_inference(night: str, device) -> None:
 def interactive(device) -> None:
     """Drop into an interactive Python session with device ready."""
     import code
+
     import torch
 
     banner = (

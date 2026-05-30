@@ -16,7 +16,6 @@ import xarray as xr
 # Réexport pour les imports historiques `from downscaling.shared.loaders import load_config`.
 from downscaling.config import load_config  # noqa: F401
 
-
 # ---------------------------------------------------------------------------
 # ERA5 loader
 # ---------------------------------------------------------------------------
@@ -175,7 +174,6 @@ class DEMLoader:
     def _load_geotiff(self) -> xr.DataArray:
         try:
             import rasterio
-            from rasterio.transform import xy as rio_xy
         except ImportError as e:
             raise ImportError("rasterio requis pour les GeoTIFF : pip install rasterio") from e
 

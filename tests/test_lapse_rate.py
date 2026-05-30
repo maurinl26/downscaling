@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+from conftest import daily_series
 
 from downscaling.statistical.lapse_rate import (
     STANDARD_LAPSE_RATE,
@@ -13,8 +14,6 @@ from downscaling.statistical.lapse_rate import (
     MonthlyLapseRate,
     correct_surface_pressure,
 )
-
-from conftest import daily_series
 
 
 def _grid(value, ny=2, nx=2, name="z"):

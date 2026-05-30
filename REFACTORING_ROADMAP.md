@@ -178,10 +178,19 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       (snapshot monkeypatché), résolution modelstore-first + repli HF,
       `resolve_device` — sans réseau, gardés `importorskip` côté loader.
 
-### Phase 5 — Finitions
-- [ ] Ruff + mypy (config alignée sur `weather_routing`).
-- [ ] README : section « agnostique du compute » (même config, `cluster=` variable).
-- [ ] Harmoniser docstrings / supprimer code mort éventuel.
+### Phase 5 — Finitions ✅ terminée
+- [x] Ruff (`E`,`F`,`W`,`I`,`UP`,`B`) configuré + dépôt **clean** (`ruff check`
+      passe) ; per-file-ignores tests (E402). mypy configuré en **typage
+      progressif** (`check_untyped_defs=false`, informatif). CI : job `lint`
+      (Ruff bloquant, mypy non bloquant).
+- [x] README : section **Architecture** (layout, composition Hydra, entry points)
+      + **Agnostique du compute** (même config, `cluster=local/cloud`) +
+      **Bonnes pratiques & développement** (install/extras, tests `importorskip`,
+      lint/typage, conventions).
+- [x] Code mort supprimé / harmonisé : imports inutilisés, bloc `encoding` mort
+      (prithvi inference), `raise ... from`, `zip(strict=)`, `stacklevel`.
+      Bonus correctif : coordonnée `lon` manquante dans la sortie DL
+      (`deep_learning/inference.py`).
 
 ---
 

@@ -12,7 +12,6 @@ import pytest
 
 from downscaling.scripts import fetch_pretrained as fp
 
-
 # ---------------------------------------------------------------------------
 # fetch_pretrained : plan / manifeste
 # ---------------------------------------------------------------------------

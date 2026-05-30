@@ -19,11 +19,9 @@ Classes
 from __future__ import annotations
 
 import warnings
-from typing import Sequence
 
 import numpy as np
 import xarray as xr
-
 
 #: Lapse-rate standard ICAO (K m⁻¹) — valeur négative = refroidissement en altitude
 STANDARD_LAPSE_RATE = -6.5e-3  # K/m
@@ -145,7 +143,10 @@ class MonthlyLapseRate:
         for m in range(n_months):
             mask = np.isfinite(self.T[m])
             if mask.sum() < 3:
-                warnings.warn(f"Mois {m + 1}: moins de 3 stations valides, γ standard utilisé.")
+                warnings.warn(
+                    f"Mois {m + 1}: moins de 3 stations valides, γ standard utilisé.",
+                    stacklevel=2,
+                )
                 gamma[m] = STANDARD_LAPSE_RATE
                 continue
             slope, intercept, r, p, se = linregress(self.z[mask], self.T[m][mask])
@@ -154,7 +155,8 @@ class MonthlyLapseRate:
             if r2[m] < 0.5:
                 warnings.warn(
                     f"Mois {m + 1}: R²={r2[m]:.2f} faible pour la régression T–z "
-                    f"(N={mask.sum()} stations)."
+                    f"(N={mask.sum()} stations).",
+                    stacklevel=2,
                 )
 
         self.gamma_ = gamma

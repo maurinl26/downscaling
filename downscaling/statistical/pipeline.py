@@ -21,8 +21,8 @@ import numpy as np
 import xarray as xr
 
 from ..shared.loaders import DEMLoader, regrid_to_dem
-from .lapse_rate import LapseRateCorrector, correct_surface_pressure, STANDARD_LAPSE_RATE
-from .quantile_mapping import QuantileDeltaMapping, EmpiricalQuantileMapping
+from .lapse_rate import STANDARD_LAPSE_RATE, LapseRateCorrector, correct_surface_pressure
+from .quantile_mapping import EmpiricalQuantileMapping, QuantileDeltaMapping
 
 log = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ class StatisticalDownscalingPipeline:
         self,
         modeled_ref: xr.Dataset,
         observed_ref: xr.Dataset,
-    ) -> "StatisticalDownscalingPipeline":
+    ) -> StatisticalDownscalingPipeline:
         """
         Calibre les correcteurs QDM sur une période de référence.
 
@@ -214,7 +214,7 @@ class StatisticalDownscalingPipeline:
                 return da.rename("orog_source")
         # Si absente : zéro (pas de correction d'altitude source)
         import warnings
-        warnings.warn("Orographie source absente : on assume z_source=0 m.")
+        warnings.warn("Orographie source absente : on assume z_source=0 m.", stacklevel=2)
         lat = ds.coords.get("latitude", ds.coords.get("lat"))
         lon = ds.coords.get("longitude", ds.coords.get("lon"))
         return xr.DataArray(

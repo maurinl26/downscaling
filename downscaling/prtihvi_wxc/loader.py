@@ -177,7 +177,7 @@ class PrithviWxCDownscaler(nn.Module):
         use_granite_downscaling: bool = True,
         scale_factor: int = 6,
         device: str = "auto",
-    ) -> "PrithviWxCDownscaler":
+    ) -> PrithviWxCDownscaler:
         """
         Charge le modèle depuis ``modelstore/`` (ou HuggingFace en repli).
 
@@ -192,11 +192,11 @@ class PrithviWxCDownscaler(nn.Module):
         device = resolve_device(device)
         try:
             from PrithviWxC.model import PrithviWxC  # type: ignore
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "Installer le package Prithvi WxC :\n"
                 "  pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'"
-            )
+            ) from e
 
         print(f"[PrithviWxC] Chargement backbone depuis {PRITHVI_WXC_REPO} ...")
 

@@ -23,7 +23,6 @@ import torch
 import xarray as xr
 from torch.utils.data import Dataset
 
-
 # ---------------------------------------------------------------------------
 # Fenêtre spatiale Drôme / Ardèche
 # ---------------------------------------------------------------------------
@@ -183,9 +182,8 @@ class FrostNightDataset(Dataset):
         """
         try:
             import rasterio  # type: ignore
-            from rasterio.warp import reproject, Resampling  # type: ignore
-        except ImportError:
-            raise ImportError("pip install rasterio")
+        except ImportError as e:
+            raise ImportError("pip install rasterio") from e
 
         with rasterio.open(str(self.dem_path)) as src:
             elevation = src.read(1).astype(np.float32)

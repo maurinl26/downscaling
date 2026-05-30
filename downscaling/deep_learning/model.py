@@ -42,7 +42,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 # ---------------------------------------------------------------------------
 # Briques de base
 # ---------------------------------------------------------------------------
@@ -241,7 +240,7 @@ class DownscalingUNet(nn.Module):
             dem_channels = [base_ch // 2 * (2 ** i) for i in range(n_levels)]
             self.film_layers = nn.ModuleList([
                 FiLMLayer(dem_ch, met_ch)
-                for dem_ch, met_ch in zip(dem_channels, self.enc_channels)
+                for dem_ch, met_ch in zip(dem_channels, self.enc_channels, strict=False)
             ])
 
         # ---- Décodeur météo (upsampling + skip connections) ---------------
@@ -280,7 +279,7 @@ class DownscalingUNet(nn.Module):
         # ---- Encodage météo -----------------------------------------------
         enc_feats = []
         x = x_met
-        for i, (enc, dem_f) in enumerate(zip(self.met_encoders, dem_feats)):
+        for i, (enc, dem_f) in enumerate(zip(self.met_encoders, dem_feats, strict=False)):
             x = enc(x)
             if self.use_film:
                 x = self.film_layers[i](x, dem_f)
@@ -290,7 +289,7 @@ class DownscalingUNet(nn.Module):
 
         # ---- Décodage avec skip connections --------------------------------
         x = enc_feats[-1]
-        for i, (up, dec) in enumerate(zip(self.up_convs, self.met_decoders)):
+        for i, (up, dec) in enumerate(zip(self.up_convs, self.met_decoders, strict=False)):
             x = up(x)
             skip = enc_feats[self.n_levels - 2 - i]
             # Ajustement de taille si nécessaire (padding)

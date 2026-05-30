@@ -29,16 +29,15 @@ import math
 import os
 from pathlib import Path
 
-import numpy as np
-
 try:
+    import lightning.pytorch as pl
     import torch
     import torch.nn as nn
-    import lightning.pytorch as pl
 except ImportError as e:
     raise ImportError("PyTorch + Lightning requis : pip install 'downscaling[dl]'") from e
 
 from downscaling.config import load_config
+
 from .dataset import DownscalingDataset
 from .model import build_model
 

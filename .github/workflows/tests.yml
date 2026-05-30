@@ -38,3 +38,25 @@ jobs:
 
       - name: Run pytest
         run: uv run pytest
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync dependencies (dev tools)
+        run: uv sync --extra statistical
+
+      # Ruff = garde bloquante (le dépôt doit rester clean).
+      - name: Ruff
+        run: uv run ruff check downscaling tests
+
+      # mypy = informatif (typage progressif, cf. [tool.mypy]) — non bloquant.
+      - name: mypy (informatif)
+        run: uv run mypy downscaling || true

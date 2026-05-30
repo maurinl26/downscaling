@@ -38,8 +38,7 @@ from pathlib import Path
 # Ajouter la racine du projet au PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from downscaling.prtihvi_wxc import FrostReanalysisRunner, FrostNightDataset, load_config
-
+from downscaling.prtihvi_wxc import FrostNightDataset, FrostReanalysisRunner, load_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -153,7 +152,7 @@ def main() -> None:
     pct     = 100 * n_frost / n_total if n_total > 0 else 0.0
 
     log.info("=" * 60)
-    log.info(f"Réanalyse terminée.")
+    log.info("Réanalyse terminée.")
     log.info(f"  Nuits de gel détectées : {n_frost}/{n_total} ({pct:.1f}%)")
     log.info(f"  Zarr écrit : {zarr_out}")
     log.info(

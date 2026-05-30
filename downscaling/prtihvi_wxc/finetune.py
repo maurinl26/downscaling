@@ -36,12 +36,13 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .loader import PrithviWxCDownscaler
-from .dataset import FrostNightDataset, ERA5_VARS
-from .netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
+from .dataset import FrostNightDataset
+
 # Loss sparse + collate vivent désormais dans lightning_finetune (source unique).
 # Réexport pour compat des imports historiques.
-from .lightning_finetune import SparseSupervisedLoss, sparse_collate_fn
+from .lightning_finetune import SparseSupervisedLoss, sparse_collate_fn  # noqa: F401
+from .loader import PrithviWxCDownscaler
+from .netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
 
 # Alias historique (l'ancien nom était préfixé _).
 _sparse_collate_fn = sparse_collate_fn

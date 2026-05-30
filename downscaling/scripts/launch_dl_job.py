@@ -83,8 +83,8 @@ def get_pub_key(path: str) -> str:
 
 
 def get_volume_id(api_key: str) -> str:
-    from runpod.api.graphql import run_graphql_query
     import runpod
+    from runpod.api.graphql import run_graphql_query
     runpod.api_key = api_key
     result = run_graphql_query(
         "{ myself { networkVolumes { id name size dataCenter { id } } } }"

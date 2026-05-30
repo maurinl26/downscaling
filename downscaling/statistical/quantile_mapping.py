@@ -63,7 +63,7 @@ class EmpiricalQuantileMapping:
         self._transfer: dict[int, interp1d] = {}  # clé = mois (1-12) ou 0 = global
 
     # ------------------------------------------------------------------
-    def fit(self, modeled: xr.DataArray, observed: xr.DataArray) -> "EmpiricalQuantileMapping":
+    def fit(self, modeled: xr.DataArray, observed: xr.DataArray) -> EmpiricalQuantileMapping:
         """
         Calibre la fonction de transfert.
 
@@ -182,7 +182,7 @@ class QuantileDeltaMapping:
     # ------------------------------------------------------------------
     def fit(
         self, modeled_ref: xr.DataArray, observed_ref: xr.DataArray
-    ) -> "QuantileDeltaMapping":
+    ) -> QuantileDeltaMapping:
         """
         Calibre les distributions de référence.
 

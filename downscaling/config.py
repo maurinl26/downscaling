@@ -13,7 +13,8 @@ Les overrides Hydra se passent en liste, p. ex. ::
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf

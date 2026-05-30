@@ -13,8 +13,8 @@ paramètres du modèle.
 
 from __future__ import annotations
 
-import torch
 import lightning.pytorch as pl
+import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 
 # Réutilise loss composite / métriques / scheduler — source unique de vérité.

@@ -111,6 +111,26 @@ include = ["downscaling*"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# pyflakes (F) + pycodestyle (E/W) + isort (I) + pyupgrade (UP) + bugbear (B).
+select = ["E", "F", "W", "I", "UP", "B"]
+# E501 (longueur) géré par le formateur ; B008 (appel par défaut) fréquent et sûr ici.
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Les tests DL importent après `pytest.importorskip(...)` (E402 attendu).
+"tests/*" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true     # stack scientifique partiellement typée (xarray, rasterio…)
+warn_redundant_casts = true
+# Typage progressif : on ne vérifie que les fonctions déjà annotées (les corps
+# non typés du code numpy/torch ne sont pas encore couverts). À durcir au fil de
+# l'eau (check_untyped_defs, puis disallow_untyped_defs par module).
+check_untyped_defs = false
+exclude = ["tests/", "build/", "dist/"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=. --cov-report=term-missing"
@@ -146,7 +166,8 @@ addopts = "--cov=. --cov-report=term-missing"
 # Sur RunPod (image pytorch:2.x-cuda12.x) :
 #   uv sync --extra prithvi --extra pmap --system
 #
-# Le modèle Prithvi WxC (~9 GB) est téléchargé automatiquement depuis HuggingFace
-# lors du premier appel à PrithviWxCDownscaler.from_pretrained().
-# Pour pré-télécharger sur volume RunPod :
-#   huggingface-cli download Prithvi-WxC/prithvi.wxc.2300m.v1 --local-dir ./hf_cache
+# Le modèle Prithvi WxC (~9 GB) est cherché dans modelstore/ puis téléchargé
+# depuis HuggingFace au premier appel à PrithviWxCDownscaler.from_pretrained().
+# Pour pré-télécharger (volume RunPod, CI hors-ligne) :
+#   fetch-pretrained                      # → modelstore/
+#   DOWNSCALING_MODELSTORE=/workspace/models fetch-pretrained

@@ -16,7 +16,6 @@ from omegaconf import OmegaConf, open_dict
 from downscaling.paths import CONFIG_DIR
 from downscaling.scripts import run_downscaling as rd
 
-
 # ---------------------------------------------------------------------------
 # Helpers purs
 # ---------------------------------------------------------------------------

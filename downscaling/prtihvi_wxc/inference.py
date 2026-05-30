@@ -32,9 +32,8 @@ import xarray as xr
 import yaml
 from torch.utils.data import DataLoader
 
-from .loader import PrithviWxCDownscaler
 from .dataset import FrostNightDataset
-from downscaling.shared.indices import spring_frost_index, frost_hours
+from .loader import PrithviWxCDownscaler
 
 log = logging.getLogger(__name__)
 
@@ -179,7 +178,7 @@ class FrostReanalysisRunner:
         current_t1 = era5_t1
 
         with torch.no_grad():
-            for step in range(n_steps):
+            for _step in range(n_steps):
                 # Prédiction haute résolution
                 t2m_pred = model(current_t0, current_t1, dem_hr)  # (1,1,H,W)
                 predictions.append(t2m_pred.squeeze(0).squeeze(0))  # (H,W)
@@ -274,12 +273,8 @@ class FrostReanalysisRunner:
             },
         )
 
-        # Écriture Zarr avec chunks compatibles DuckDB
+        # Écriture Zarr avec chunks compatibles DuckDB (appliqués par `.chunk` ci-dessous).
         chunks = self.config["output_chunks"]
-        encoding = {
-            "T2m_min_night": {"chunks": (chunks["time"], chunks["lat"], chunks["lon"])},
-            "frost_flag": {"chunks": (chunks["time"], chunks["lat"], chunks["lon"])},
-        }
 
         log.info(f"Écriture Zarr → {output_zarr}")
         ds_out.chunk(chunks).to_zarr(str(output_zarr), mode="w")

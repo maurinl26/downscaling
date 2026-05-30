@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import math
 
+import lightning.pytorch as pl
 import torch
 import torch.nn as nn
-import lightning.pytorch as pl
 from torch.utils.data import DataLoader, Dataset, random_split
 
 KELVIN = 273.15
