@@ -163,10 +163,20 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       (`downscaling.deep_learning.prithvi_wxc` → relatifs ; `spring_frost` →
       `spring_frost_index`) ; `__init__` tolérant à l'absence de l'extra `prithvi`.
 
-### Phase 4 — Checkpoints Prithvi WxC (`modelstore/`)
-- [ ] `scripts/fetch_pretrained.py` : récupère les poids Prithvi WxC (HF) dans une
-      arbo locale `modelstore/` ; `.gitignore`.
-- [ ] Loader tolérant à l'absence (patchable en CI), gère device CPU→accelerator.
+### Phase 4 — Checkpoints Prithvi WxC (`modelstore/`) ✅ terminée
+- [x] `fetch_pretrained.py` (entry point `fetch-pretrained`) : `snapshot_download`
+      des poids Prithvi WxC + adapter Granite (et annexes : config, scalers,
+      climatologie) dans `modelstore/` (cf. `downscaling.paths.MODELSTORE`,
+      surchargeable par `DOWNSCALING_MODELSTORE`). Manifeste éditable, `--list`
+      (dry-run sans réseau), `--only <key>`, idempotent. `modelstore/` gitignored.
+- [x] Loader tolérant à l'absence : `resolve_artifact` cherche `modelstore/`
+      d'abord puis retombe sur HuggingFace (tourne hors-ligne une fois
+      `fetch-pretrained` passé). `resolve_device("auto")` → cuda/mps/cpu.
+      `from_pretrained(device="auto")`. Le chargement Granite reste tolérant
+      (try/except) — adapter aléatoire si indispo.
+- [x] Tests `tests/test_modelstore.py` (9) : manifeste/plan/`fetch_one`
+      (snapshot monkeypatché), résolution modelstore-first + repli HF,
+      `resolve_device` — sans réseau, gardés `importorskip` côté loader.
 
 ### Phase 5 — Finitions
 - [ ] Ruff + mypy (config alignée sur `weather_routing`).

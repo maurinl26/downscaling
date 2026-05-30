@@ -86,6 +86,7 @@ dev = [
 
 [project.scripts]
 downscaling-run      = "downscaling.scripts.run_downscaling:main"
+fetch-pretrained     = "downscaling.scripts.fetch_pretrained:main"
 run-dl-train         = "downscaling.scripts.run_dl_train:main"
 run-dl-inference     = "downscaling.scripts.run_dl_inference:main"
 run-campaign         = "downscaling.scripts.run_campaign:main"

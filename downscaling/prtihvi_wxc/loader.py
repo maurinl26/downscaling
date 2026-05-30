@@ -16,12 +16,46 @@ import torch
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
 
+from downscaling.paths import MODELSTORE
+
 # ---------------------------------------------------------------------------
 # Identifiants HuggingFace
 # ---------------------------------------------------------------------------
 PRITHVI_WXC_REPO = "Prithvi-WxC/prithvi.wxc.2300m.v1"
 # Version fine-tunée downscaling IBM Granite (×12 resolution enhancement)
 GRANITE_DOWNSCALING_REPO = "ibm-granite/granite-geospatial-wxc-downscaling"
+
+# Sous-dossiers de modelstore/ alimentés par `fetch-pretrained` (cf.
+# downscaling.scripts.fetch_pretrained.MANIFEST).
+_MODELSTORE_DIRS = {
+    PRITHVI_WXC_REPO: "prithvi-wxc-2300m",
+    GRANITE_DOWNSCALING_REPO: "granite-downscaling",
+}
+
+
+def resolve_device(device: str = "auto") -> str:
+    """Résout ``"auto"`` vers cuda / mps / cpu selon le matériel disponible."""
+    if device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def resolve_artifact(repo_id: str, filename: str) -> str:
+    """Chemin local d'un poids : ``modelstore/`` d'abord, sinon cache HF.
+
+    Permet de tourner hors-ligne (CI, RunPod sans réseau) dès lors que
+    ``fetch-pretrained`` a peuplé ``modelstore/``. À défaut, retombe sur le
+    téléchargement HuggingFace classique.
+    """
+    subdir = _MODELSTORE_DIRS.get(repo_id, repo_id.replace("/", "_"))
+    local = MODELSTORE / subdir / filename
+    if local.exists():
+        return str(local)
+    return hf_hub_download(repo_id=repo_id, filename=filename)
 
 # Variables MERRA-2 utilisées par Prithvi WxC (sous-ensemble pertinent gel)
 # Ordre exact attendu par le modèle en entrée
@@ -142,10 +176,10 @@ class PrithviWxCDownscaler(nn.Module):
         checkpoint_path: str | Path | None = None,
         use_granite_downscaling: bool = True,
         scale_factor: int = 6,
-        device: str = "cpu",
+        device: str = "auto",
     ) -> "PrithviWxCDownscaler":
         """
-        Charge le modèle depuis HuggingFace ou un checkpoint local.
+        Charge le modèle depuis ``modelstore/`` (ou HuggingFace en repli).
 
         Args:
             checkpoint_path: Chemin vers un checkpoint local fine-tuné.
@@ -153,8 +187,9 @@ class PrithviWxCDownscaler(nn.Module):
             use_granite_downscaling: Utilise le modèle IBM Granite fine-tuné
                                      pour downscaling (recommandé sans fine-tuning).
             scale_factor: Facteur d'upscaling spatial.
-            device: "cuda", "cpu", ou "cuda:0".
+            device: "cuda", "cpu", "mps", "cuda:0", ou "auto" (détection matériel).
         """
+        device = resolve_device(device)
         try:
             from PrithviWxC.model import PrithviWxC  # type: ignore
         except ImportError:
@@ -237,10 +272,7 @@ def _load_granite_adapter(model: PrithviWxCDownscaler, device: str) -> None:
     Tente de charger les poids de l'adapter IBM Granite downscaling.
     L'architecture exacte peut différer — adaptation automatique par clé.
     """
-    weights_path = hf_hub_download(
-        repo_id=GRANITE_DOWNSCALING_REPO,
-        filename="model.safetensors",
-    )
+    weights_path = resolve_artifact(GRANITE_DOWNSCALING_REPO, "model.safetensors")
     import safetensors.torch as sf  # type: ignore
 
     state = sf.load_file(weights_path, device=device)

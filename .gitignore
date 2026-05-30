@@ -15,3 +15,6 @@ coverage.xml
 
 # Environnements virtuels
 .venv/
+
+# Poids pré-entraînés (Prithvi WxC, Granite) — peuplés par `fetch-pretrained`
+modelstore/
