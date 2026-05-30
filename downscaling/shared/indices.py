@@ -170,30 +170,42 @@ def heatwave_index(
     """
     Durée cumulée des vagues de chaleur (séquences de N jours consécutifs Tmax > seuil).
 
-    Retourne le nombre de jours en vague de chaleur par période `freq`.
+    Retourne le nombre de jours en vague de chaleur par période `freq` :
+    *tous* les jours appartenant à une séquence d'au moins ``min_consecutive_days``
+    jours consécutifs au-dessus du seuil sont comptés (une vague de 7 jours
+    compte 7, pas 7−N+1).
     """
     tmax_c = tmax - _K0
     hot = (tmax_c > threshold_c).astype(int)
 
-    # Fenêtre glissante : au moins N jours consécutifs au-dessus du seuil
-    # On utilise une convolution pour détecter les séquences
-    from scipy.ndimage import uniform_filter1d
-
-    hot_np = hot.values  # shape (time, ...)
-    # Moyenne glissante sur N jours ≥ 1 si tous les jours du bloc sont chauds
-    kernel = np.ones(min_consecutive_days) / min_consecutive_days
-    # Appliquer sur l'axe temporel
-    conv = np.apply_along_axis(
-        lambda x: np.convolve(x, kernel, mode="same"),
-        axis=0,
-        arr=hot_np.astype(float),
-    )
-    in_wave = xr.DataArray(
-        (conv >= 1.0 - 1e-6).astype(int),
-        dims=hot.dims,
-        coords=hot.coords,
-    )
+    in_wave = _in_long_run_mask_along_axis0(hot.values, min_consecutive_days)
+    in_wave = xr.DataArray(in_wave.astype(int), dims=hot.dims, coords=hot.coords)
     return in_wave.resample(time=freq).sum().rename("heatwave_days")
+
+
+def _in_long_run_mask_along_axis0(arr: np.ndarray, min_len: int) -> np.ndarray:
+    """Masque des positions appartenant à une séquence de ≥ ``min_len`` 1 consécutifs (axe 0).
+
+    À l'inverse d'une convolution glissante (qui ne retient que les fenêtres
+    centrées entièrement chaudes et perd N−1 jours par vague), chaque jour d'un
+    run de longueur L ≥ min_len est marqué.
+    """
+    n_t = arr.shape[0]
+    # run[t] = longueur du run de 1 se terminant à t.
+    run = np.zeros_like(arr, dtype=np.int32)
+    current = np.zeros(arr.shape[1:], dtype=np.int32)
+    for t in range(n_t):
+        current = np.where(arr[t] == 1, current + 1, 0)
+        run[t] = current
+
+    # Passe arrière : propage la longueur totale du run à tous ses jours.
+    mask = np.zeros(arr.shape, dtype=bool)
+    final = np.zeros(arr.shape[1:], dtype=np.int32)
+    for t in range(n_t - 1, -1, -1):
+        is_run_end = (arr[t] == 1) & ((t == n_t - 1) | (arr[min(t + 1, n_t - 1)] == 0))
+        final = np.where(is_run_end, run[t], np.where(arr[t] == 1, final, 0))
+        mask[t] = final >= min_len
+    return mask
 
 
 # ---------------------------------------------------------------------------

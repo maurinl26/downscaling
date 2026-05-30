@@ -94,8 +94,16 @@ def test_heatwave_index_detects_long_wave():
     vals = [20.0, 20.0] + [38.0] * 7 + [20.0]
     tmax = daily_series(c2k(vals), name="tmax")
     out = idx.heatwave_index(tmax, threshold_c=35.0, min_consecutive_days=3, freq="YS")
-    # Les jours intérieurs de la vague (au moins 5) sont détectés
-    assert int(out.sum()) >= 5
+    # Tous les jours de la vague sont comptés, pas seulement les fenêtres centrées.
+    assert int(out.sum()) == 7
+
+
+def test_heatwave_index_short_run_below_threshold():
+    # Une séquence de 2 jours chauds (< N=3) ne compte pas ; une de 3 compte 3.
+    vals = [38.0, 38.0, 20.0, 38.0, 38.0, 38.0, 20.0]
+    tmax = daily_series(c2k(vals), name="tmax")
+    out = idx.heatwave_index(tmax, threshold_c=35.0, min_consecutive_days=3, freq="YS")
+    assert int(out.sum()) == 3
 
 
 # ---------------------------------------------------------------------------

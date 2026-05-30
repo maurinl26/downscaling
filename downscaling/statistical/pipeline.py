@@ -142,9 +142,9 @@ class StatisticalDownscalingPipeline:
                 output_vars[comp] = w_fine
 
         # --- Pression de surface ---
-        if "sp" in source and "sp" in (variables or []):
+        if "sp" in source and "sp" in variables:
             sp_fine = self._regrid(source["sp"], dem)
-            z_coarse_fine = output_vars.get("_z_coarse_fine") or self._regrid(z_coarse, dem)
+            z_coarse_fine = self._regrid(z_coarse, dem)
             sp_fine = correct_surface_pressure(sp_fine, z_coarse_fine, dem)
             output_vars["sp"] = sp_fine
 
