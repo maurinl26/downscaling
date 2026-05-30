@@ -1,0 +1,5 @@
+# Compute local (Mac MPS / CPU). MPS n'aime pas bf16 partout → 32-true.
+accelerator: auto
+devices: 1
+precision: 32-true
+num_workers: 0

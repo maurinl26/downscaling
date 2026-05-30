@@ -1,0 +1,5 @@
+# Compute cloud (RunPod, GPU A100/L4).
+accelerator: gpu
+devices: 1
+precision: bf16-mixed
+num_workers: 8

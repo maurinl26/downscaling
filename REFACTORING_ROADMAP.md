@@ -96,14 +96,21 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 - [ ] Passer le build à uv (build-backend reste `setuptools`), garder les extras.
 - [ ] `[project.scripts]` : exposer les entry points (prépare la Phase 2).
 
-### Phase 2 — Hydra (configuration)
-- [ ] Éclater `config/drome_ardeche.yml` en groupes : `domain/`, `data/`,
-      `statistical/`, `dl/`, `prithvi/`, `cluster/`.
-- [ ] `drome_ardeche` devient `experiment=drome_ardeche` ; nouvelle région = un
-      petit fichier d'override, plus une copie intégrale.
-- [ ] Helper `CONFIG_DIR` absolu (cf. `paths.py`) pour fiabiliser les entry points.
-- [ ] Remplacer les `argparse` + `yaml.safe_load` par `@hydra.main`.
-- [ ] Test `test_hydra_compose` : chaque `experiment=` compose et s'instancie.
+### Phase 2 — Hydra (configuration) 🟡 en cours
+- [x] Éclater `config/drome_ardeche.yml` en groupes : `configs/{domain,data,
+      statistical,dl,indices,cluster}/` + `experiment/`.
+- [x] `drome_ardeche` devient `experiment=drome_ardeche` (pattern experiment
+      `# @package _global_`) ; nouvelle région = `experiment/<region>.yaml`
+      + `domain/<region>.yaml` + `data/<region>.yaml`, plus de copie intégrale.
+- [x] Helper `CONFIG_DIR` absolu (`downscaling/paths.py`) pour fiabiliser
+      l'entry point console (sinon Hydra cherche un module `configs`).
+- [x] Entry point Hydra `downscaling-run` (`scripts/run_downscaling.py`) pilotant
+      le pipeline statistique via `@hydra.main`. `hydra-core` ajouté aux deps.
+- [x] Test `test_hydra_compose` : config racine + `experiment=` composent,
+      overrides `cluster=` et dotlist atteignent les feuilles (5 tests).
+- [ ] Migrer les `argparse` restants (`pipeline.py`, scripts DL/Prithvi) vers
+      l'entry point Hydra ; retirer le monolithe `config/drome_ardeche.yml` et
+      `run_statistical_downscaling.py` une fois les deploys basculés.
 
 ### Phase 3 — Lightning (entraînement DL)
 - [ ] `LightningModule` enveloppant le U-Net FiLM (`build_model`) ; migrer

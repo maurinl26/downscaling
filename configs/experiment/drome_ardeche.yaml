@@ -1,0 +1,16 @@
+# @package _global_
+# Expérience Drôme-Ardèche — gel printanier, nuit du 27-28 avril 2021.
+#
+# Pattern « experiment » Hydra : ce fichier sélectionne les groupes de la région
+# et porte les overrides du run. Repackagé en _global_ pour piloter la config
+# entière depuis `experiment=drome_ardeche`.
+defaults:
+  - /domain: drome_ardeche
+  - /data: drome_ardeche
+  - /statistical: default
+  - /dl: unet
+  - /indices: default
+
+run:
+  date: "20210427"
+  compute_indices: true

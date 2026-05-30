@@ -1,0 +1,20 @@
+# Config racine Hydra — descente d'échelle ERA5/CERRA → 1 km.
+#
+# La sélection de région passe par le groupe `experiment` : chaque expérience
+# choisit son `domain` et ses `data`, et porte les overrides spécifiques au run.
+# Ajouter une région = un petit fichier `experiment/<region>.yaml` (+ domain/data),
+# pas une copie intégrale de la config.
+#
+#   downscaling-run experiment=drome_ardeche cluster=cloud
+#
+defaults:
+  - _self_
+  - experiment: drome_ardeche
+  - cluster: local
+
+# Paramètres de run (surchargés par l'experiment).
+run:
+  date: ""
+  out: null
+  compute_indices: false
+  verbose: false

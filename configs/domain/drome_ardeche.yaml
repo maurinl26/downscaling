@@ -1,0 +1,8 @@
+# Domaine géographique Drôme-Ardèche (grille fine ~1 km).
+lat_min: 44.0
+lat_max: 45.5
+lon_min: 4.0
+lon_max: 5.5
+nx: 118
+ny: 167
+resolution_km: 1.0

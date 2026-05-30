@@ -1,0 +1,52 @@
+# Descente d'échelle par deep learning — U-Net FiLM.
+architecture: unet    # 'unet' ou 'srcnn' (plus léger)
+use_film: true        # FiLM conditioning par le MNT
+
+# Canaux d'entrée météo.
+met_vars:
+  - t2m
+  - tp
+  - u10
+  - v10
+  - sp
+met_in_ch: 5
+
+# Attributs MNT en entrée.
+dem_vars:
+  - elevation
+  - slope
+  - aspect
+  - curvature
+dem_in_ch: 4
+dem_attributes_file: dem_attributes.nc
+
+# Architecture U-Net.
+base_ch: 64
+n_levels: 4
+
+# Tuilage spatial (domaine 118×167 km → tuiles de 64×64).
+patch_size: 64
+overlap: 16
+
+# Entraînement.
+epochs: 150
+batch_size: 8
+learning_rate: 1.0e-4
+weight_decay: 1.0e-4
+patience: 20           # early stopping
+
+# Loss composite.
+loss_weights:
+  mse: 1.0
+  spectral: 0.1        # préserve les hautes fréquences spatiales
+  gradient: 0.05       # préserve les gradients (contours relief)
+
+# Checkpoints.
+checkpoint_dir: checkpoints/drome_ardeche/
+stats_file: checkpoints/drome_ardeche/normalization_stats.json
+
+output:
+  file: output/dl_downscaled_{date}.nc
+  compression:
+    zlib: true
+    complevel: 4

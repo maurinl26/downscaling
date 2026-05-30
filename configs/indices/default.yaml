@@ -1,0 +1,19 @@
+# Indices d'assurance paramétrique.
+aggregation_freq: YS   # 'YS' = annuel, 'MS' = mensuel, 'QS' = trimestriel
+unit_tp: m             # unité des précipitations dans ERA5 (m → converti en mm)
+
+frost:
+  threshold_c: 0.0
+  spring_frost_gdd_threshold: 50.0   # GDD débourrement vigne Eichhorn-Lorenz B
+  spring_frost_temp_c: -2.0
+
+precipitation:
+  extreme_threshold_mm: 20.0
+  dry_spell_threshold_mm: 1.0
+
+wind:
+  storm_threshold_ms: 15.0           # Beaufort 7
+
+gdd:
+  base_c: 10.0
+  cap_c: 30.0
