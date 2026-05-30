@@ -134,9 +134,6 @@ def step_stat_downscaling(cfg: dict, source: str, year_start: int, month_start: 
         return None
 
     # Config via Hydra (configs/) — plus de monolithe --config.
-    # NOTE : la concaténation multi-fichiers d'une saison (`files`) n'est pas
-    # encore câblée côté entry point ; on traite le premier fichier. Voir l'issue
-    # de migration Hydra pour le support multi-fichiers.
     if "land" in source:
         cmd = [
             sys.executable, "downscaling/scripts/run_era5land_downscaling.py",
@@ -145,9 +142,12 @@ def step_stat_downscaling(cfg: dict, source: str, year_start: int, month_start: 
             "--out-dir",      str(out_file.parent),
         ]
     else:
+        # Liste Hydra : tous les mensuels de la saison sont concaténés
+        # temporellement par l'entry point (cf. run_downscaling._source_list).
+        file_list = "[" + ",".join(str(f) for f in files) + "]"
         cmd = [
             "downscaling-run",
-            f"data.era5_sl={files[0]}",
+            f"data.era5_sl={file_list}",
             f"data.dem_raw={cfg['data']['dem']['raw']}",
             f"run.out={out_file}",
             "run.compute_indices=true",
