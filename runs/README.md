@@ -68,18 +68,16 @@ runs/
 ### Étape 1 — Production opérationnelle (stat ou DL)
 
 ```bash
-# Descente statistique sur tout avril 2021
-uv run scripts/run_statistical_downscaling.py \
-    --config  config/drome_ardeche.yml \
-    --era5-sl data/era5/era5_sl_april2021.nc \
-    --dem     data/dem/copdem_drome_100m.tif \
-    --date    april2021 \
-    --compute-indices \
-    --out     output/stat/stat_downscaled_april2021.nc
+# Descente statistique sur tout avril 2021 (config composée par Hydra)
+uv run downscaling-run \
+    data.era5_sl=data/era5/era5_sl_april2021.nc \
+    data.dem_raw=data/dem/copdem_drome_100m.tif \
+    run.date=april2021 \
+    run.compute_indices=true \
+    run.out=output/stat/stat_downscaled_april2021.nc
 
 # OU descente DL (si modèle entraîné)
 uv run scripts/run_dl_inference.py \
-    --config     config/drome_ardeche.yml \
     --checkpoint checkpoints/drome_ardeche/best_model.pt \
     --era5-sl    data/era5/era5_sl_april2021.nc \
     --dem-attrs  data/dem/dem_attributes.nc \

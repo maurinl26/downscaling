@@ -16,7 +16,6 @@ Inférence DL : applique le modèle entraîné sur ERA5/CERRA → champs 1 km.
 Exemple
 -------
     python scripts/run_dl_inference.py \
-        --config     config/drome_ardeche.yml \
         --checkpoint checkpoints/drome_ardeche/best_model.pt \
         --era5-sl    data/era5/era5_sl_20210427.nc \
         --dem-attrs  data/dem/dem_attributes.nc \
@@ -32,16 +31,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import yaml
 import xarray as xr
 
+from downscaling.config import load_config
 from downscaling.deep_learning.inference import DLInferencePipeline
 from downscaling.shared.indices import compute_all_indices
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--config", default="config/drome_ardeche.yml")
+    p.add_argument("--override", nargs="*", default=[],
+                   help="Overrides Hydra (ex: dl.patch_size=128 indices.unit_tp=mm)")
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--era5-sl", required=True)
     p.add_argument("--dem-attrs", required=True)
@@ -61,8 +61,7 @@ def main():
     )
     log = logging.getLogger(__name__)
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.override)
 
     pipeline = DLInferencePipeline(
         checkpoint_path=args.checkpoint,

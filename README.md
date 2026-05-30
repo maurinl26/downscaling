@@ -34,10 +34,11 @@ downscaling/
 │   ├── model.py         # U-Net conditionné par le MNT (FiLM layers)
 │   ├── train.py         # Boucle d'entraînement
 │   └── inference.py     # Inférence sur nouvelles données
-├── config/
-│   └── drome_ardeche.yml
+├── configs/             # Composition Hydra (domain/ data/ statistical/ dl/ …)
+│   ├── config.yaml      # config racine (defaults: experiment + cluster)
+│   └── experiment/      # une région = un experiment=<region>
 └── scripts/
-    ├── run_statistical_downscaling.py
+    ├── run_downscaling.py   # entry point Hydra `downscaling-run`
     └── run_dl_inference.py
 ```
 
@@ -65,11 +66,12 @@ downscaling/
 
 ```bash
 cd downscaling/
-python scripts/run_statistical_downscaling.py \
-    --era5-sl data/era5/era5_sl_20210427.nc \
-    --dem     data/dem/copdem_drome_ardeche_100m.tif \
-    --out     output/stat_downscaled_20210427.nc \
-    --variable t2m --variable tp
+# Config composée par Hydra (configs/) ; surcharges en dotlist.
+downscaling-run \
+    data.era5_sl=data/era5/era5_sl_20210427.nc \
+    data.dem_raw=data/dem/copdem_drome_ardeche_100m.tif \
+    run.out=output/stat_downscaled_20210427.nc \
+    run.compute_indices=true
 ```
 
 ---
@@ -108,16 +110,15 @@ la dépendance altitude–température et les effets orographiques sur les préc
 
 ```bash
 python scripts/run_dl_train.py \
-    --config config/drome_ardeche.yml \
     --data-dir data/training/ \
-    --epochs 100 --batch-size 8
+    --epochs 100 --batch-size 8 \
+    --override dl.base_ch=64    # config via Hydra, surcharges en dotlist
 ```
 
 ### Inférence
 
 ```bash
 python scripts/run_dl_inference.py \
-    --config  config/drome_ardeche.yml \
     --checkpoint checkpoints/best_model.pt \
     --era5-sl data/era5/era5_sl_20210427.nc \
     --dem     data/dem/copdem_drome_ardeche_100m.tif \

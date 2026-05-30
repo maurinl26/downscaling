@@ -12,6 +12,10 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+# Compat : la config se charge désormais via Hydra (cf. downscaling.config).
+# Réexport pour les imports historiques `from downscaling.shared.loaders import load_config`.
+from downscaling.config import load_config  # noqa: F401
+
 
 # ---------------------------------------------------------------------------
 # ERA5 loader

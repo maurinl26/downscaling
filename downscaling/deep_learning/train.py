@@ -12,10 +12,10 @@ Fonctionnalités
 Usage
 -----
     python -m downscaling.deep_learning.train \
-        --config config/drome_ardeche.yml \
         --data-dir data/training/ \
         --epochs 100 --batch-size 8 \
-        --checkpoint-dir checkpoints/
+        --checkpoint-dir checkpoints/ \
+        --override dl.base_ch=64
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ import math
 from pathlib import Path
 
 import numpy as np
-import yaml
 
 try:
     import torch
@@ -35,6 +34,7 @@ try:
 except ImportError as e:
     raise ImportError("PyTorch requis : pip install torch") from e
 
+from downscaling.config import load_config
 from .dataset import DownscalingDataset
 from .model import build_model
 
@@ -321,7 +321,8 @@ class Trainer:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Entraînement du U-Net de descente d'échelle")
-    p.add_argument("--config", required=True, help="Fichier de configuration YAML")
+    p.add_argument("--override", nargs="*", default=[],
+                   help="Overrides Hydra (ex: dl.base_ch=32 dl.n_levels=3)")
     p.add_argument("--data-dir", required=True)
     p.add_argument("--checkpoint-dir", default="checkpoints/")
     p.add_argument("--epochs", type=int, default=100)
@@ -337,8 +338,7 @@ def main():
     args = _build_parser().parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.override)
 
     dl_cfg = cfg.get("deep_learning", {})
     domain = cfg.get("domain", {})

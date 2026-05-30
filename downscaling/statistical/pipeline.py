@@ -8,26 +8,19 @@ Enchaîne :
   4. Correction de biais QDM (température, précipitations, vent)
   5. Sauvegarde NetCDF
 
-Usage CLI
----------
-    python -m downscaling.statistical.pipeline \
-        --era5-sl  data/era5/era5_sl_20210427.nc \
-        --dem      data/dem/copdem_drome_100m.tif \
-        --obs-ref  data/cerra/cerra_sl_ref.nc \
-        --out      output/stat_downscaled_20210427.nc \
-        --variables t2m tp u10 v10
+Piloté par l'entry point Hydra ``downscaling-run`` (cf.
+``downscaling.scripts.run_downscaling``).
 """
 
 from __future__ import annotations
 
-import argparse
 import logging
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-from ..shared.loaders import ERA5Loader, CERRALoader, DEMLoader, regrid_to_dem
+from ..shared.loaders import DEMLoader, regrid_to_dem
 from .lapse_rate import LapseRateCorrector, correct_surface_pressure, STANDARD_LAPSE_RATE
 from .quantile_mapping import QuantileDeltaMapping, EmpiricalQuantileMapping
 
@@ -233,55 +226,3 @@ class StatisticalDownscalingPipeline:
     @staticmethod
     def _regrid(da: xr.DataArray, dem: xr.DataArray) -> xr.DataArray:
         return regrid_to_dem(da, dem, method="linear")
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        description="Descente d'échelle statistique ERA5/CERRA → 1 km"
-    )
-    p.add_argument("--era5-sl", required=True, help="Fichier ERA5 single-level")
-    p.add_argument("--dem", required=True, help="Fichier MNT (GeoTIFF ou NetCDF)")
-    p.add_argument("--obs-ref", default=None, help="Référence pour calibration QDM")
-    p.add_argument("--mod-ref", default=None, help="Modèle de référence pour calibration QDM")
-    p.add_argument("--out", required=True, help="Fichier NetCDF de sortie")
-    p.add_argument(
-        "--variables", nargs="+", default=["t2m", "tp", "u10", "v10"],
-        help="Variables à traiter"
-    )
-    p.add_argument("--no-qdm", action="store_true", help="Désactive la correction QDM")
-    p.add_argument("--n-quantiles", type=int, default=100)
-    p.add_argument("-v", "--verbose", action="store_true")
-    return p
-
-
-def main():
-    args = _build_parser().parse_args()
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
-
-    pipeline = StatisticalDownscalingPipeline(
-        dem_path=args.dem,
-        obs_ref_path=args.obs_ref,
-        use_qdm=not args.no_qdm,
-        n_quantiles=args.n_quantiles,
-    )
-
-    if args.obs_ref and args.mod_ref:
-        log.info("Calibration QDM…")
-        obs_ref = xr.open_dataset(args.obs_ref, engine="netcdf4")
-        mod_ref = xr.open_dataset(args.mod_ref, engine="netcdf4")
-        pipeline.calibrate(mod_ref, obs_ref)
-
-    log.info(f"Traitement de {args.era5_sl}…")
-    ds_out = pipeline.run(args.era5_sl, variables=args.variables)
-
-    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    ds_out.to_netcdf(args.out)
-    log.info(f"Sortie écrite dans {args.out}")
-
-
-if __name__ == "__main__":
-    main()

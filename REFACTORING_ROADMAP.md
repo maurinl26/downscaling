@@ -108,9 +108,19 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       le pipeline statistique via `@hydra.main`. `hydra-core` ajouté aux deps.
 - [x] Test `test_hydra_compose` : config racine + `experiment=` composent,
       overrides `cluster=` et dotlist atteignent les feuilles (5 tests).
-- [ ] Migrer les `argparse` restants (`pipeline.py`, scripts DL/Prithvi) vers
-      l'entry point Hydra ; retirer le monolithe `config/drome_ardeche.yml` et
-      `run_statistical_downscaling.py` une fois les deploys basculés.
+- [x] Migrer les `argparse` restants vers la config Hydra : `pipeline.py` perd
+      sa CLI (pilotée par `downscaling-run`) ; `train.py`, `inference.py`,
+      `run_dl_inference.py`, `run_era5land_downscaling.py` lisent désormais la
+      config via `downscaling.config.load_config(overrides)` (flag `--override`
+      au lieu de `--config <monolithe>`). `shared.loaders` réexporte
+      `load_config` pour les imports historiques.
+- [x] Retirer le monolithe `config/drome_ardeche.yml` et
+      `run_statistical_downscaling.py`. Deploys basculés : `launch_dl_job.py`
+      (RunPod), `runs/scripts/orchestrate.py` et `scripts/run_campaign.py`
+      n'envoient plus `--config` ; README + `runs/README.md` mis à jour.
+      Limite connue : la concaténation multi-fichiers d'une saison dans
+      `run_campaign.step_stat_downscaling` (branche stat) n'est pas encore
+      câblée côté entry point Hydra (traite le 1ᵉʳ fichier — cf. NOTE).
 
 ### Phase 3 — Lightning (entraînement DL)
 - [ ] `LightningModule` enveloppant le U-Net FiLM (`build_model`) ; migrer

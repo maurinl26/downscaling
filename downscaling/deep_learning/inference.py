@@ -10,7 +10,6 @@ pondérée (fenêtre de Hann) pour éviter les artefacts aux jointures.
 Usage CLI
 ---------
     python -m downscaling.deep_learning.inference \
-        --config     config/drome_ardeche.yml \
         --checkpoint checkpoints/best_model.pt \
         --era5-sl    data/era5/era5_sl_20210427.nc \
         --dem-attrs  data/dem/dem_attributes.nc \
@@ -27,7 +26,6 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-import yaml
 
 try:
     import torch
@@ -35,6 +33,7 @@ try:
 except ImportError as e:
     raise ImportError("PyTorch requis : pip install torch") from e
 
+from downscaling.config import load_config
 from .dataset import prepare_inference_batch, DEFAULT_MET_VARS, DEFAULT_DEM_VARS
 from .model import build_model
 
@@ -278,7 +277,8 @@ class DLInferencePipeline:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Inférence du modèle DL de descente d'échelle")
-    p.add_argument("--config", required=True, help="Config YAML")
+    p.add_argument("--override", nargs="*", default=[],
+                   help="Overrides Hydra (ex: dl.patch_size=128)")
     p.add_argument("--checkpoint", required=True, help="Fichier checkpoint .pt")
     p.add_argument("--era5-sl", required=True, help="ERA5 single-level NetCDF")
     p.add_argument("--dem-attrs", required=True, help="Attributs MNT NetCDF")
@@ -295,8 +295,7 @@ def main():
     args = _build_parser().parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.override)
 
     if args.tile_size:
         cfg.setdefault("deep_learning", {})["patch_size"] = args.tile_size

@@ -12,8 +12,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-# Remove path insertion to rely on standard module execution
-import yaml
+from downscaling.config import load_config
 from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
 from downscaling.shared.indices import compute_all_indices
 
@@ -51,7 +50,8 @@ def create_dummy_dem(domain_cfg, out_path="dummy_dem.nc"):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--config", default="config/drome_ardeche.yml")
+    p.add_argument("--override", nargs="*", default=[],
+                   help="Overrides Hydra (ex: statistical.quantile_mapping.enabled=false)")
     p.add_argument("--era5land-dir", default="../data/raw/era5land/2m_temperature/")
     p.add_argument("--dem", default=None, help="Path to DEM file. If None, uses dummy_dem.nc")
     p.add_argument("--out-dir", default="../output/era5land_downscaled/")
@@ -67,8 +67,7 @@ def main():
     )
     log = logging.getLogger(__name__)
 
-    with open(args.config) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_config(args.override)
 
     stat_cfg = cfg.get("statistical", {})
     lapse_cfg = stat_cfg.get("lapse_rate", {})

@@ -35,12 +35,14 @@ VOLUME_MOUNT = "/workspace"
 CONTAINER_DISK_GB = 30
 
 TASKS = {
+    # Config via Hydra (downscaling/configs/) chargée par défaut ; surcharges
+    # éventuelles via `--override <dotlist>`. Plus de `--config <monolithe>`.
     "unet-train": {
         "gpu": "A100",
         "vram_gb": 20,
         "cmd": (
             "uv run python downscaling/downscaling/scripts/run_dl_train.py"
-            " --config downscaling/config/drome_ardeche.yml --epochs 150"
+            " --data-dir data/training/ --epochs 150"
         ),
         "desc": "U-Net FiLM training — Drôme-Ardèche 2000-2021 (~2h, A100)",
     },
@@ -49,7 +51,6 @@ TASKS = {
         "vram_gb": 40,
         "cmd": (
             "uv run python downscaling/downscaling/prtihvi_wxc/finetune.py"
-            " --config downscaling/config/drome_ardeche.yml"
         ),
         "desc": "Prithvi WxC DEMConditionedAdapter fine-tuning (~3h, A100 80GB)",
     },
@@ -58,7 +59,6 @@ TASKS = {
         "vram_gb": 20,
         "cmd": (
             "uv run python downscaling/downscaling/scripts/run_dl_inference.py"
-            " --config downscaling/config/drome_ardeche.yml"
         ),
         "desc": "Prithvi WxC inference campaign (~45min, L4 24GB)",
     },

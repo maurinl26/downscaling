@@ -24,10 +24,10 @@ Préparer les données d'entraînement au préalable :
 Exemple
 -------
     python scripts/run_dl_train.py \
-        --config config/drome_ardeche.yml \
         --data-dir data/training/ \
         --epochs 100 \
-        --batch-size 8
+        --batch-size 8 \
+        --override dl.base_ch=64    # config via Hydra (configs/), plus de --config
 """
 
 import sys

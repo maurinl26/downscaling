@@ -76,20 +76,19 @@ def step_stat_downscaling(cfg: dict, args: argparse.Namespace):
     data_cfg = cfg["data"]
     domain = cfg["domain"]
 
+    # Entry point Hydra (configs/) — plus de monolithe --config.
     cmd = [
-        sys.executable,
-        "scripts/run_statistical_downscaling.py",
-        "--config",   "config/drome_ardeche.yml",
-        "--era5-sl",  data_cfg["era5"]["single_level"]["april2021"],
-        "--dem",      data_cfg["dem"]["raw"],
-        "--date",     "april2021",
-        "--out",      data_cfg["downscaling"]["stat_output"],
-        "--compute-indices",
+        "downscaling-run",
+        f"data.era5_sl={data_cfg['era5']['single_level']['april2021']}",
+        f"data.dem_raw={data_cfg['dem']['raw']}",
+        "run.date=april2021",
+        f"run.out={data_cfg['downscaling']['stat_output']}",
+        "run.compute_indices=true",
     ]
     if args.mod_ref:
-        cmd += ["--mod-ref", args.mod_ref]
+        cmd += [f"+data.mod_ref={args.mod_ref}"]
     if args.obs_ref:
-        cmd += ["--obs-ref", args.obs_ref]
+        cmd += [f"data.obs_ref={args.obs_ref}"]
 
     _run(cmd, cwd=REPO_ROOT / "downscaling", label="stat-downscaling")
 

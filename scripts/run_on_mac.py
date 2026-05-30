@@ -22,7 +22,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-CONFIG_DEFAULT = ROOT / "downscaling" / "config" / "drome_ardeche.yml"
 
 
 def _get_device():
@@ -44,23 +43,23 @@ def smoke_test(device) -> None:
     print(f"smoke-test: tensor {x.shape} on {device}  ✓")
 
 
-def netatmo_qc(config: Path, device) -> None:
+def netatmo_qc(device) -> None:
     """Run Netatmo quality-control re-scoring for the full archive."""
     sys.path.insert(0, str(ROOT / "downscaling"))
-    from downscaling.shared.loaders import load_config
+    from downscaling.config import load_config
 
-    cfg = load_config(config)
-    print(f"netatmo-qc: config={config}  device={device}")
+    cfg = load_config()
+    print(f"netatmo-qc: device={device}")
     print("  → (stub) load Netatmo obs, score with U-Net, write QC flags")
     # TODO: implement with downscaling.deep_learning.inference.UNetInference
 
 
-def unet_inference(night: str, config: Path, device) -> None:
+def unet_inference(night: str, device) -> None:
     """Run U-Net inference for a single night (fast, ~30s on MPS)."""
     sys.path.insert(0, str(ROOT / "downscaling"))
-    from downscaling.shared.loaders import load_config
+    from downscaling.config import load_config
 
-    cfg = load_config(config)
+    cfg = load_config()
     print(f"unet-inference: night={night}  device={device}")
     print("  → (stub) load CERRA-Land, run U-Net FiLM, write T_min zarr")
     # TODO: implement with downscaling.deep_learning.inference.run_night()
@@ -74,10 +73,9 @@ def interactive(device) -> None:
     banner = (
         f"\nInteractive DL session — device={device}\n"
         "  import torch; import numpy as np\n"
-        "  ROOT, CONFIG_DEFAULT are in scope\n"
+        "  ROOT is in scope ; config via downscaling.config.load_config()\n"
     )
-    code.interact(banner=banner, local={"device": device, "torch": torch,
-                                        "ROOT": ROOT, "CONFIG_DEFAULT": CONFIG_DEFAULT})
+    code.interact(banner=banner, local={"device": device, "torch": torch, "ROOT": ROOT})
 
 
 TASKS = {

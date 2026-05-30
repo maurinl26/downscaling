@@ -133,16 +133,25 @@ def step_stat_downscaling(cfg: dict, source: str, year_start: int, month_start: 
         log.warning(f"Aucun fichier {source} pour la saison {season_label} → ignorée")
         return None
 
-    script = "run_era5land_downscaling.py" if "land" in source else "run_statistical_downscaling.py"
-    cmd = [
-        sys.executable,
-        f"downscaling/scripts/{script}",
-        "--config",         "config/drome_ardeche.yml",
-        "--input-files",    *[str(f) for f in files],
-        "--dem",            cfg["data"]["dem"]["raw"],
-        "--out",            str(out_file),
-        "--compute-indices",
-    ]
+    # Config via Hydra (configs/) — plus de monolithe --config.
+    # NOTE : la concaténation multi-fichiers d'une saison (`files`) n'est pas
+    # encore câblée côté entry point ; on traite le premier fichier. Voir l'issue
+    # de migration Hydra pour le support multi-fichiers.
+    if "land" in source:
+        cmd = [
+            sys.executable, "downscaling/scripts/run_era5land_downscaling.py",
+            "--era5land-dir", str(files[0].parent),
+            "--dem",          cfg["data"]["dem"]["raw"],
+            "--out-dir",      str(out_file.parent),
+        ]
+    else:
+        cmd = [
+            "downscaling-run",
+            f"data.era5_sl={files[0]}",
+            f"data.dem_raw={cfg['data']['dem']['raw']}",
+            f"run.out={out_file}",
+            "run.compute_indices=true",
+        ]
     _run(cmd, cwd=DOWNSCALING_ROOT, label=f"stat-downscaling-{season_label}")
     return out_file if out_file.exists() else None
 
