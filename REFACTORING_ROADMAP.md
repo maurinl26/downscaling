@@ -118,9 +118,12 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
       `run_statistical_downscaling.py`. Deploys basculés : `launch_dl_job.py`
       (RunPod), `runs/scripts/orchestrate.py` et `scripts/run_campaign.py`
       n'envoient plus `--config` ; README + `runs/README.md` mis à jour.
-      Limite connue : la concaténation multi-fichiers d'une saison dans
-      `run_campaign.step_stat_downscaling` (branche stat) n'est pas encore
-      câblée côté entry point Hydra (traite le 1ᵉʳ fichier — cf. NOTE).
+- [x] Concaténation multi-fichiers des saisons : `data.era5_sl` accepte une
+      liste (`data.era5_sl=[avril.nc,mai.nc,…]`) ; l'entry point exécute le
+      pipeline par fichier et concatène sur l'axe temporel
+      (`run_downscaling._source_list` / `_time_dim`). `run_campaign` (branche
+      stat) passe tous les mensuels d'une saison. Couvert par
+      `tests/test_run_downscaling.py`.
 
 ### Phase 3 — Lightning (entraînement DL)
 - [ ] `LightningModule` enveloppant le U-Net FiLM (`build_model`) ; migrer
