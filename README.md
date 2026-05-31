@@ -27,6 +27,11 @@ et un **compute interchangeable** (Mac MPS local ↔ GPU cloud) :
 
 ## Architecture
 
+> 📐 **Sources, rôles et cascade MERRA-2 → CERRA → calibration capteurs** :
+> voir [`docs/architecture.md`](docs/architecture.md) — pourquoi MERRA-2 et CERRA
+> ne sont pas interchangeables (entrée vs cible vs calibration), et les deux
+> chemins produits.
+
 ### Vue d'ensemble
 
 ```
