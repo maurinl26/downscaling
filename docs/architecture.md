@@ -196,10 +196,18 @@ indépendants du choix de chemin (A ou B).
 > run-calibration calibration.reduce=mean calibration.elevation_aware=false
 > ```
 >
-> Pré-requis données : fichiers CERRA **déjà rééchantillonnés sur la grille fine**
-> (`cerra_<date>.nc`), MNT (`data.dem_attrs`), exports Sencrop
-> (`sencrop_<date>.csv`), checkpoint U-Net entraîné + stats de normalisation
-> (chemins dans `configs/calibration/default.yaml`).
+> Pré-requis données : fichiers CERRA (`cerra_<date>.nc`), MNT (`data.dem_attrs`),
+> exports Sencrop (`sencrop_<date>.csv`), checkpoint U-Net entraîné + stats de
+> normalisation (chemins dans `configs/calibration/default.yaml`).
+>
+> **Onboarding des vraies données** (`CERRACoarseProvider`) :
+> 1. **Diagnostiquer** un fichier : `run-calibration calibration.inspect=true` →
+>    liste variables présentes/manquantes, grille vs MNT, nb de pas horaires.
+> 2. Si les noms diffèrent → `calibration.var_map='{t2m: 2t, u10: 10u, ...}'`.
+> 3. Si la grille CERRA ≠ grille MNT → `calibration.regrid=true` (rééchantillonne
+>    sur le MNT ; nécessite l'extra `regrid` (xesmf) ou des lat/lon 1D).
+> Coordonnées `latitude`/`longitude`/`valid_time` harmonisées automatiquement ;
+> variable attendue absente → erreur explicite listant les variables disponibles.
 
 ---
 

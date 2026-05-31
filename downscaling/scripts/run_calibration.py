@@ -21,7 +21,7 @@ from pathlib import Path
 import hydra
 import numpy as np
 import xarray as xr
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 try:
     import torch
@@ -104,7 +104,23 @@ def main(cfg: DictConfig) -> None:
         cal.cerra_fine_dir, cfg.data.dem_attrs,
         met_vars=list(dl.met_vars), stats_file=cal.stats_file,
         reduce=cal.reduce, hourly=cal.hourly,
+        file_template=cal.get("file_template_cerra", "cerra_{date}.nc"),
+        var_map=OmegaConf.to_container(cal.get("var_map", {})) or {},
+        regrid=cal.get("regrid", False),
+        regrid_method=cal.get("regrid_method", "linear"),
     )
+
+    # Mode diagnostic : valide le format des données réelles sans entraîner.
+    if cal.get("inspect", False):
+        dates = provider.dates()
+        if not dates:
+            log.error("Aucun fichier CERRA dans %s", cal.cerra_fine_dir)
+            return
+        info = provider.inspect(dates[0])
+        log.info("Inspection CERRA (%s) :", dates[0])
+        for k, v in info.items():
+            log.info("  %-18s %s", k, v)
+        return
     lat_grid, lon_grid, elevation_grid = grids_from_dem(
         xr.open_dataset(cfg.data.dem_attrs, engine="netcdf4")
     )

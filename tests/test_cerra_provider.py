@@ -106,3 +106,92 @@ def test_plugs_into_unet_station_dataset(provider, tmp_path):
     assert sample["x_met"].shape == (len(MET_VARS), H, W)
     assert sample["x_dem"].shape == (4, H, W)
     assert sample["obs_tmin"].ndim == 1 and sample["obs_tmin"].shape == sample["obs_dz"].shape
+
+
+# ---------------------------------------------------------------------------
+# Robustesse aux vraies données CERRA
+# ---------------------------------------------------------------------------
+
+def _write_named_cerra(path, var_names, coords="yx", ny=H, nx=W):
+    """CERRA jouet avec noms de variables / coordonnées paramétrables."""
+    times = pd.date_range(f"{DATE} 20:00", "2021-04-28 07:00", freq="h")
+    gen = np.random.default_rng(2)
+    if coords == "cf":           # latitude/longitude/valid_time (style Copernicus)
+        dims = ("valid_time", "latitude", "longitude")
+        cc = {"valid_time": times, "latitude": np.linspace(44, 45, ny),
+              "longitude": np.linspace(4, 5, nx)}
+    elif coords == "latlon":
+        dims = ("time", "lat", "lon")
+        cc = {"time": times, "lat": np.linspace(44, 45, ny), "lon": np.linspace(4, 5, nx)}
+    else:
+        dims = ("time", "y", "x")
+        cc = {"time": times, "y": np.arange(ny), "x": np.arange(nx)}
+    data = {v: (dims, gen.normal(280, 3, (len(times), ny, nx)).astype("float32")) for v in var_names}
+    xr.Dataset(data, coords=cc).to_netcdf(path)
+
+
+def test_var_map_renames_cerra_names(tmp_path):
+    """var_map ramène les noms CERRA (ex: 2t) vers le canonique (t2m)."""
+    cerra = tmp_path / "cerra"
+    cerra.mkdir()
+    _write_named_cerra(cerra / f"cerra_{DATE}.nc", ["2t", "10u", "10v"])
+    _write_dem(tmp_path / "dem.nc")
+    prov = CERRACoarseProvider(
+        cerra, tmp_path / "dem.nc", met_vars=["t2m", "u10", "v10"],
+        var_map={"t2m": "2t", "u10": "10u", "v10": "10v"}, hourly=False,
+    )
+    assert prov.inspect(DATE)["met_missing"] == []
+    x_met, _ = prov(DATE)
+    assert x_met.shape == (3, H, W)
+
+
+def test_missing_var_raises_listing_available(tmp_path):
+    """Variable absente (non mappée) → KeyError listant les vars disponibles."""
+    cerra = tmp_path / "cerra"
+    cerra.mkdir()
+    _write_named_cerra(cerra / f"cerra_{DATE}.nc", ["2t"])
+    _write_dem(tmp_path / "dem.nc")
+    prov = CERRACoarseProvider(cerra, tmp_path / "dem.nc", met_vars=["t2m"], hourly=False)
+    with pytest.raises(KeyError, match="2t"):
+        prov(DATE)
+
+
+def test_cf_coords_harmonized(tmp_path):
+    """latitude/longitude/valid_time (Copernicus) → harmonisés en lat/lon/time."""
+    cerra = tmp_path / "cerra"
+    cerra.mkdir()
+    _write_named_cerra(cerra / f"cerra_{DATE}.nc", MET_VARS, coords="cf")
+    _write_dem(tmp_path / "dem.nc")
+    prov = CERRACoarseProvider(cerra, tmp_path / "dem.nc", met_vars=MET_VARS, hourly=True)
+    x_met, _ = prov(DATE)
+    assert x_met.shape == (12, len(MET_VARS), H, W)
+
+
+def test_inspect_reports_grid_and_vars(provider):
+    info = provider.inspect(DATE)
+    assert info["met_missing"] == []
+    assert info["n_time"] == 12
+    assert info["field_grid"] == info["dem_grid"] == (H, W)
+    assert info["grid_matches_dem"] is True
+
+
+def _write_dem_latlon(path):
+    gen = np.random.default_rng(1)
+    dem = {v: (("lat", "lon"), gen.normal(0, 1, (H, W)).astype("float32"))
+           for v in ("elevation", "slope", "aspect", "curvature")}
+    xr.Dataset(dem, coords={"lat": np.linspace(44, 45, H),
+                            "lon": np.linspace(4, 5, W)}).to_netcdf(path)
+
+
+def test_regrid_to_dem_grid(tmp_path):
+    """regrid=True : CERRA coarse (4×5) rééchantillonné sur la grille MNT (8×10)."""
+    cerra = tmp_path / "cerra"
+    cerra.mkdir()
+    _write_named_cerra(cerra / f"cerra_{DATE}.nc", MET_VARS, coords="latlon", ny=4, nx=5)
+    _write_dem_latlon(tmp_path / "dem.nc")
+    prov = CERRACoarseProvider(
+        cerra, tmp_path / "dem.nc", met_vars=MET_VARS, regrid=True, hourly=True,
+    )
+    x_met, x_dem = prov(DATE)
+    assert x_met.shape == (12, len(MET_VARS), H, W)   # rééchantillonné sur le MNT
+    assert x_dem.shape == (4, H, W)
