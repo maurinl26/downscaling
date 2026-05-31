@@ -205,12 +205,17 @@ indépendants du choix de chemin (A ou B).
 
 ## 6. Deux chemins produits — recommandation
 
-### Chemin A — *Prithvi-centré* (lourd)
+> **Décision (parking Prithvi).** Le chemin **B est le chemin produit**. Le chemin
+> A (Prithvi) est **parké — recherche, hors chemin critique** ([issue #1](https://github.com/maurinl26/downscaling/issues/1),
+> label `parked`). Raison : Prithvi prévoit au pas global ~50 km, plus grossier que
+> CERRA ; il n'apporte pas de finesse et la descente ×50 exigerait l'archi Granite
+> pour un gain nul. Le code (backbone + entrée MERRA-2) reste isolé et réactivable.
+
+### Chemin A — *Prithvi-centré* (⏸️ parké, recherche)
 `MERRA-2 → Prithvi (2,3 B) → tête DEM → 1 km → calibration capteurs`
 - **+** contexte atmosphérique grande échelle appris, cohérence physique.
-- **−** dépend de l'ingestion MERRA-2 (160 canaux), GPU lourd, pipeline d'entrée
-  encore à construire (#1). MERRA-2 ~50 km est **plus grossier** que CERRA :
-  Prithvi n'apporte pas de finesse, seulement un *prior* grande échelle.
+- **−** MERRA-2 ~50 km **plus grossier** que CERRA ; descente régionale ×50 hors
+  tête DEM (⇒ archi Granite) ; GPU lourd. **Pas de valeur sur la chaîne actuelle.**
 
 ### Chemin B — *Réanalyse-directe CERRA* (léger, déjà construit)
 `CERRA 5.5 km (ou ERA5-Land 9 km) → U-Net FiLM / statistique → 1 km → calibration`
