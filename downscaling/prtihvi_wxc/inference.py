@@ -101,17 +101,21 @@ class FrostReanalysisRunner:
         Returns:
             xr.Dataset avec variables : T2m_min, frost_flag, spring_frost_flag.
         """
-        # ⚠️ issue #1 — pipeline d'entrée MERRA-2 manquant.
-        # Le backbone Prithvi WxC réel (chargé par loader.py) attend un `batch`
-        # structuré (x, y, static, climate, input_time, lead_time) sur la grille
-        # MERRA-2, alors que FrostNightDataset / _frost_collate_fn produisent
-        # encore (era5_t0, era5_t1, dem_hr). Câbler ce dataset au format réel est
-        # la suite directe du chargement backbone — le corps ci-dessous est le
-        # squelette d'inférence à reprendre une fois ce pipeline en place.
+        # ⚠️ issue #1 — le blocage a **avancé** :
+        #   ✅ backbone réel chargé (loader.load_prithvi_backbone)
+        #   ✅ pipeline d'entrée MERRA-2 disponible : construire les `batch`
+        #      (x/y/static/climate/...) via `merra2_input.build_merra2_dataset` +
+        #      `build_prithvi_dataloader`, et faire la prévision `backbone(batch)`.
+        #   ⛔ reste : la **descente d'échelle régionale** (prévision MERRA-2 ~50 km
+        #      → 1 km Drôme). Prithvi prévoit au pas global ~50 km ; passer à 1 km
+        #      est un facteur ~×50, hors de portée de la tête DEM (×6). C'est
+        #      l'architecture IBM Granite downscaling qu'il faut intégrer ici
+        #      (cf. issue #1). Ce `FrostReanalysisRunner` régional reste donc à
+        #      recâbler sur cette architecture.
         raise NotImplementedError(
-            "Inférence Prithvi WxC réelle : le dataset doit produire le batch "
-            "MERRA-2 attendu par le backbone (x/y/static/climate/...). "
-            "Voir issue #1 — backbone réel chargé, pipeline d'entrée à câbler."
+            "Réanalyse régionale Prithvi WxC : backbone + entrée MERRA-2 prêts "
+            "(cf. merra2_input), mais la descente MERRA-2 ~50 km → 1 km Drôme "
+            "requiert l'architecture downscaling (IBM Granite). Voir issue #1."
         )
 
         output_zarr = Path(output_zarr)

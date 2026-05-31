@@ -9,12 +9,13 @@
 ## Suite — backlog prioritaire
 
 - 🟠 **[#1](https://github.com/maurinl26/downscaling/issues/1) — Intégrer le vrai
-  modèle Prithvi WxC.** **Backbone réel câblé et testé** (`loader.py` délègue à
-  `PrithviWxC.configs.load_model` ; `forward(batch) → forecast` réel ; dims de la
-  tête dérivées du backbone ; tests sur config jouet). **Reste** : pipeline
-  d'entrée MERRA-2 (`FrostNightDataset → batch` réel) pour inférence/fine-tune,
-  run GPU avec les poids 2,3 B, et intégration IBM Granite (archi distincte).
-  `inference.run()` lève un `NotImplementedError` explicite au point manquant.
+  modèle Prithvi WxC.** ✅ Backbone réel câblé + testé. ✅ **Pipeline d'entrée
+  MERRA-2** (délègue à `Merra2Dataset` + `preproc` officiels via
+  `merra2_input.py` ; testé bout-en-bout : échantillon brut → preproc → forward
+  réel sur config jouet). **Reste** : la **descente régionale** MERRA-2 ~50 km →
+  1 km Drôme (facteur ~×50, hors tête DEM ×6) ⇒ intégrer l'**architecture IBM
+  Granite downscaling** ; + run GPU avec les poids 2,3 B. `inference.run()` lève
+  un `NotImplementedError` explicite pointant ce blocage déplacé.
 
 ## Verdict
 
