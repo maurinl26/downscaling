@@ -8,12 +8,13 @@
 
 ## Suite — backlog prioritaire
 
-- 🔴 **[#1](https://github.com/maurinl26/downscaling/issues/1) — Intégrer le vrai
-  modèle Prithvi WxC** (remplacer le wrapper placeholder). L'infra de l'approche 3
-  est prête (loader, fine-tune Lightning, `modelstore/`), mais le branchement au
-  backbone NASA/IBM réel reste à faire : `forward`/`.encode` supposé, dim
-  d'embedding en dur (`512`), scalers/climatologie MERRA-2 non câblés, chargement
-  Granite à clés flexibles. **Aucun run réel** n'a encore été effectué. **Priorité.**
+- 🟠 **[#1](https://github.com/maurinl26/downscaling/issues/1) — Intégrer le vrai
+  modèle Prithvi WxC.** **Backbone réel câblé et testé** (`loader.py` délègue à
+  `PrithviWxC.configs.load_model` ; `forward(batch) → forecast` réel ; dims de la
+  tête dérivées du backbone ; tests sur config jouet). **Reste** : pipeline
+  d'entrée MERRA-2 (`FrostNightDataset → batch` réel) pour inférence/fine-tune,
+  run GPU avec les poids 2,3 B, et intégration IBM Granite (archi distincte).
+  `inference.run()` lève un `NotImplementedError` explicite au point manquant.
 
 ## Verdict
 
