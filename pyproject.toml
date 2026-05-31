@@ -55,6 +55,7 @@ prithvi = [
     "lightning>=2.2",
     "huggingface-hub>=0.22",
     "safetensors>=0.4",
+    "prithviwxc",            # backbone NASA/IBM (git, cf. [tool.uv.sources])
     # TerraTorch pour fine-tuning (optionnel — inférence sans TerraTorch possible)
     # "terratorch[wxc]>=1.2; python_version>='3.11'",
 ]
@@ -97,6 +98,7 @@ run-on-mac           = "downscaling.scripts.run_on_mac:main"
 package = true
 
 [tool.uv.sources]
+prithviwxc = { git = "https://github.com/NASA-IMPACT/Prithvi-WxC.git" }
 pmap = { git = "ssh://git@github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
 # Variante HTTPS (si SSH non disponible) :
 # pmap = { git = "https://github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }

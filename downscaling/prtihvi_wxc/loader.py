@@ -1,6 +1,18 @@
 """
-loader.py — Chargement de Prithvi WxC (NASA/IBM) depuis HuggingFace
-pour inférence de downscaling avec conditioning orographique (DEM).
+loader.py — Chargement du **vrai** modèle Prithvi WxC (NASA/IBM) + tête de
+downscaling conditionnée par le MNT.
+
+Le backbone est construit et chargé via l'API officielle du package
+``PrithviWxC`` (``PrithviWxC.configs.load_model``), qui télécharge config +
+facteurs d'échelle (climatologie) + poids depuis HuggingFace et instancie le
+modèle réel. **Aucune réimplémentation** de la construction : on délègue.
+
+Architecture réelle (≠ ancien placeholder) :
+  - Prithvi WxC est un **prévisionniste** masqué : ``forward(batch) → ŷ`` de
+    forme ``[B, C, lat, lon]`` (même grille MERRA-2 que l'entrée), où ``batch``
+    contient ``x, y, static, climate, input_time, lead_time``.
+  - La **descente d'échelle** est une tête CNN conditionnée DEM appliquée *sur la
+    prévision* (`DEMConditionedAdapter`), pas sur des features d'encodeur.
 
 Référence :
   Schmude et al. (2024) "Prithvi WxC: Foundation Model for Weather and Climate"
@@ -22,13 +34,14 @@ from downscaling.paths import MODELSTORE
 # Identifiants HuggingFace
 # ---------------------------------------------------------------------------
 PRITHVI_WXC_REPO = "Prithvi-WxC/prithvi.wxc.2300m.v1"
-# Version fine-tunée downscaling IBM Granite (×12 resolution enhancement)
+# Version fine-tunée downscaling IBM Granite (architecture propre, cf. issue #1).
 GRANITE_DOWNSCALING_REPO = "ibm-granite/granite-geospatial-wxc-downscaling"
 
-# Sous-dossiers de modelstore/ alimentés par `fetch-pretrained` (cf.
-# downscaling.scripts.fetch_pretrained.MANIFEST).
+# Sous-dossier de modelstore/ où l'API officielle télécharge config/scalers/poids.
+PRITHVI_DATA_DIR = MODELSTORE / "prithvi-wxc"
+
 _MODELSTORE_DIRS = {
-    PRITHVI_WXC_REPO: "prithvi-wxc-2300m",
+    PRITHVI_WXC_REPO: "prithvi-wxc",
     GRANITE_DOWNSCALING_REPO: "granite-downscaling",
 }
 
@@ -45,68 +58,84 @@ def resolve_device(device: str = "auto") -> str:
 
 
 def resolve_artifact(repo_id: str, filename: str) -> str:
-    """Chemin local d'un poids : ``modelstore/`` d'abord, sinon cache HF.
-
-    Permet de tourner hors-ligne (CI, RunPod sans réseau) dès lors que
-    ``fetch-pretrained`` a peuplé ``modelstore/``. À défaut, retombe sur le
-    téléchargement HuggingFace classique.
-    """
+    """Chemin local d'un poids : ``modelstore/`` d'abord, sinon cache HF."""
     subdir = _MODELSTORE_DIRS.get(repo_id, repo_id.replace("/", "_"))
     local = MODELSTORE / subdir / filename
     if local.exists():
         return str(local)
     return hf_hub_download(repo_id=repo_id, filename=filename)
 
-# Variables MERRA-2 utilisées par Prithvi WxC (sous-ensemble pertinent gel)
-# Ordre exact attendu par le modèle en entrée
-MERRA2_SURFACE_VARS = [
-    "T2M",   # Temperature 2m (K)  ← variable cible
-    "U10M",  # Vent zonal 10m
-    "V10M",  # Vent méridional 10m
-    "PS",    # Pression de surface
-    "QV2M",  # Humidité spécifique 2m (effet sur gel radiatif)
-    "TQV",   # Eau précipitable totale
-]
 
-MERRA2_PRESSURE_VARS = [
-    "T",     # Température sur niveaux de pression (850, 925 hPa)
-    "H",     # Hauteur géopotentielle
-]
+def load_prithvi_backbone(
+    config_name: str = "large",
+    data_dir: str | Path | None = None,
+    load_weights: bool = True,
+    device: str = "auto",
+) -> nn.Module:
+    """Construit + charge le backbone Prithvi WxC réel (API officielle).
+
+    Délègue à ``PrithviWxC.configs.load_model`` : télécharge config, facteurs
+    d'échelle (``climatology/musigma_*.nc``, ``anomaly_variance_*.nc``) et poids
+    dans ``data_dir`` (défaut : ``modelstore/prithvi-wxc``), puis instancie le
+    ``PrithviWxC`` réel et charge le ``state_dict`` (``strict=True``).
+
+    Args:
+        config_name: "small" (jouet), "large" (2,3 B) ou "large_rollout".
+        data_dir: cache des artefacts ; défaut ``modelstore/prithvi-wxc``.
+        load_weights: télécharge et charge les poids pré-entraînés.
+        device: "cuda" / "mps" / "cpu" / "auto".
+
+    Le backbone est renvoyé **gelé** (``requires_grad=False``) et en ``eval()``.
+    """
+    try:
+        from PrithviWxC.configs import load_model
+    except ImportError as e:
+        raise ImportError(
+            "Package Prithvi WxC requis :\n"
+            "  uv pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'\n"
+            "(inclus dans l'extra `prithvi`)."
+        ) from e
+
+    data_dir = Path(data_dir or PRITHVI_DATA_DIR)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    backbone = load_model(config_name, data_dir, load_weights=load_weights)
+    backbone = backbone.to(resolve_device(device)).eval()
+    for param in backbone.parameters():
+        param.requires_grad_(False)
+    return backbone
 
 
 # ---------------------------------------------------------------------------
-# CNN Adapter + DEM conditioning (architecture du papier NASA)
+# Tête de downscaling conditionnée DEM
 # ---------------------------------------------------------------------------
 
 class DEMConditionedAdapter(nn.Module):
     """
-    Adaptateur CNN branché sur la sortie de l'encodeur Prithvi WxC.
-    Intègre le DEM haute résolution comme feature auxiliaire (concaténation)
-    avant le PixelShuffle pour upscaling ×N.
+    Tête CNN appliquée sur la **prévision** du backbone, conditionnée par le MNT.
 
-    Architecture (Yu et al. 2025, Fig. 3) :
-        backbone_output (B, C, H_lr, W_lr)
-        dem_hr          (B, 3, H_hr, W_hr)  ← élévation, pente, exposition
-              ↓
-        [interpolate backbone → H_hr, W_hr]
-        [concat dem_hr]
-              ↓  Conv2d adapter
-        [PixelShuffle ×scale_factor]
-              ↓
-        T2m haute résolution (B, 1, H_hr, W_hr)
+    Architecture :
+        forecast (B, C, H_lr, W_lr)  ← sortie Prithvi WxC (C = in_channels)
+        dem_hr   (B, 3, H_hr, W_hr)  ← élévation, pente, exposition
+              ↓  [interpolate forecast → H_hr, W_hr] + [concat dem_hr]
+              ↓  Conv2d → PixelShuffle ×scale_factor
+        T2m haute résolution (B, out_channels, H_hr·scale, W_hr·scale)
+
+    ``in_channels`` correspond au **nombre de canaux de la prévision** du
+    backbone (cf. ``PrithviWxCDownscaler.from_pretrained``), plus de valeur
+    codée en dur.
     """
 
     def __init__(
         self,
-        in_channels: int = 512,   # dim sortie encodeur Prithvi WxC
-        dem_channels: int = 3,    # élévation + pente + exposition
+        in_channels: int,
+        dem_channels: int = 3,
         hidden_channels: int = 128,
         out_channels: int = 1,    # T2m uniquement
-        scale_factor: int = 6,    # ERA5 31km → ~5km ; CERRA 5.5km → ~1km
+        scale_factor: int = 6,
     ):
         super().__init__()
         self.scale_factor = scale_factor
-
         total_in = in_channels + dem_channels
 
         self.adapter = nn.Sequential(
@@ -114,7 +143,6 @@ class DEMConditionedAdapter(nn.Module):
             nn.GELU(),
             nn.Conv2d(hidden_channels, hidden_channels, kernel_size=3, padding=1),
             nn.GELU(),
-            # PixelShuffle nécessite out_channels * scale_factor^2 canaux
             nn.Conv2d(
                 hidden_channels,
                 out_channels * scale_factor * scale_factor,
@@ -124,163 +152,102 @@ class DEMConditionedAdapter(nn.Module):
         )
         self.pixel_shuffle = nn.PixelShuffle(scale_factor)
 
-    def forward(
-        self,
-        backbone_out: torch.Tensor,  # (B, C, H_lr, W_lr)
-        dem_hr: torch.Tensor,        # (B, 3, H_hr, W_hr)
-    ) -> torch.Tensor:
+    def forward(self, forecast: torch.Tensor, dem_hr: torch.Tensor) -> torch.Tensor:
         H_hr, W_hr = dem_hr.shape[-2:]
-
-        # Upsample backbone features à la résolution cible
         x = nn.functional.interpolate(
-            backbone_out, size=(H_hr, W_hr), mode="bilinear", align_corners=False
+            forecast, size=(H_hr, W_hr), mode="bilinear", align_corners=False
         )
-
-        # Concaténer DEM haute résolution
         x = torch.cat([x, dem_hr], dim=1)
-
-        # Adapter CNN + PixelShuffle
         x = self.adapter(x)
-        x = self.pixel_shuffle(x)
-
-        return x  # (B, 1, H_hr * scale, W_hr * scale) — mais scale déjà H_hr
+        return self.pixel_shuffle(x)
 
 
 # ---------------------------------------------------------------------------
-# Modèle complet : Prithvi WxC backbone + DEM adapter
+# Modèle complet : backbone Prithvi WxC réel + tête DEM
 # ---------------------------------------------------------------------------
 
 class PrithviWxCDownscaler(nn.Module):
     """
-    Wrapper inférence : Prithvi WxC (backbone gelé) + DEMConditionedAdapter.
+    Prithvi WxC (backbone gelé, prévisionniste) + tête de downscaling DEM.
 
-    Usage :
-        model = PrithviWxCDownscaler.from_pretrained(scale_factor=6)
-        t2m_hr = model(era5_lr, dem_hr)  # (B, 1, H_hr, W_hr) en K
+    ``forward(batch, dem_hr)`` exécute la prévision réelle ``backbone(batch)``
+    puis la descente d'échelle conditionnée MNT.
+
+    Usage ::
+
+        model = PrithviWxCDownscaler.from_pretrained(config_name="large", scale_factor=6)
+        t2m_hr = model(batch, dem_hr)   # (B, 1, H_hr·scale, W_hr·scale) en K
+
+    où ``batch`` est le dict attendu par Prithvi WxC
+    (``x, y, static, climate, input_time, lead_time``).
     """
 
-    def __init__(
-        self,
-        backbone: nn.Module,
-        adapter: DEMConditionedAdapter,
-        backbone_out_channels: int = 512,
-    ):
+    def __init__(self, backbone: nn.Module, adapter: DEMConditionedAdapter):
         super().__init__()
         self.backbone = backbone
         self.adapter = adapter
-        self.backbone_out_channels = backbone_out_channels
 
     @classmethod
     def from_pretrained(
         cls,
-        checkpoint_path: str | Path | None = None,
-        use_granite_downscaling: bool = True,
+        config_name: str = "large",
         scale_factor: int = 6,
+        out_channels: int = 1,
         device: str = "auto",
+        load_weights: bool = True,
+        data_dir: str | Path | None = None,
+        checkpoint_path: str | Path | None = None,
     ) -> PrithviWxCDownscaler:
         """
-        Charge le modèle depuis ``modelstore/`` (ou HuggingFace en repli).
+        Charge le backbone réel (API officielle) et construit la tête DEM.
 
         Args:
-            checkpoint_path: Chemin vers un checkpoint local fine-tuné.
-                             Si None, tente de charger IBM Granite downscaling.
-            use_granite_downscaling: Utilise le modèle IBM Granite fine-tuné
-                                     pour downscaling (recommandé sans fine-tuning).
-            scale_factor: Facteur d'upscaling spatial.
-            device: "cuda", "cpu", "mps", "cuda:0", ou "auto" (détection matériel).
+            config_name: "large" (2,3 B), "small" (jouet) ou "large_rollout".
+            scale_factor: facteur d'upscaling de la tête de downscaling.
+            out_channels: nombre de variables produites (T2m → 1).
+            device: "cuda"/"mps"/"cpu"/"auto".
+            load_weights: charge les poids pré-entraînés du backbone.
+            data_dir: cache des artefacts (défaut ``modelstore/prithvi-wxc``).
+            checkpoint_path: checkpoint local de la tête DEM fine-tunée (optionnel).
         """
         device = resolve_device(device)
-        try:
-            from PrithviWxC.model import PrithviWxC  # type: ignore
-        except ImportError as e:
-            raise ImportError(
-                "Installer le package Prithvi WxC :\n"
-                "  pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'"
-            ) from e
-
-        print(f"[PrithviWxC] Chargement backbone depuis {PRITHVI_WXC_REPO} ...")
-
-        backbone = PrithviWxC.from_pretrained(PRITHVI_WXC_REPO)
-        backbone.eval()
-        # Geler le backbone — seul l'adapter est entraîné/fine-tuné
-        for param in backbone.parameters():
-            param.requires_grad = False
-
-        adapter = DEMConditionedAdapter(scale_factor=scale_factor)
+        backbone = load_prithvi_backbone(
+            config_name=config_name, data_dir=data_dir,
+            load_weights=load_weights, device=device,
+        )
+        # in_channels de la tête = nb de canaux de la prévision backbone.
+        adapter = DEMConditionedAdapter(
+            in_channels=backbone.in_channels,
+            out_channels=out_channels,
+            scale_factor=scale_factor,
+        ).to(device)
 
         model = cls(backbone=backbone, adapter=adapter)
 
         if checkpoint_path is not None:
-            print(f"[PrithviWxC] Chargement adapter depuis {checkpoint_path} ...")
             state = torch.load(checkpoint_path, map_location=device)
-            # On ne charge que l'adapter (le backbone reste HF)
             adapter_state = {
                 k.replace("adapter.", ""): v
                 for k, v in state.items()
                 if k.startswith("adapter.")
             }
             model.adapter.load_state_dict(adapter_state)
-        elif use_granite_downscaling:
-            print(
-                f"[PrithviWxC] Tentative chargement IBM Granite downscaling "
-                f"depuis {GRANITE_DOWNSCALING_REPO} ..."
-            )
-            try:
-                _load_granite_adapter(model, device)
-            except Exception as e:
-                print(
-                    f"[PrithviWxC] Granite non disponible ({e}). "
-                    "Adapter initialisé aléatoirement — fine-tuning requis."
-                )
 
-        model = model.to(device)
-        print(f"[PrithviWxC] Modèle prêt sur {device}.")
-        return model
+        return model.to(device)
 
-    def forward(
-        self,
-        era5_t0: torch.Tensor,   # (B, C, H_lr, W_lr) — timestamp t
-        era5_t1: torch.Tensor,   # (B, C, H_lr, W_lr) — timestamp t+3h
-        dem_hr: torch.Tensor,    # (B, 3, H_hr, W_hr) — élévation, pente, expo
-    ) -> torch.Tensor:
+    def forward(self, batch: dict[str, torch.Tensor], dem_hr: torch.Tensor) -> torch.Tensor:
         """
-        Retourne T2m haute résolution (B, 1, H_hr, W_hr) en Kelvin.
+        Prévision Prithvi WxC réelle puis descente d'échelle conditionnée DEM.
 
-        Le backbone Prithvi WxC attend deux timestamps comme décrit dans
-        Yu et al. (2025) : l'interpolation temporelle à 3h permet de couvrir
-        un cycle journalier complet par rolling (voir inference.py).
+        Args:
+            batch: dict d'entrée Prithvi WxC (``x, y, static, climate,
+                   input_time, lead_time``).
+            dem_hr: (B, 3, H_hr, W_hr) — élévation, pente, exposition.
+
+        Returns:
+            (B, out_channels, H_hr·scale, W_hr·scale) — T2m haute résolution.
         """
-        # Concaténer les deux timestamps sur la dimension channel
-        x = torch.cat([era5_t0, era5_t1], dim=1)
-
-        # Encoder avec Prithvi WxC (sortie : features basse résolution)
+        # Backbone gelé → no_grad (mémoire) ; la tête DEM reste entraînable.
         with torch.no_grad():
-            backbone_features = self.backbone.encode(x)  # (B, C_enc, H_lr, W_lr)
-
-        # Upscaling conditionné DEM
-        t2m_hr = self.adapter(backbone_features, dem_hr)
-
-        return t2m_hr
-
-
-# ---------------------------------------------------------------------------
-# Helper interne
-# ---------------------------------------------------------------------------
-
-def _load_granite_adapter(model: PrithviWxCDownscaler, device: str) -> None:
-    """
-    Tente de charger les poids de l'adapter IBM Granite downscaling.
-    L'architecture exacte peut différer — adaptation automatique par clé.
-    """
-    weights_path = resolve_artifact(GRANITE_DOWNSCALING_REPO, "model.safetensors")
-    import safetensors.torch as sf  # type: ignore
-
-    state = sf.load_file(weights_path, device=device)
-
-    # Tentative de correspondance flexible des clés
-    adapter_keys = {k: v for k, v in state.items() if "adapter" in k or "pixel_shuffle" in k}
-    if adapter_keys:
-        model.adapter.load_state_dict(adapter_keys, strict=False)
-        print(f"[PrithviWxC] {len(adapter_keys)} clés adapter chargées depuis Granite.")
-    else:
-        print("[PrithviWxC] Aucune clé adapter trouvée dans Granite — skip.")
+            forecast = self.backbone(batch)   # (B, C, lat, lon)
+        return self.adapter(forecast, dem_hr)

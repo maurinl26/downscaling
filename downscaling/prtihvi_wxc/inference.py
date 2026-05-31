@@ -77,13 +77,16 @@ class FrostReanalysisRunner:
     def load_model(
         self,
         checkpoint_path: str | Path | None = None,
-        use_granite: bool = True,
+        use_granite: bool = True,  # conservé pour compat CLI — cf. issue #1
     ) -> PrithviWxCDownscaler:
+        # `use_granite` est un no-op : le downscaling IBM Granite est une
+        # architecture distincte (à intégrer séparément, cf. issue #1).
         return PrithviWxCDownscaler.from_pretrained(
-            checkpoint_path=checkpoint_path,
-            use_granite_downscaling=use_granite,
+            config_name=self.config.get("config_name", "large"),
             scale_factor=self.config["scale_factor"],
             device=self.device,
+            load_weights=self.config.get("load_weights", True),
+            checkpoint_path=checkpoint_path,
         )
 
     def run(
@@ -98,6 +101,19 @@ class FrostReanalysisRunner:
         Returns:
             xr.Dataset avec variables : T2m_min, frost_flag, spring_frost_flag.
         """
+        # ⚠️ issue #1 — pipeline d'entrée MERRA-2 manquant.
+        # Le backbone Prithvi WxC réel (chargé par loader.py) attend un `batch`
+        # structuré (x, y, static, climate, input_time, lead_time) sur la grille
+        # MERRA-2, alors que FrostNightDataset / _frost_collate_fn produisent
+        # encore (era5_t0, era5_t1, dem_hr). Câbler ce dataset au format réel est
+        # la suite directe du chargement backbone — le corps ci-dessous est le
+        # squelette d'inférence à reprendre une fois ce pipeline en place.
+        raise NotImplementedError(
+            "Inférence Prithvi WxC réelle : le dataset doit produire le batch "
+            "MERRA-2 attendu par le backbone (x/y/static/climate/...). "
+            "Voir issue #1 — backbone réel chargé, pipeline d'entrée à câbler."
+        )
+
         output_zarr = Path(output_zarr)
         output_zarr.parent.mkdir(parents=True, exist_ok=True)
 
