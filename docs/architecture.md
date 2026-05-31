@@ -126,7 +126,38 @@ au plus appris :
    de la même façon (obs ponctuelles → loss aux positions des capteurs).
 
 Sencrop et Netatmo jouent le **même rôle** (réseau de capteurs in situ) ; Sencrop
-apporte une couverture agricole dédiée et un QC potentiellement meilleur.
+apporte une couverture agricole dédiée et un QC potentiellement meilleur. Les
+deux passent par le **même conteneur** (`StationObs`), le même agrégat Tmin et la
+même loss sparse — seul le loader change (`load_sencrop` / `load_netatmo_parquet`,
+datasets `SencropFineTuneDataset` / `NetatmoFineTuneDataset`).
+
+### Et le MNT dans le fine-tuning capteurs ? (valorisation de l'élévation)
+
+Le MNT n'est **pas** spécifique à Prithvi : il intervient à **deux** niveaux,
+indépendants du choix de chemin (A ou B).
+
+1. **Dans le réseau de descente d'échelle** (étage B) : le U-Net est conditionné
+   par le MNT (élévation, pente, exposition) via FiLM — c'est le cœur de la
+   descente d'échelle orographique. Conservé tel quel dans le chemin CERRA.
+2. **Dans la loss de calibration** (étage C) : une station Sencrop est à une
+   **altitude précise**, souvent différente de l'altitude moyenne de sa maille
+   1 km (fonds froids de vallée surtout). On corrige donc la prévision à
+   l'altitude réelle du capteur **avant comparaison**, par lapse-rate :
+
+   ```
+   ŷ_station = ŷ_maille + γ · (z_station − z_maille)
+   ```
+
+   où `dz = z_station − z_maille` (m) est calculé à l'assignation station→grille
+   (`stations.elevation_offset`) et `γ` le gradient thermique (≈ −6.5 K/km diurne,
+   ≈ −4 K/km en régime de gel nocturne). C'est l'option `elevation_aware` /
+   `obs_dz` de `SparseSupervisedLoss` (cf. `lightning_finetune.py`). **Sans cette
+   correction**, le réseau apprendrait à reproduire un biais d'altitude au lieu
+   du vrai champ.
+
+> Donc oui, l'élévation de terrain reste pleinement valorisée dans
+> CERRA → Sencrop — par le conditionnement MNT du réseau **et** par la correction
+> d'altitude au point de calibration.
 
 ---
 
@@ -139,7 +170,8 @@ apporte une couverture agricole dédiée et un QC potentiellement meilleur.
 | B | U-Net FiLM (ERA5/CERRA → 1 km) | ✅ entraînement Lightning |
 | B | Tête DEM sur prévision Prithvi | ✅ câblée (forward réel) |
 | B | Pipeline statistique (lapse-rate + QDM) | ✅ |
-| C | Fine-tuning sparse Netatmo/Sencrop | ✅ Lightning (sparse loss) |
+| C | Fine-tuning sparse **Netatmo + Sencrop** | ✅ Lightning, source-agnostique (`StationFineTuneDataset`) |
+| C | Calibration **MNT-aware** (correction d'altitude `obs_dz`) | ✅ `SparseSupervisedLoss(elevation_aware)` |
 | C | Interpolation optimale | 🟡 esquisse |
 
 ---

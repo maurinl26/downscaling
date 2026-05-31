@@ -43,6 +43,8 @@ from .dataset import FrostNightDataset
 from .lightning_finetune import SparseSupervisedLoss, sparse_collate_fn  # noqa: F401
 from .loader import PrithviWxCDownscaler
 from .netatmo_qc import NetatmoNocturnalQC, load_netatmo_parquet, tmin_nocturnal
+from .sencrop import load_sencrop
+from .stations import assign_to_grid, elevation_offset
 
 # Alias historique (l'ancien nom était préfixé _).
 _sparse_collate_fn = sparse_collate_fn
@@ -51,67 +53,67 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Dataset de fine-tuning (ERA5 + DEM + Netatmo sparse)
+# Dataset de fine-tuning (ERA5 + DEM + capteurs sparse, source-agnostique)
 # ---------------------------------------------------------------------------
 
-class NetatmoFineTuneDataset(Dataset):
+class StationFineTuneDataset(Dataset):
     """
-    Dataset pour fine-tuning : chaque sample = une nuit.
+    Dataset de fine-tuning sparse — 1 sample = 1 nuit. **Source-agnostique**
+    (Netatmo, Sencrop) : le loader d'observations est injecté.
 
-    Retourne :
-      - Inputs : paires ERA5 (t0, t1) + DEM HR
-      - Labels : Tmin Netatmo QC'd aux positions des stations (sparse)
-      - Masques : positions de grille correspondant aux stations
-
-    Le training loss est calculé uniquement sur les pixels
-    correspondant aux stations Netatmo valides.
+    Retourne par nuit : entrées (ERA5 t0/t1 + DEM HR), labels Tmin QC'd aux
+    stations, indices grille (row/col), et **décalage d'altitude** ``obs_dz``
+    (station − maille, m) si ``elevation_grid`` est fourni — exploité par la loss
+    pour la correction lapse-rate (valorisation du MNT au point de calibration).
     """
 
     def __init__(
         self,
         era5_dataset: FrostNightDataset,
-        netatmo_dir: str | Path,
+        obs_dir: str | Path,
         lat_grid: np.ndarray,
         lon_grid: np.ndarray,
+        *,
+        obs_loader,
+        file_template: str,
+        elevation_grid: np.ndarray | None = None,
         min_stations_per_night: int = 5,
         lapse_rate: float = -6.5e-3,
     ):
         self.era5 = era5_dataset
-        self.netatmo_dir = Path(netatmo_dir)
+        self.obs_dir = Path(obs_dir)
         self.lat_grid = lat_grid
         self.lon_grid = lon_grid
+        self.elevation_grid = elevation_grid
+        self.obs_loader = obs_loader
+        self.file_template = file_template
         self.min_stations = min_stations_per_night
         self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
 
-        # Construire l'index des nuits avec assez de stations Netatmo
         self.valid_nights = self._build_night_index()
         log.info(
-            f"Fine-tune dataset : {len(self.valid_nights)} nuits "
-            f"avec ≥{min_stations_per_night} stations Netatmo QC'd"
+            "Fine-tune dataset : %d nuits avec ≥%d stations QC'd",
+            len(self.valid_nights), min_stations_per_night,
         )
 
+    def _path(self, date_str: str) -> Path:
+        return self.obs_dir / self.file_template.format(date=date_str)
+
     def _build_night_index(self) -> list[dict]:
-        """Indexe les nuits où les données Netatmo sont disponibles et suffisantes."""
         nights = []
         for i, t0 in enumerate(self.era5.time_pairs):
             date_str = t0.date().isoformat()
-            netatmo_path = self.netatmo_dir / f"netatmo_{date_str}.parquet"
-            if not netatmo_path.exists():
+            path = self._path(date_str)
+            if not path.exists():
                 continue
             try:
-                obs_raw = load_netatmo_parquet(str(netatmo_path), date_str)
-                obs_qc = self.qc.run(obs_raw)
+                obs_qc = self.qc.run(self.obs_loader(str(path), date_str))
                 tmin = tmin_nocturnal(obs_qc)
                 n_valid = (~np.isnan(tmin.values)).sum()
                 if n_valid >= self.min_stations:
-                    nights.append({
-                        "era5_idx": i,
-                        "date": date_str,
-                        "netatmo_path": str(netatmo_path),
-                        "n_stations": n_valid,
-                    })
+                    nights.append({"era5_idx": i, "date": date_str, "n_stations": n_valid})
             except Exception as e:
-                log.debug(f"Nuit {date_str} ignorée : {e}")
+                log.debug("Nuit %s ignorée : %s", date_str, e)
         return nights
 
     def __len__(self) -> int:
@@ -119,23 +121,18 @@ class NetatmoFineTuneDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         night = self.valid_nights[idx]
-
-        # ERA5 inputs
         era5_sample = self.era5[night["era5_idx"]]
 
-        # Netatmo labels
-        obs_raw = load_netatmo_parquet(night["netatmo_path"], night["date"])
-        obs_qc = self.qc.run(obs_raw)
+        obs_qc = self.qc.run(self.obs_loader(str(self._path(night["date"])), night["date"]))
         tmin_obs = tmin_nocturnal(obs_qc)
         valid = ~np.isnan(tmin_obs.values)
 
-        # Indices de grille pour chaque station valide
-        lat_obs = obs_qc.lat[valid]
-        lon_obs = obs_qc.lon[valid]
+        lat_obs, lon_obs = obs_qc.lat[valid], obs_qc.lon[valid]
+        elev_obs = obs_qc.elevation_m[valid]
         tmin_vals = tmin_obs.values[valid]  # (n_obs,) en °C
 
-        row_idx = np.argmin(np.abs(self.lat_grid[:, None] - lat_obs[None, :]), axis=0)
-        col_idx = np.argmin(np.abs(self.lon_grid[:, None] - lon_obs[None, :]), axis=0)
+        row_idx, col_idx = assign_to_grid(lat_obs, lon_obs, self.lat_grid, self.lon_grid)
+        obs_dz = elevation_offset(elev_obs, row_idx, col_idx, self.elevation_grid)
 
         return {
             "era5_t0": era5_sample.era5_t0,               # (C, H_lr, W_lr)
@@ -144,8 +141,45 @@ class NetatmoFineTuneDataset(Dataset):
             "obs_tmin": torch.tensor(tmin_vals, dtype=torch.float32),  # (n_obs,)
             "obs_row": torch.tensor(row_idx, dtype=torch.long),
             "obs_col": torch.tensor(col_idx, dtype=torch.long),
+            "obs_dz": torch.tensor(obs_dz, dtype=torch.float32),  # station − maille (m)
             "date": night["date"],
         }
+
+
+class NetatmoFineTuneDataset(StationFineTuneDataset):
+    """Fine-tuning sur stations **Netatmo** (``netatmo_<date>.parquet``)."""
+
+    def __init__(
+        self, era5_dataset, netatmo_dir, lat_grid, lon_grid, *,
+        elevation_grid=None, min_stations_per_night=5, lapse_rate=-6.5e-3,
+    ):
+        super().__init__(
+            era5_dataset, netatmo_dir, lat_grid, lon_grid,
+            obs_loader=load_netatmo_parquet, file_template="netatmo_{date}.parquet",
+            elevation_grid=elevation_grid, min_stations_per_night=min_stations_per_night,
+            lapse_rate=lapse_rate,
+        )
+
+
+class SencropFineTuneDataset(StationFineTuneDataset):
+    """Fine-tuning sur stations **Sencrop** (``sencrop_<date>.csv`` / ``.parquet``).
+
+    Identique à Netatmo côté chaîne ; seul le loader d'observations change. La
+    calibration MNT-aware (``obs_dz``) s'applique de la même façon — c'est l'étage
+    C du chemin CERRA → 1 km → capteurs (cf. ``docs/architecture.md``).
+    """
+
+    def __init__(
+        self, era5_dataset, sencrop_dir, lat_grid, lon_grid, *,
+        elevation_grid=None, file_template="sencrop_{date}.csv",
+        min_stations_per_night=5, lapse_rate=-6.5e-3,
+    ):
+        super().__init__(
+            era5_dataset, sencrop_dir, lat_grid, lon_grid,
+            obs_loader=load_sencrop, file_template=file_template,
+            elevation_grid=elevation_grid, min_stations_per_night=min_stations_per_night,
+            lapse_rate=lapse_rate,
+        )
 
 
 # ---------------------------------------------------------------------------

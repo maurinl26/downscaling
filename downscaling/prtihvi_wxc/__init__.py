@@ -18,12 +18,15 @@ Exemple rapide :
     runner.run(model, dataset, "output/frost_prithvi.zarr")
 """
 
-from .dataset import FrostNightDataset
+# dataset/loader/inference tirent l'extra `prithvi`/`dl` (torch, huggingface_hub,
+# poids HF). On les rend optionnels — en blocs séparés pour qu'une indispo de l'un
+# ne masque pas l'autre — afin que les sous-modules légers (netatmo_qc, sencrop,
+# stations) restent importables sans torch ni l'extra complet (ex. en CI).
+try:
+    from .dataset import FrostNightDataset
+except ImportError:  # pragma: no cover - torch absent
+    FrostNightDataset = None
 
-# loader/inference tirent l'extra `prithvi` (huggingface_hub, poids HF). On les
-# rend optionnels — en blocs séparés pour qu'une indispo de l'un ne masque pas
-# l'autre — afin que les sous-modules légers (lightning_finetune, netatmo_qc)
-# restent importables sans l'extra complet (ex. en CI).
 try:
     from .loader import DEMConditionedAdapter, PrithviWxCDownscaler
 except ImportError:  # pragma: no cover - dépend de l'install de l'extra prithvi

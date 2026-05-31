@@ -52,9 +52,16 @@ class SparseSupervisedLoss(nn.Module):
         obs_row: torch.Tensor,     # (n_obs,) — indices ligne grille
         obs_col: torch.Tensor,     # (n_obs,) — indices colonne grille
         batch_idx: int = 0,
+        obs_dz: torch.Tensor | None = None,   # (n_obs,) — altitude_station − altitude_maille (m)
+        lapse_rate: float = -6.5e-3,          # K/m (gel nocturne : ≈ −4e-3, cf. config)
     ) -> tuple[torch.Tensor, dict]:
         # L_obs : supervision aux stations
         pred_at_obs = pred[batch_idx, 0, obs_row, obs_col]
+        # Correction d'altitude (valorise le MNT) : la maille 1 km et la station
+        # ne sont pas à la même altitude → on ramène la prévision à l'altitude
+        # réelle du capteur avant comparaison (fonds froids de vallée, etc.).
+        if obs_dz is not None:
+            pred_at_obs = pred_at_obs + lapse_rate * obs_dz
         l_obs = torch.sqrt(torch.mean((pred_at_obs - obs_tmin) ** 2))
 
         # L_TV : variation totale (cohérence spatiale)
@@ -91,6 +98,8 @@ def sparse_collate_fn(samples: list[dict]) -> dict:
         "obs_tmin": [s["obs_tmin"] for s in samples],
         "obs_row": [s["obs_row"] for s in samples],
         "obs_col": [s["obs_col"] for s in samples],
+        # Décalage d'altitude station−maille (m), si fourni (calibration MNT-aware).
+        "obs_dz": [s.get("obs_dz") for s in samples],
         "date": [s["date"] for s in samples],
     }
 
@@ -124,6 +133,8 @@ class PrithviFinetuneLitModule(pl.LightningModule):
         max_epochs: int = 50,
         loss_weights: dict | None = None,
         kelvin_to_celsius: bool = True,
+        lapse_rate: float = -6.5e-3,      # correction d'altitude station/maille (K/m)
+        elevation_aware: bool = True,     # valorise le MNT via obs_dz (si fourni)
     ):
         super().__init__()
         self.model = model
@@ -134,6 +145,8 @@ class PrithviFinetuneLitModule(pl.LightningModule):
             lambda_smooth=lw.get("smooth", 0.001),
         )
         self.kelvin_to_celsius = kelvin_to_celsius
+        self.lapse_rate = lapse_rate
+        self.elevation_aware = elevation_aware
         self.save_hyperparameters(ignore=["model"])
 
     def forward(self, era5_t0, era5_t1, dem_hr):
@@ -148,9 +161,13 @@ class PrithviFinetuneLitModule(pl.LightningModule):
     def _shared_step(self, batch):
         pred = self(batch["era5_t0"], batch["era5_t1"], batch["dem_hr"])
         if self.kelvin_to_celsius:
-            pred = pred - KELVIN  # comparer aux Netatmo en °C
+            pred = pred - KELVIN  # comparer aux capteurs en °C
         # batch_size==1 (obs sparse) → on déballe la première (et unique) nuit.
-        return self.criterion(pred, batch["obs_tmin"][0], batch["obs_row"][0], batch["obs_col"][0])
+        obs_dz = batch.get("obs_dz", [None])[0] if self.elevation_aware else None
+        return self.criterion(
+            pred, batch["obs_tmin"][0], batch["obs_row"][0], batch["obs_col"][0],
+            obs_dz=obs_dz, lapse_rate=self.lapse_rate,
+        )
 
     def training_step(self, batch, batch_idx):
         loss, parts = self._shared_step(batch)

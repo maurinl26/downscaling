@@ -23,6 +23,7 @@ from torch.utils.data import Dataset
 from downscaling.prtihvi_wxc.lightning_finetune import (
     PrithviFinetuneDataModule,
     PrithviFinetuneLitModule,
+    SparseSupervisedLoss,
 )
 
 H = W = 16
@@ -106,6 +107,24 @@ def test_optimizer_targets_adapter_only():
     assert optimized == {id(p) for p in lit.model.adapter.parameters()}
     # Aucun paramètre du backbone n'est optimisé.
     assert optimized.isdisjoint({id(p) for p in lit.model.backbone.parameters()})
+
+
+def test_elevation_aware_loss_corrects_altitude():
+    """La correction lapse-rate (obs_dz) ramène la prévision à l'altitude station."""
+    loss_fn = SparseSupervisedLoss(lambda_tv=0.0, lambda_smooth=0.0)
+    pred = torch.zeros(1, 1, 4, 4)
+    pred[0, 0, 1, 2] = 10.0
+    obs_row = torch.tensor([1])
+    obs_col = torch.tensor([2])
+    # Station 100 m au-dessus de la maille ; lapse −6.5e-3 → −0.65 °C attendu.
+    obs_dz = torch.tensor([100.0])
+    target = torch.tensor([10.0 + (-6.5e-3) * 100.0])  # 9.35
+
+    # Sans correction : erreur de 0.65 ; avec correction : ~0.
+    _, plain = loss_fn(pred, target, obs_row, obs_col)
+    _, corrected = loss_fn(pred, target, obs_row, obs_col, obs_dz=obs_dz, lapse_rate=-6.5e-3)
+    assert plain["loss_obs"] == pytest.approx(0.65, abs=1e-4)
+    assert corrected["loss_obs"] == pytest.approx(0.0, abs=1e-5)
 
 
 def test_checkpoint_keeps_only_adapter():
