@@ -60,6 +60,8 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         kelvin_to_celsius: bool = True,
         lapse_rate: float = -6.5e-3,
         elevation_aware: bool = True,
+        hourly: bool = False,        # descente horaire puis réduction (Tmin correct)
+        reduce: str = "min",         # réduction temporelle des prédictions ('min' = Tmin)
     ):
         super().__init__()
         self.model = model
@@ -73,17 +75,38 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         self.kelvin_to_celsius = kelvin_to_celsius
         self.lapse_rate = lapse_rate
         self.elevation_aware = elevation_aware
+        self.hourly = hourly
+        self.reduce = reduce
         self.save_hyperparameters(ignore=["model"])
 
     def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
         return self.model(x_met, x_dem)
 
-    def _shared_step(self, batch):
-        out = self(batch["x_met"], batch["x_dem"])          # (B, C_out, H, W)
+    def _reduce_time(self, series: torch.Tensor) -> torch.Tensor:
+        """``(T, H, W) → (H, W)`` : min (Tmin) / max / mean sur les heures."""
+        if self.reduce == "min":
+            return series.min(dim=0).values
+        if self.reduce == "max":
+            return series.max(dim=0).values
+        return series.mean(dim=0)
+
+    def _predict_target(self, batch) -> torch.Tensor:
+        """Champ cible 1 km ``(1, 1, H, W)`` — descente horaire + réduction si ``hourly``."""
         c = self.target_channel
-        pred = out[:, c:c + 1]                               # (B, 1, H, W) — T2m
+        if self.hourly:
+            # x_met : (1, T, C, H, W) → descente d'échelle heure par heure.
+            xm = batch["x_met"][0]                              # (T, C, H, W)
+            xd = batch["x_dem"].expand(xm.shape[0], -1, -1, -1)  # (T, C_dem, H, W)
+            series = self.model(xm, xd)[:, c]                   # (T, H, W)
+            pred = self._reduce_time(series)[None, None]        # (1, 1, H, W)
+        else:
+            pred = self(batch["x_met"], batch["x_dem"])[:, c:c + 1]  # (1, 1, H, W)
         if self.kelvin_to_celsius:
             pred = pred - KELVIN
+        return pred
+
+    def _shared_step(self, batch):
+        pred = self._predict_target(batch)
         obs_dz = batch.get("obs_dz", [None])[0] if self.elevation_aware else None
         return self.criterion(
             pred, batch["obs_tmin"][0], batch["obs_row"][0], batch["obs_col"][0],

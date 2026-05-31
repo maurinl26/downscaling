@@ -179,8 +179,14 @@ indépendants du choix de chemin (A ou B).
 > Le **chemin B est calibrable de bout en bout** : `UNetSparseCalibrationModule`
 > appelle le U-Net `(x_met, x_dem)`, sélectionne le canal cible (T2m) et supervise
 > sur stations sparse avec correction d'altitude ; `CERRACoarseProvider` fournit
-> les entrées réelles (réduction Tmin nocturne + normalisation cohérente avec
-> l'entraînement). Indépendant du blocage MERRA-2 (#1).
+> les entrées réelles, normalisées comme à l'entraînement. Indépendant du blocage
+> MERRA-2 (#1).
+>
+> **Tmin = descente horaire puis min** (`calibration.hourly=true`, défaut) : on
+> descend en résolution **chaque heure** de la nuit (le U-Net voit des champs
+> instantanés, en distribution), puis on prend le **min des prédictions 1 km**.
+> Préférer cette voie à `hourly=false` (réduction du champ coarse avant le U-Net),
+> qui présenterait au réseau un champ Tmin agrégé hors-distribution.
 >
 > En une commande (entry point Hydra) :
 >

@@ -9,7 +9,8 @@ stats_file: checkpoints/drome_ardeche/normalization_stats.json
 out: checkpoints/drome_ardeche/calibrated.pt            # checkpoint calibré produit
 
 target_channel: 0          # canal supervisé (T2m)
-reduce: min                # réduction nocturne par maille : min (Tmin) | mean | max
+hourly: true               # true = descente horaire puis min (correct) ; false = réduction coarse avant U-Net
+reduce: min                # réduction temporelle : min (Tmin) | mean | max
 lapse_rate: -4.0e-3        # K/m — régime de gel nocturne (inversions)
 elevation_aware: true      # correction d'altitude station/maille (valorise le MNT)
 min_stations: 5            # nb minimal de stations valides par nuit

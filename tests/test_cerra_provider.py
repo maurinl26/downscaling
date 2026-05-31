@@ -41,14 +41,29 @@ def _write_dem(path):
     xr.Dataset(dem, coords={"y": np.arange(H), "x": np.arange(W)}).to_netcdf(path)
 
 
-@pytest.fixture
-def provider(tmp_path):
+def _make_provider(tmp_path, **kwargs):
     cerra_dir = tmp_path / "cerra"
-    cerra_dir.mkdir()
+    cerra_dir.mkdir(exist_ok=True)
     _write_cerra(cerra_dir / f"cerra_{DATE}.nc")
     dem_file = tmp_path / "dem.nc"
     _write_dem(dem_file)
-    return CERRACoarseProvider(cerra_dir, dem_file, met_vars=MET_VARS, reduce="min")
+    return CERRACoarseProvider(cerra_dir, dem_file, met_vars=MET_VARS, **kwargs)
+
+
+@pytest.fixture
+def provider(tmp_path):
+    # Mode réduit (réduction coarse avant U-Net).
+    return _make_provider(tmp_path, reduce="min", hourly=False)
+
+
+def test_provider_hourly_returns_time_stack(tmp_path):
+    """hourly=True : pile horaire (T, C, H, W) — descente puis min côté module."""
+    prov = _make_provider(tmp_path, hourly=True)
+    x_met, x_dem = prov(DATE)
+    assert x_met.ndim == 4
+    assert x_met.shape[0] == 12          # nuit 20h → 07h incluse = 12 heures
+    assert x_met.shape[1:] == (len(MET_VARS), H, W)
+    assert x_dem.shape == (4, H, W)
 
 
 def test_provider_returns_normalised_shapes(provider):

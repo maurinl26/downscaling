@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import torch
 import xarray as xr
 
 from .dataset import DEFAULT_MET_VARS, prepare_inference_batch
@@ -40,11 +41,13 @@ class CERRACoarseProvider:
         night_start: str = "20h",
         night_end: str = "8h",
         reduce: str = "min",   # 'min' (Tmin) | 'mean' | 'max'
+        hourly: bool = True,   # True = pile horaire (descente puis min) ; False = réduction coarse avant U-Net
     ):
         self.cerra_dir = Path(cerra_dir)
         self.dem_file = Path(dem_file)
         self.met_vars = met_vars
         self.file_template = file_template
+        self.hourly = hourly
         self.night_start = night_start
         self.night_end = night_end
         self.reduce = reduce
@@ -73,23 +76,41 @@ class CERRACoarseProvider:
             self._dem_ds = xr.open_dataset(self.dem_file, engine="netcdf4")
         return self._dem_ds
 
-    def _night_reduce(self, ds: xr.Dataset, date: str) -> xr.Dataset:
-        # Harmonise le nom de la dimension temporelle.
+    def _open_night(self, date: str) -> xr.Dataset:
+        """Ouvre le fichier CERRA et restreint à la fenêtre nocturne (20h → 08h)."""
+        ds = xr.open_dataset(self.path(date), engine="netcdf4")
         if "valid_time" in ds.dims:
             ds = ds.rename({"valid_time": "time"})
-        if "time" not in ds.dims:
-            return ds
-        start = pd.Timestamp(date) + pd.Timedelta(self.night_start)
-        end = pd.Timestamp(date) + pd.Timedelta("1D") + pd.Timedelta(self.night_end)
-        ds = ds.sel(time=slice(start, end))
-        return getattr(ds, self.reduce)("time")  # min/mean/max sur la nuit
+        if "time" in ds.dims:
+            start = pd.Timestamp(date) + pd.Timedelta(self.night_start)
+            end = pd.Timestamp(date) + pd.Timedelta("1D") + pd.Timedelta(self.night_end)
+            ds = ds.sel(time=slice(start, end))
+        return ds
 
     def __call__(self, date: str):
-        """Retourne ``(x_met, x_dem)`` (tenseurs ``(C, H, W)``) pour la nuit."""
-        ds = xr.open_dataset(self.path(date), engine="netcdf4")
-        ds = self._night_reduce(ds, date)
+        """Retourne ``(x_met, x_dem)`` pour la nuit.
+
+        - ``hourly=True`` : ``x_met`` de forme ``(T, C, H, W)`` (un champ par heure) ;
+          la réduction Tmin se fait **après** descente d'échelle (côté module).
+        - ``hourly=False`` : ``x_met`` de forme ``(C, H, W)`` (réduction coarse par
+          maille via ``reduce`` avant le U-Net).
+        """
+        ds = self._open_night(date)
+
+        if self.hourly and "time" in ds.dims:
+            mets, x_dem = [], None
+            for t in range(ds.sizes["time"]):
+                x, dem = prepare_inference_batch(
+                    ds, self._dem(), self.met_vars, self.stats, time_idx=t, device="cpu"
+                )
+                mets.append(x.squeeze(0))   # (C, H, W)
+                x_dem = dem.squeeze(0)       # (C_dem, H, W) — constant dans le temps
+            return torch.stack(mets, dim=0), x_dem   # (T, C, H, W), (C_dem, H, W)
+
+        # Réduction coarse par maille (ou pas de dim temporelle).
+        if "time" in ds.dims:
+            ds = getattr(ds, self.reduce)("time")
         x_met, x_dem = prepare_inference_batch(
             ds, self._dem(), self.met_vars, self.stats, device="cpu"
         )
-        # prepare_inference_batch renvoie (1, C, H, W) → on retire la dim batch.
         return x_met.squeeze(0), x_dem.squeeze(0)

@@ -102,7 +102,8 @@ def main(cfg: DictConfig) -> None:
     # Entrées CERRA par nuit + grilles depuis le MNT.
     provider = CERRACoarseProvider(
         cal.cerra_fine_dir, cfg.data.dem_attrs,
-        met_vars=list(dl.met_vars), stats_file=cal.stats_file, reduce=cal.reduce,
+        met_vars=list(dl.met_vars), stats_file=cal.stats_file,
+        reduce=cal.reduce, hourly=cal.hourly,
     )
     lat_grid, lon_grid, elevation_grid = grids_from_dem(
         xr.open_dataset(cfg.data.dem_attrs, engine="netcdf4")
@@ -118,6 +119,7 @@ def main(cfg: DictConfig) -> None:
     lit = UNetSparseCalibrationModule(
         model, target_channel=cal.target_channel, lr=cal.lr, max_epochs=cal.epochs,
         lapse_rate=cal.lapse_rate, elevation_aware=cal.elevation_aware,
+        hourly=cal.hourly, reduce=cal.reduce,
     )
     datamodule = UNetSparseDataModule(dataset, num_workers=cfg.cluster.get("num_workers", 0))
     trainer = build_trainer(
