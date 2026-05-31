@@ -19,9 +19,31 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .netatmo_qc import NetatmoObs
+from .netatmo_qc import NetatmoObs, tmin_nocturnal
 
 StationObs = NetatmoObs  # conteneur générique (Netatmo / Sencrop / …)
+
+
+def night_station_targets(
+    obs_qc: StationObs,
+    lat_grid: np.ndarray,
+    lon_grid: np.ndarray,
+    elevation_grid: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Observations QC'd d'une nuit → cibles sparse ``(tmin, row, col, dz)``.
+
+    Mutualise l'extraction entre les datasets de calibration (Prithvi / U-Net) :
+    Tmin par station valide, leur position sur la grille HR, et le décalage
+    d'altitude ``dz`` (m) pour la correction lapse-rate.
+    """
+    tmin = tmin_nocturnal(obs_qc)
+    valid = ~np.isnan(tmin.values)
+    lat, lon = obs_qc.lat[valid], obs_qc.lon[valid]
+    elev = obs_qc.elevation_m[valid]
+    vals = tmin.values[valid].astype(np.float32)
+    row, col = assign_to_grid(lat, lon, lat_grid, lon_grid)
+    dz = elevation_offset(elev, row, col, elevation_grid)
+    return vals, row, col, dz
 
 
 def assign_to_grid(

@@ -172,7 +172,15 @@ indépendants du choix de chemin (A ou B).
 | B | Pipeline statistique (lapse-rate + QDM) | ✅ |
 | C | Fine-tuning sparse **Netatmo + Sencrop** | ✅ Lightning, source-agnostique (`StationFineTuneDataset`) |
 | C | Calibration **MNT-aware** (correction d'altitude `obs_dz`) | ✅ `SparseSupervisedLoss(elevation_aware)` |
+| **C — chemin B** | **Calibration U-Net (CERRA → 1 km → capteurs)** | ✅ `deep_learning/sparse_calibration.py` (`UNetSparseCalibrationModule`) |
 | C | Interpolation optimale | 🟡 esquisse |
+
+> Le **chemin B est désormais calibrable de bout en bout** côté code :
+> `UNetSparseCalibrationModule` appelle le U-Net `(x_met, x_dem)`, sélectionne le
+> canal cible (T2m) et supervise sur stations sparse avec correction d'altitude.
+> Seul reste à brancher le `coarse_provider` (lecture CERRA/ERA5 + MNT par nuit)
+> de `UNetStationDataset` sur les données réelles — indépendant du blocage
+> MERRA-2 (#1).
 
 ---
 

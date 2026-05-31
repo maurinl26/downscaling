@@ -1,0 +1,200 @@
+"""Calibration sparse du U-Net FiLM sur capteurs in situ (chemin B, étage C).
+
+Chemin **déployable** indépendant de Prithvi/MERRA-2 :
+
+    CERRA 5.5 km → U-Net FiLM (conditionné MNT) → 1 km → calibration capteurs
+
+Ce module ajuste la sortie 1 km du U-Net pour qu'elle reproduise les Tmin des
+stations Sencrop / Netatmo, avec **correction d'altitude** (MNT) au point de
+calibration — cf. ``docs/architecture.md`` §4. Réutilise la loss sparse
+elevation-aware (:class:`SparseSupervisedLoss`) et les helpers de stations.
+
+Le U-Net est appelé ``model(x_met, x_dem) → (B, C_out, H, W)`` ; on sélectionne
+le canal cible (T2m) avant la supervision sparse.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import lightning.pytorch as pl
+import torch
+from torch.utils.data import DataLoader, Dataset, random_split
+
+from downscaling.prtihvi_wxc.lightning_finetune import SparseSupervisedLoss
+from downscaling.prtihvi_wxc.netatmo_qc import NetatmoNocturnalQC
+from downscaling.prtihvi_wxc.sencrop import load_sencrop
+from downscaling.prtihvi_wxc.stations import night_station_targets
+
+from .train import cosine_with_warmup
+
+KELVIN = 273.15
+
+
+def unet_sparse_collate(samples: list[dict]) -> dict:
+    """Collate batch=1 : empile les entrées denses, liste les obs sparse."""
+    return {
+        "x_met": torch.stack([s["x_met"] for s in samples]),
+        "x_dem": torch.stack([s["x_dem"] for s in samples]),
+        "obs_tmin": [s["obs_tmin"] for s in samples],
+        "obs_row": [s["obs_row"] for s in samples],
+        "obs_col": [s["obs_col"] for s in samples],
+        "obs_dz": [s.get("obs_dz") for s in samples],
+        "date": [s["date"] for s in samples],
+    }
+
+
+class UNetSparseCalibrationModule(pl.LightningModule):
+    """Calibre un U-Net ``(x_met, x_dem) → champ multi-canaux`` sur stations sparse."""
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        *,
+        target_channel: int = 0,         # indice du canal supervisé (T2m)
+        lr: float = 1e-4,
+        weight_decay: float = 1e-4,
+        warmup_epochs: int = 5,
+        max_epochs: int = 50,
+        loss_weights: dict | None = None,
+        kelvin_to_celsius: bool = True,
+        lapse_rate: float = -6.5e-3,
+        elevation_aware: bool = True,
+    ):
+        super().__init__()
+        self.model = model
+        lw = loss_weights or {}
+        self.criterion = SparseSupervisedLoss(
+            lambda_obs=lw.get("obs", 1.0),
+            lambda_tv=lw.get("tv", 0.01),
+            lambda_smooth=lw.get("smooth", 0.001),
+        )
+        self.target_channel = target_channel
+        self.kelvin_to_celsius = kelvin_to_celsius
+        self.lapse_rate = lapse_rate
+        self.elevation_aware = elevation_aware
+        self.save_hyperparameters(ignore=["model"])
+
+    def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
+        return self.model(x_met, x_dem)
+
+    def _shared_step(self, batch):
+        out = self(batch["x_met"], batch["x_dem"])          # (B, C_out, H, W)
+        c = self.target_channel
+        pred = out[:, c:c + 1]                               # (B, 1, H, W) — T2m
+        if self.kelvin_to_celsius:
+            pred = pred - KELVIN
+        obs_dz = batch.get("obs_dz", [None])[0] if self.elevation_aware else None
+        return self.criterion(
+            pred, batch["obs_tmin"][0], batch["obs_row"][0], batch["obs_col"][0],
+            obs_dz=obs_dz, lapse_rate=self.lapse_rate,
+        )
+
+    def training_step(self, batch, batch_idx):
+        loss, parts = self._shared_step(batch)
+        self.log("train/loss", loss, prog_bar=True, batch_size=1)
+        self.log("train/rmse", parts["loss_obs"], prog_bar=True, batch_size=1)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, parts = self._shared_step(batch)
+        self.log("val/loss", loss, prog_bar=True, batch_size=1)
+        self.log("val/rmse", parts["loss_obs"], prog_bar=True, batch_size=1)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(
+            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
+        )
+        scheduler = cosine_with_warmup(
+            optimizer, warmup_epochs=self.hparams.warmup_epochs,
+            total_epochs=self.hparams.max_epochs,
+        )
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"}}
+
+
+class UNetSparseDataModule(pl.LightningDataModule):
+    """Split train/val déterministe + ``DataLoader`` batch=1 (collate sparse)."""
+
+    def __init__(self, dataset: Dataset, *, num_workers: int = 0, val_fraction: float = 0.2, seed: int = 42):
+        super().__init__()
+        self.dataset = dataset
+        self.num_workers = num_workers
+        self.val_fraction = val_fraction
+        self.seed = seed
+        self.train_ds: Dataset | None = None
+        self.val_ds: Dataset | None = None
+
+    def setup(self, stage: str | None = None):
+        n_val = max(1, int(len(self.dataset) * self.val_fraction))
+        n_train = len(self.dataset) - n_val
+        generator = torch.Generator().manual_seed(self.seed)
+        self.train_ds, self.val_ds = random_split(self.dataset, [n_train, n_val], generator=generator)
+
+    def _loader(self, ds, shuffle):
+        return DataLoader(ds, batch_size=1, shuffle=shuffle, num_workers=self.num_workers,
+                          collate_fn=unet_sparse_collate)
+
+    def train_dataloader(self):
+        return self._loader(self.train_ds, True)
+
+    def val_dataloader(self):
+        return self._loader(self.val_ds, False)
+
+
+class UNetStationDataset(Dataset):
+    """Dataset de calibration sparse pour le U-Net : 1 sample = 1 nuit.
+
+    ``coarse_provider(date) -> (x_met, x_dem)`` fournit les entrées U-Net de la
+    nuit (CERRA dégradé / ERA5 + attributs MNT) — c'est le **point d'intégration**
+    avec les données réelles. Les capteurs (Sencrop par défaut) fournissent les
+    Tmin sparse ; ``elevation_grid`` (altitude maille HR, m) active la correction
+    d'altitude (``obs_dz``).
+    """
+
+    def __init__(
+        self,
+        dates,
+        coarse_provider,
+        obs_dir: str | Path,
+        lat_grid,
+        lon_grid,
+        *,
+        obs_loader=load_sencrop,
+        file_template: str = "sencrop_{date}.csv",
+        elevation_grid=None,
+        min_stations: int = 5,
+        lapse_rate: float = -6.5e-3,
+    ):
+        self.coarse_provider = coarse_provider
+        self.obs_dir = Path(obs_dir)
+        self.lat_grid = lat_grid
+        self.lon_grid = lon_grid
+        self.obs_loader = obs_loader
+        self.file_template = file_template
+        self.elevation_grid = elevation_grid
+        self.min_stations = min_stations
+        self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
+        self.dates = [d for d in dates if self._path(d).exists()]
+
+    def _path(self, date: str) -> Path:
+        return self.obs_dir / self.file_template.format(date=date)
+
+    def __len__(self) -> int:
+        return len(self.dates)
+
+    def __getitem__(self, idx: int) -> dict:
+        date = self.dates[idx]
+        x_met, x_dem = self.coarse_provider(date)
+        obs_qc = self.qc.run(self.obs_loader(str(self._path(date)), date))
+        tmin, row, col, dz = night_station_targets(
+            obs_qc, self.lat_grid, self.lon_grid, self.elevation_grid
+        )
+        return {
+            "x_met": x_met,
+            "x_dem": x_dem,
+            "obs_tmin": torch.as_tensor(tmin, dtype=torch.float32),
+            "obs_row": torch.as_tensor(row, dtype=torch.long),
+            "obs_col": torch.as_tensor(col, dtype=torch.long),
+            "obs_dz": torch.as_tensor(dz, dtype=torch.float32),
+            "date": date,
+        }
