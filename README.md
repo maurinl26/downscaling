@@ -121,6 +121,7 @@ Installés par `uv sync` / `pip install` (cf. `[project.scripts]`) :
 | `downscaling-run` | Pipeline statistique piloté par Hydra |
 | `run-dl-train` | Entraînement U-Net FiLM (Lightning) |
 | `run-dl-inference` | Inférence U-Net sur nouvelles données |
+| `run-calibration` | Calibration sparse U-Net sur capteurs (CERRA → 1 km → Sencrop) |
 | `run-campaign` | Campagne multi-saisons (stat + détection) |
 | `fetch-pretrained` | Pré-télécharge les poids Prithvi WxC → `modelstore/` |
 | `launch-dl-job` | Lance un pod GPU RunPod |

@@ -182,21 +182,18 @@ indépendants du choix de chemin (A ou B).
 > les entrées réelles (réduction Tmin nocturne + normalisation cohérente avec
 > l'entraînement). Indépendant du blocage MERRA-2 (#1).
 >
-> ```python
-> from downscaling.deep_learning.cerra_provider import CERRACoarseProvider
-> from downscaling.deep_learning.sparse_calibration import (
->     UNetStationDataset, UNetSparseCalibrationModule, UNetSparseDataModule)
+> En une commande (entry point Hydra) :
 >
-> provider = CERRACoarseProvider("data/cerra_fine/", "data/dem/dem_attributes.nc",
->                                stats_file="checkpoints/normalization_stats.json")
-> ds = UNetStationDataset(provider.dates(), provider, "data/sencrop/",
->                         lat_grid, lon_grid, elevation_grid=elev_1km)
-> lit = UNetSparseCalibrationModule(unet, target_channel=0)   # T2m
-> trainer.fit(lit, datamodule=UNetSparseDataModule(ds))
+> ```bash
+> run-calibration                                   # config calibration/ par défaut
+> run-calibration cluster=cloud calibration.epochs=50
+> run-calibration calibration.reduce=mean calibration.elevation_aware=false
 > ```
 >
 > Pré-requis données : fichiers CERRA **déjà rééchantillonnés sur la grille fine**
-> (`cerra_<date>.nc`) + exports Sencrop (`sencrop_<date>.csv`).
+> (`cerra_<date>.nc`), MNT (`data.dem_attrs`), exports Sencrop
+> (`sencrop_<date>.csv`), checkpoint U-Net entraîné + stats de normalisation
+> (chemins dans `configs/calibration/default.yaml`).
 
 ---
 

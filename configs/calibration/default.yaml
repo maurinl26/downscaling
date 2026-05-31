@@ -1,0 +1,19 @@
+# Calibration sparse du U-Net sur capteurs in situ (chemin B, étage C).
+# Piloté par l'entry point `run-calibration` (cf. scripts/run_calibration.py).
+
+cerra_fine_dir: data/cerra_fine/         # CERRA rééchantillonné sur la grille fine
+sencrop_dir: data/sencrop/               # exports Sencrop (sencrop_<date>.csv)
+file_template: "sencrop_{date}.csv"      # nom des fichiers capteurs
+checkpoint: checkpoints/drome_ardeche/best_model.ckpt   # U-Net entraîné à calibrer
+stats_file: checkpoints/drome_ardeche/normalization_stats.json
+out: checkpoints/drome_ardeche/calibrated.pt            # checkpoint calibré produit
+
+target_channel: 0          # canal supervisé (T2m)
+reduce: min                # réduction nocturne par maille : min (Tmin) | mean | max
+lapse_rate: -4.0e-3        # K/m — régime de gel nocturne (inversions)
+elevation_aware: true      # correction d'altitude station/maille (valorise le MNT)
+min_stations: 5            # nb minimal de stations valides par nuit
+
+epochs: 30
+lr: 1.0e-4
+patience: 10               # early stopping (val/rmse)

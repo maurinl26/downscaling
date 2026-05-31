@@ -11,6 +11,7 @@ defaults:
   - _self_
   - experiment: drome_ardeche
   - cluster: local
+  - calibration: default
 
 # Paramètres de run (surchargés par l'experiment).
 run:
