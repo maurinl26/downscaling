@@ -173,14 +173,30 @@ indépendants du choix de chemin (A ou B).
 | C | Fine-tuning sparse **Netatmo + Sencrop** | ✅ Lightning, source-agnostique (`StationFineTuneDataset`) |
 | C | Calibration **MNT-aware** (correction d'altitude `obs_dz`) | ✅ `SparseSupervisedLoss(elevation_aware)` |
 | **C — chemin B** | **Calibration U-Net (CERRA → 1 km → capteurs)** | ✅ `deep_learning/sparse_calibration.py` (`UNetSparseCalibrationModule`) |
+| **C — chemin B** | **`coarse_provider` CERRA** (entrées U-Net par nuit) | ✅ `deep_learning/cerra_provider.py` (`CERRACoarseProvider`) |
 | C | Interpolation optimale | 🟡 esquisse |
 
-> Le **chemin B est désormais calibrable de bout en bout** côté code :
-> `UNetSparseCalibrationModule` appelle le U-Net `(x_met, x_dem)`, sélectionne le
-> canal cible (T2m) et supervise sur stations sparse avec correction d'altitude.
-> Seul reste à brancher le `coarse_provider` (lecture CERRA/ERA5 + MNT par nuit)
-> de `UNetStationDataset` sur les données réelles — indépendant du blocage
-> MERRA-2 (#1).
+> Le **chemin B est calibrable de bout en bout** : `UNetSparseCalibrationModule`
+> appelle le U-Net `(x_met, x_dem)`, sélectionne le canal cible (T2m) et supervise
+> sur stations sparse avec correction d'altitude ; `CERRACoarseProvider` fournit
+> les entrées réelles (réduction Tmin nocturne + normalisation cohérente avec
+> l'entraînement). Indépendant du blocage MERRA-2 (#1).
+>
+> ```python
+> from downscaling.deep_learning.cerra_provider import CERRACoarseProvider
+> from downscaling.deep_learning.sparse_calibration import (
+>     UNetStationDataset, UNetSparseCalibrationModule, UNetSparseDataModule)
+>
+> provider = CERRACoarseProvider("data/cerra_fine/", "data/dem/dem_attributes.nc",
+>                                stats_file="checkpoints/normalization_stats.json")
+> ds = UNetStationDataset(provider.dates(), provider, "data/sencrop/",
+>                         lat_grid, lon_grid, elevation_grid=elev_1km)
+> lit = UNetSparseCalibrationModule(unet, target_channel=0)   # T2m
+> trainer.fit(lit, datamodule=UNetSparseDataModule(ds))
+> ```
+>
+> Pré-requis données : fichiers CERRA **déjà rééchantillonnés sur la grille fine**
+> (`cerra_<date>.nc`) + exports Sencrop (`sencrop_<date>.csv`).
 
 ---
 
