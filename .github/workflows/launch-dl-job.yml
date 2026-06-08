@@ -62,6 +62,10 @@ jobs:
           MLFLOW_TRACKING_URI:  ${{ secrets.MLFLOW_TRACKING_URI }}
           SCW_ACCESS_KEY:       ${{ secrets.SCW_ACCESS_KEY }}
           SCW_SECRET_KEY:       ${{ secrets.SCW_SECRET_KEY }}
+          SCW_S3_ENDPOINT:      ${{ vars.SCW_S3_ENDPOINT }}
+          WANDB_API_KEY:        ${{ secrets.WANDB_API_KEY }}
+          WANDB_PROJECT:        ${{ vars.WANDB_PROJECT }}
+          WANDB_ENTITY:         ${{ vars.WANDB_ENTITY }}
         run: |
           ARGS="--task ${{ github.event.inputs.task }}"
 
@@ -89,9 +93,15 @@ jobs:
 
 # ── Secrets requis (Settings → Secrets → Actions) ────────────────────────────
 #   RUNPOD_API_KEY        — RunPod API key
-#   MLFLOW_TRACKING_URI   — ex: http://<scaleway-ip>:5500
-#   SCW_ACCESS_KEY        — Scaleway S3 access key (upload résultats)
+#   MLFLOW_TRACKING_URI   — ex: http://<scaleway-ip>:5500 (optionnel si W&B)
+#   SCW_ACCESS_KEY        — Scaleway S3 access key (données + upload poids)
 #   SCW_SECRET_KEY        — Scaleway S3 secret key
+#   WANDB_API_KEY         — Weights & Biases (monitoring des scores)
+# ── Variables (Settings → Variables → Actions) ──────────────────────────────
+#   SCW_S3_ENDPOINT       — https://s3.fr-par.scw.cloud
+#   WANDB_PROJECT         — karpos-downscaling
+#   WANDB_ENTITY          — <org W&B>
+# Ces env sont propagés au pod RunPod par launch_dl_job (cf. docs/infra_pro.md).
 #
 # ── Workflow des tâches ───────────────────────────────────────────────────────
 #   unet-train          → A100 spot, ~2h, checkpoints → S3

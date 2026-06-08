@@ -185,6 +185,10 @@ def create_pod(task: str, years: str | None, ssh_key_path: str,
     mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5500")
     scw_access = os.environ.get("SCW_ACCESS_KEY", "")
     scw_secret = os.environ.get("SCW_SECRET_KEY", "")
+    scw_s3_endpoint = os.environ.get("SCW_S3_ENDPOINT", "https://s3.fr-par.scw.cloud")
+    wandb_key = os.environ.get("WANDB_API_KEY", "")
+    wandb_project = os.environ.get("WANDB_PROJECT", "karpos-downscaling")
+    wandb_entity = os.environ.get("WANDB_ENTITY", "")
 
     print(f"\nTask     : {task}")
     print(f"Desc     : {spec['desc']}")
@@ -220,6 +224,10 @@ def create_pod(task: str, years: str | None, ssh_key_path: str,
                     "MLFLOW_TRACKING_URI": mlflow_uri,
                     "SCW_ACCESS_KEY": scw_access,
                     "SCW_SECRET_KEY": scw_secret,
+                    "SCW_S3_ENDPOINT": scw_s3_endpoint,
+                    "WANDB_API_KEY": wandb_key,
+                    "WANDB_PROJECT": wandb_project,
+                    "WANDB_ENTITY": wandb_entity,
                     "HF_HOME": f"{VOLUME_MOUNT}/.hf_cache",
                 },
                 docker_args=cmd,
