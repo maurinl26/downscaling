@@ -274,6 +274,13 @@ def main():
     # Import tardif : Lightning n'est requis que pour l'entraînement effectif.
     from .lightning_module import DownscalingDataModule, DownscalingLitModule
 
+    # Seuil de gel (0 °C) en espace normalisé, pour le suivi POD/FAR (cf. issue #7).
+    frost_threshold_norm = None
+    t2m_stats = dataset.stats.get("t2m") if getattr(dataset, "stats", None) else None
+    if t2m_stats:
+        mean, std = t2m_stats
+        frost_threshold_norm = (0.0 - mean) / std if std else None
+
     lit = DownscalingLitModule(
         model,
         lr=args.lr,
@@ -281,6 +288,7 @@ def main():
         warmup_epochs=dl_cfg.get("warmup_epochs", 5),
         max_epochs=args.epochs,
         loss_weights=dl_cfg.get("loss_weights"),
+        frost_threshold_norm=frost_threshold_norm,
     )
     datamodule = DownscalingDataModule(
         dataset,
