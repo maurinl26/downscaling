@@ -41,6 +41,10 @@ loss_weights:
   spectral: 0.1        # préserve les hautes fréquences spatiales
   gradient: 0.05       # préserve les gradients (contours relief)
 
+# Pondération queue-froide du MSE : poids pixel = 1 + α·relu(seuil_gel − cible).
+# 0 = MSE standard ; >0 (ex. 4) sur-pondère le gel → relève le POD (cf. issue #7).
+frost_alpha: 0.0
+
 # Checkpoints.
 checkpoint_dir: checkpoints/drome_ardeche/
 stats_file: checkpoints/drome_ardeche/normalization_stats.json

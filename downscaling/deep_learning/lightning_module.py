@@ -38,13 +38,15 @@ class DownscalingLitModule(pl.LightningModule):
         super().__init__()
         self.model = model
         lw = loss_weights or {}
+        # Seuil de détection du gel (queue froide) — suivi POD/FAR + pondération de loss.
+        self.frost_threshold_norm = frost_threshold_norm
         self.criterion = DownscalingLoss(
             lambda_mse=lw.get("mse", 1.0),
             lambda_spectral=lw.get("spectral", 0.1),
             lambda_gradient=lw.get("gradient", 0.05),
+            frost_threshold_norm=frost_threshold_norm,
+            frost_alpha=lw.get("frost_alpha", 0.0),
         )
-        # Seuil de détection du gel (queue froide) pour le suivi POD/FAR.
-        self.frost_threshold_norm = frost_threshold_norm
         self._frost = {"hits": 0, "misses": 0, "fa": 0}
         # Le modèle est un objet injecté (non sérialisable proprement) → exclu.
         self.save_hyperparameters(ignore=["model"])

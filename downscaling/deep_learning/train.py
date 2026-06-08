@@ -92,19 +92,36 @@ class DownscalingLoss(nn.Module):
         lambda_mse: float = 1.0,
         lambda_spectral: float = 0.1,
         lambda_gradient: float = 0.05,
+        frost_threshold_norm: float | None = None,  # seuil gel normalisé (0−µ)/σ
+        frost_alpha: float = 0.0,                    # 0 = MSE standard ; >0 = sur-pondère la queue froide
     ):
         super().__init__()
         self.lambda_mse = lambda_mse
         self.lambda_spectral = lambda_spectral
         self.lambda_gradient = lambda_gradient
+        self.frost_threshold_norm = frost_threshold_norm
+        self.frost_alpha = frost_alpha
         self.mse = nn.MSELoss()
         self.spectral = SpectralLoss()
         self.gradient = GradientLoss()
 
+    def _mse(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """MSE, sur-pondérée sur les pixels froids si ``frost_alpha > 0``.
+
+        Poids pixel = 1 + α·relu(seuil − cible_t2m) → les erreurs sous le seuil de gel
+        coûtent davantage, ce qui empêche le modèle de se replier sur la climatologie
+        (cf. issue #7). Normalisé par la moyenne des poids → échelle comparable au MSE.
+        """
+        if self.frost_alpha and self.frost_threshold_norm is not None:
+            w = 1.0 + self.frost_alpha * torch.relu(self.frost_threshold_norm - target[:, :1])
+            se = (pred - target) ** 2
+            return (w * se).sum() / (w.expand_as(se).sum())
+        return self.mse(pred, target)
+
     def forward(
         self, pred: torch.Tensor, target: torch.Tensor
     ) -> tuple[torch.Tensor, dict[str, float]]:
-        mse = self.mse(pred, target)
+        mse = self._mse(pred, target)
         spec = self.spectral(pred, target)
         grad = self.gradient(pred, target)
         total = self.lambda_mse * mse + self.lambda_spectral * spec + self.lambda_gradient * grad
@@ -281,13 +298,17 @@ def main():
         mean, std = t2m_stats
         frost_threshold_norm = (0.0 - mean) / std if std else None
 
+    # Pondération queue-froide pilotable via dl.frost_alpha (0 = MSE standard).
+    lw = dict(dl_cfg.get("loss_weights") or {})
+    lw["frost_alpha"] = float(dl_cfg.get("frost_alpha", 0.0))
+
     lit = DownscalingLitModule(
         model,
         lr=args.lr,
         weight_decay=dl_cfg.get("weight_decay", 1e-4),
         warmup_epochs=dl_cfg.get("warmup_epochs", 5),
         max_epochs=args.epochs,
-        loss_weights=dl_cfg.get("loss_weights"),
+        loss_weights=lw,
         frost_threshold_norm=frost_threshold_norm,
     )
     datamodule = DownscalingDataModule(
