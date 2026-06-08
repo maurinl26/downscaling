@@ -106,3 +106,57 @@ en octets, mais surtout : **store chunké consolidé, accès lazy, déportable k
   stocker durablement en local — les pousser sur S3 et régénérer à la demande.
 - Sur le Mac (SSD ~5 Gi libres, contrainte réelle) : checkpoints + tuiles → S3 ;
   garder en local le minimum.
+
+---
+
+## 7. Annexe — créer les ressources Scaleway (pas-à-pas)
+
+Aucun projet Scaleway n'existe encore. À faire une fois, dans la console
+[console.scaleway.com](https://console.scaleway.com) :
+
+### 7.1 Projet + bucket Object Storage
+1. **Organisation → Projects** : créer (ou choisir) un projet, ex. `karpos`.
+2. **Storage → Object Storage → Create bucket** :
+   - Nom : `karpos-downscaling` (globalement unique par région).
+   - Région : **fr-par** (Paris) — cohérent avec l'image Docker `registry.fr-par.scw.cloud`.
+   - Visibilité : **Private**.
+3. (Optionnel) Créer les « dossiers » logiques `training/`, `sencrop/`, `cerra_fine/`,
+   `artifacts/` — ou laisser `s3-sync` les créer au 1er `push`.
+
+### 7.2 Clé API (IAM)
+1. **IAM → API keys → Generate an API key** (attachée à une application IAM dédiée,
+   ex. `downscaling-ci`).
+2. Donner à cette application la **policy** `ObjectStorageFullAccess` (ou restreinte au
+   bucket `karpos-downscaling`).
+3. Récupérer **Access Key ID** → `SCW_ACCESS_KEY` et **Secret Key** (affichée une seule
+   fois !) → `SCW_SECRET_KEY`.
+
+### 7.3 Endpoint
+- `SCW_S3_ENDPOINT = https://s3.fr-par.scw.cloud`  ·  `SCW_S3_REGION = fr-par`.
+
+### 7.4 Test local
+```bash
+export SCW_ACCESS_KEY=... SCW_SECRET_KEY=...
+export SCW_S3_ENDPOINT=https://s3.fr-par.scw.cloud
+uv run s3-sync push downscaling/data/dem/dem_attributes.nc s3://karpos-downscaling/test/
+uv run s3-sync pull s3://karpos-downscaling/test/ /tmp/s3test/
+```
+
+### 7.5 Secrets / variables GitHub Actions
+Repo `downscaling` → **Settings → Secrets and variables → Actions** :
+- **Secrets** : `RUNPOD_API_KEY`, `SCW_ACCESS_KEY`, `SCW_SECRET_KEY`, `WANDB_API_KEY`.
+- **Variables** : `SCW_S3_ENDPOINT` (= https://s3.fr-par.scw.cloud), `WANDB_PROJECT`
+  (= karpos-downscaling), `WANDB_ENTITY` (= ton org W&B).
+
+### 7.6 W&B
+1. Créer le projet `karpos-downscaling` sur [wandb.ai](https://wandb.ai).
+2. `WANDB_API_KEY` depuis wandb.ai/authorize → secret GitHub + env local si run sur le Mac.
+
+### 7.7 Pousser les données une fois
+```bash
+uv run s3-sync push downscaling/data/training/ s3://karpos-downscaling/training/drome_ardeche/2015-2021/
+```
+Ensuite : workflow *Launch DL Job* (dispatch) → le pod pull depuis S3, entraîne, logge W&B, push le checkpoint.
+
+> Alternatives CLI au besoin : `rclone` (remote type `s3`, provider `Scaleway`) ou
+> `s3cmd` — mêmes clés/endpoint. `s3-sync` (boto3) suffit pour le flux tuiles/poids.
