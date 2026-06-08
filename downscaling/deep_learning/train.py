@@ -148,7 +148,28 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float
 # ---------------------------------------------------------------------------
 
 def _build_logger(checkpoint_dir: Path):
-    """MLflow si ``MLFLOW_TRACKING_URI`` est défini, sinon CSV local (sans dép)."""
+    """Logger d'expérience, par ordre de préférence :
+
+    1. **Weights & Biases** si ``WANDB_PROJECT`` (ou ``WANDB_API_KEY``) est défini —
+       monitoring des scores en prod (val/rmse, POD/FAR, hyperparams).
+    2. **MLflow** si ``MLFLOW_TRACKING_URI`` est défini.
+    3. **CSV** local sinon (sans dépendance).
+
+    Tous les imports sont gracieux : une dép manquante → repli sur le suivant.
+    """
+    if os.environ.get("WANDB_PROJECT") or os.environ.get("WANDB_API_KEY"):
+        try:
+            from lightning.pytorch.loggers import WandbLogger
+
+            return WandbLogger(
+                project=os.environ.get("WANDB_PROJECT", "karpos-downscaling"),
+                entity=os.environ.get("WANDB_ENTITY"),
+                save_dir=str(checkpoint_dir),
+                log_model=False,  # les checkpoints partent vers S3 (cf. docs/infra_pro.md)
+            )
+        except Exception:  # pragma: no cover - dépend de l'install wandb
+            log.warning("wandb indisponible (pip install wandb) — repli logger suivant.")
+
     uri = os.environ.get("MLFLOW_TRACKING_URI")
     if uri:
         try:
