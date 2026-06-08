@@ -60,6 +60,18 @@
 
 ---
 
+## Phase 7 — Sensibilité à la densité Sencrop (valeur de l'information)
+- L'étude peut débloquer une **densité Sencrop plus grande** (arbitrage commercial). L'archi
+  à 2 étages **scale avec la densité** : étage A (prior DEM, indépendant des stations) extrait
+  la valeur du réseau clairsemé actuel + généralise aux points non instrumentés ; étage C
+  (calibration sparse) s'améliore monotonement avec le nombre de stations. → argument
+  **downscaling vs calibration au point** (cette dernière ne généralise/scale pas) pour le client.
+- **Analyse de sensibilité** : courbe **POD/FAR vs nombre de stations** (sous-échantillonnage
+  10/20/30/48, leave-station-out) → quantifie la **valeur marginale d'une station** → nourrit
+  l'arbitrage densité ET fait un slide client (« +N stations = +X pts de POD »).
+- Plus de stations **en cuvette** = validation de l'hypothèse cold-pooling (TPI/sky-view) +
+  réduction du **basis risk**.
+
 ## Ordre d'exécution recommandé
 1. **ROC/seuil** (plafond à données constantes) — 1 script.
 2. **U-Net résiduel** + smoke (POD > 0 ?) — débloqueur.
