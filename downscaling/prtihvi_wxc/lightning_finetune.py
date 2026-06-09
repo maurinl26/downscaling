@@ -39,11 +39,15 @@ class SparseSupervisedLoss(nn.Module):
         lambda_obs: float = 1.0,
         lambda_tv: float = 0.01,
         lambda_smooth: float = 0.001,
+        frost_alpha: float = 0.0,        # >0 = sur-pondère les nuits gélives observées
+        frost_threshold: float = 0.0,    # °C (obs_tmin < seuil → poids accru)
     ):
         super().__init__()
         self.lambda_obs = lambda_obs
         self.lambda_tv = lambda_tv
         self.lambda_smooth = lambda_smooth
+        self.frost_alpha = frost_alpha
+        self.frost_threshold = frost_threshold
 
     def forward(
         self,
@@ -62,7 +66,14 @@ class SparseSupervisedLoss(nn.Module):
         # réelle du capteur avant comparaison (fonds froids de vallée, etc.).
         if obs_dz is not None:
             pred_at_obs = pred_at_obs + lapse_rate * obs_dz
-        l_obs = torch.sqrt(torch.mean((pred_at_obs - obs_tmin) ** 2))
+        # Supervision pondérée queue-froide : les nuits gélives observées pèsent davantage
+        # → empêche la régression vers la moyenne chaude (sinon POD s'effondre, cf. étage C MSE).
+        err2 = (pred_at_obs - obs_tmin) ** 2
+        if self.frost_alpha:
+            w = 1.0 + self.frost_alpha * torch.relu(self.frost_threshold - obs_tmin)
+            l_obs = torch.sqrt((w * err2).sum() / w.sum())
+        else:
+            l_obs = torch.sqrt(torch.mean(err2))
 
         # L_TV : variation totale (cohérence spatiale)
         diff_h = pred[:, :, 1:, :] - pred[:, :, :-1, :]

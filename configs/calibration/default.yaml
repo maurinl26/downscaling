@@ -25,3 +25,4 @@ inspect: false             # true = diagnostique le 1er fichier et sort (pas d'e
 epochs: 30
 lr: 1.0e-4
 patience: 10               # early stopping (val/rmse)
+frost_alpha: 0.0           # >0 = supervision pondérée queue-froide (anti mean-regression, issue #7)

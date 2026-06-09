@@ -145,6 +145,7 @@ def main(cfg: DictConfig) -> None:
         denorm=denorm, kelvin_to_celsius=(denorm is None),
         lapse_rate=cal.lapse_rate, elevation_aware=cal.elevation_aware,
         hourly=cal.hourly, reduce=cal.reduce,
+        loss_weights={"frost_alpha": cal.get("frost_alpha", 0.0)},  # supervision tail-aware
     )
     datamodule = UNetSparseDataModule(dataset, num_workers=cfg.cluster.get("num_workers", 0))
     trainer = build_trainer(
