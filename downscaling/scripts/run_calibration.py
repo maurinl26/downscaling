@@ -88,14 +88,17 @@ def main(cfg: DictConfig) -> None:
     dl = cfg.dl if "dl" in cfg else cfg.deep_learning
     cal = cfg.calibration
 
-    # U-Net + poids entraînés à calibrer.
+    # U-Net + poids entraînés à calibrer (mêmes hyperparams que l'entraînement A).
+    fine_vars = list(dl.get("fine_vars", dl.met_vars))
     model = build_model(
         architecture=dl.get("architecture", "unet"),
         met_in_ch=len(dl.met_vars),
+        met_out_ch=len(fine_vars),
         dem_in_ch=dl.get("dem_in_ch", 4),
         base_ch=dl.get("base_ch", 64),
         n_levels=dl.get("n_levels", 4),
         use_film=dl.get("use_film", True),
+        residual=dl.get("residual", True),
     )
     log.info("Chargement du U-Net entraîné : %s", cal.checkpoint)
     _load_unet_weights(model, cal.checkpoint)
