@@ -45,17 +45,48 @@ la STATION (gel radiatif local que CERRA lisse) → **étage C**, pas étage A.
 → **Pivot stratégie** : (1) étage C avec entrée multi-var (calibration Sencrop + rosée/vent) ;
 (2) cible plus fine (CERRA 5,5 km en entrée) ou supervision directe station.
 
-## Décision d'architecture (pour le 15 juin)
+## Étage C multi-var (calibré 2022-2024, test 2025) : DÉGRADE (MSE → mean-regression)
 
-`résiduel (acquis) + prédicteurs radiatifs multi-variables + FiLM DEM (cuvettes) +
-calibration sparse Sencrop (étage C)`, point de fonctionnement calé sur dev, reporté
-sur le test pur 2026. La calibration au point seule (MOS/EQM/KF) est écartée :
-n'atteint jamais les deux cibles et ne scale pas avec la densité (cf. roadmap §7).
+| Multi-var sur 2025 (120 nuits) | Non-calibré | Calibré étage C |
+|---|---|---|
+| POD@0°C / FAR | 0,918 / 0,459 | **0,000** / nan |
+| AUC | **0,965** | 0,913 |
+| POD@FAR<0,20 (seuil) | 0,187 | 0,185 |
+| + débiais/station (oracle) | **0,520** | 0,129 |
 
-## Prochaines briques (par leverage attendu sur la cible)
+`SparseSupervisedLoss` = MSE → la calibration **régresse vers la moyenne chaude** et détruit
+le gel (POD 0,92→0). **Ne PAS fine-tuner le réseau par MSE.** Le réseau résiduel est un bon
+**discriminateur (AUC 0,96)** à préserver ; la calibration qui aide = **débiaisage léger par
+station + seuil** (oracle 0,52), pas un retrain.
 
-1. **Multi-variable** (découpler in/out channels : entrée [t2m, td, u10, v10] → sortie t2m)
-   — le plus gros levier FAR.
-2. **Étage C** calibration Sencrop (train dev, test 2026) — confirme le gain ~+0,3 POD réel.
-3. **DEM cuvettes** (TPI/sky-view) en FiLM.
-4. **CERRA** 5,5 km en cible/entrée (dès DL 2022-2026).
+**Plafond AUC ≈ 0,96 = CERRA vs vérité terrain.** Ni les prédicteurs multi-var, ni la
+calibration-MSE ne le bougent. Atteindre 0,75/0,20 demande : cible/supervision plus fine que
+CERRA, OU loss tail-aware (pas MSE), OU plus de densité Sencrop.
+
+## Décision d'architecture (révisée par les mesures du 8/6, pour le 15 juin)
+
+**`U-Net résiduel (discriminateur, AUC 0,96) + calibration LÉGÈRE par station (débiaisage
+de biais + seuil ROC, PAS de fine-tune réseau)`**, calée sur dev, reportée sur le test pur 2026.
+
+Écartés par la mesure (vs intuition initiale) :
+- **Multi-variable en entrée** : n'aide pas (AUC inchangé — l'étage A est borné par CERRA).
+- **Fine-tune réseau MSE (étage C tel quel)** : dégrade (mean-regression, POD→0).
+- **Calibration au point pure (MOS/EQM/KF)** : n'atteint jamais les deux cibles, ne scale pas.
+
+Ce qui reste vrai : le **résiduel** (débloqueur), la **discrimination forte** (AUC 0,96), et le
+**débiaisage par station** comme couche de calibration (oracle POD@FAR<0,20 ≈ 0,52-0,61).
+
+## Plafond honnête & voies pour le dépasser
+
+AUC ≈ 0,96 = CERRA vs vérité terrain. Avec calibration station : POD ≈ 0,52-0,61 @FAR<0,20
+(< cible 0,75). Pour pousser au-delà : **(a)** cible/supervision plus fine que CERRA (CERRA
+5,5 km, ou supervision directe station avec **loss tail-aware** — pas MSE) ; **(b)** descripteurs
+DEM de cuvette (TPI/sky-view) ; **(c)** densité Sencrop (cf. roadmap §7).
+
+## Prochaines briques
+
+1. **Calibration station « propre »** : débiaisage par station fit sur dev, appliqué test
+   (≈ oracle 0,52) + seuil ROC — couche légère, PAS un retrain réseau.
+2. **Loss tail-aware** pour toute supervision station (quantile/pondérée), sinon mean-regression.
+3. **CERRA 5,5 km** en cible/entrée (dès DL 2022-2026) — relever le plafond AUC.
+4. **DEM cuvettes** (TPI/sky-view) en FiLM.
