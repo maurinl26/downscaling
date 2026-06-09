@@ -86,7 +86,7 @@ def main() -> None:
     met_vars = args.met_vars.split(",")
     stats = {k: tuple(v) for k, v in json.load(open(args.stats)).items()}
 
-    model = build_model(architecture="unet", met_in_ch=len(met_vars), dem_in_ch=4,
+    model = build_model(architecture="unet", met_in_ch=len(met_vars), met_out_ch=1, dem_in_ch=4,
                         base_ch=args.base_ch, n_levels=4, use_film=True,
                         residual=not args.no_residual)
     _load_unet_weights(model, args.checkpoint)
