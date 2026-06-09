@@ -58,6 +58,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         max_epochs: int = 50,
         loss_weights: dict | None = None,
         kelvin_to_celsius: bool = True,
+        denorm: tuple[float, float] | None = None,  # (µ, σ) t2m : dénormalise la sortie → °C
         lapse_rate: float = -6.5e-3,
         elevation_aware: bool = True,
         hourly: bool = False,        # descente horaire puis réduction (Tmin correct)
@@ -65,6 +66,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
+        self.denorm = tuple(denorm) if denorm is not None else None
         lw = loss_weights or {}
         self.criterion = SparseSupervisedLoss(
             lambda_obs=lw.get("obs", 1.0),
@@ -101,7 +103,13 @@ class UNetSparseCalibrationModule(pl.LightningModule):
             pred = self._reduce_time(series)[None, None]        # (1, 1, H, W)
         else:
             pred = self(batch["x_met"], batch["x_dem"])[:, c:c + 1]  # (1, 1, H, W)
-        if self.kelvin_to_celsius:
+        # La sortie du U-Net est en espace NORMALISÉ (z-score des stats d'entraînement).
+        # Dénormaliser → °C (les cibles d'entraînement sont en °C). À défaut de stats,
+        # repli historique : soustraction Kelvin (suppose une sortie physique en K).
+        if self.denorm is not None:
+            mean, std = self.denorm
+            pred = pred * std + mean
+        elif self.kelvin_to_celsius:
             pred = pred - KELVIN
         return pred
 

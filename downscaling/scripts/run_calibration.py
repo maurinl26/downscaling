@@ -84,7 +84,8 @@ def main(cfg: DictConfig) -> None:
         level=logging.DEBUG if cfg.run.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
-    dl = cfg.deep_learning
+    # Groupe Hydra `dl` (alias historique `deep_learning`).
+    dl = cfg.dl if "dl" in cfg else cfg.deep_learning
     cal = cfg.calibration
 
     # U-Net + poids entraînés à calibrer.
@@ -132,8 +133,13 @@ def main(cfg: DictConfig) -> None:
     )
     log.info("Nuits de calibration disponibles : %d", len(dataset))
 
+    # Dénormalisation de la sortie U-Net (espace normalisé → °C) avec les stats t2m
+    # d'entraînement, sinon la loss sparse compare des z-scores à des °C (non physique).
+    t2m_stats = provider.stats.get("t2m")
+    denorm = tuple(t2m_stats) if t2m_stats is not None else None
     lit = UNetSparseCalibrationModule(
         model, target_channel=cal.target_channel, lr=cal.lr, max_epochs=cal.epochs,
+        denorm=denorm, kelvin_to_celsius=(denorm is None),
         lapse_rate=cal.lapse_rate, elevation_aware=cal.elevation_aware,
         hourly=cal.hourly, reduce=cal.reduce,
     )

@@ -162,14 +162,17 @@ class NetatmoNocturnalQC:
         """
         Corrige le lag thermique du capteur Netatmo (τ ≈ 13 min).
 
-        Formule (CrowdQC+, Miloshevich 2004) :
-            T_corr[i] = T[i] + (T[i] - T[i-1]) * (e^(dt/τ) - 1)^-1 * (1 - e^(-dt/τ))
+        Déconvolution d'un capteur du 1er ordre (réponse exponentielle, τ≈13 min) :
+            T_true[i] ≈ T[i] + τ · dT/dt  ≈  T[i] + (T[i] − T[i-1]) · τ/dt
 
-        Pour des données horaires (dt=3600s >> τ=762s) : effet marginal
-        mais utile pour données 5 min ou si la nuit est très dynamique.
+        Le facteur est τ/dt : pour des données horaires (dt=3600s >> τ=762s) il vaut
+        ~0.21 → effet marginal (comme attendu) ; pour du 5 min (dt=300s) ~2.5 → utile.
+
+        ⚠ Ne PAS utiliser `(1−e^(−dt/τ))/e^(−dt/τ)` : ce facteur diverge (~×111 en
+        horaire car τ<<dt) et corrompt les températures (Tmin → −100 °C). Bug corrigé.
         """
         dt_s = 3600.0  # données horaires
-        alpha = np.exp(-dt_s / TAU_SECONDS)
+        gain = TAU_SECONDS / dt_s  # τ/dt — borné, ~0.21 en horaire
 
         # Appliquer uniquement sur les valeurs valides
         T = obs.t_raw.copy()
@@ -178,8 +181,8 @@ class NetatmoNocturnalQC:
         T_corr = T.copy()
         for i in range(1, T.shape[1]):
             delta = T[:, i] - T[:, i - 1]
-            # Correction proportionnelle au taux de changement
-            T_corr[:, i] = T[:, i] + delta * (1 - alpha) / alpha
+            # Correction proportionnelle au taux de changement (lag 1er ordre)
+            T_corr[:, i] = T[:, i] + delta * gain
 
         # Mettre à jour les données brutes avec la version corrigée
         # Conserver NaN là où le QC a déjà invalidé
