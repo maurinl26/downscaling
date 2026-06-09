@@ -1,6 +1,7 @@
 # Descente d'échelle par deep learning — U-Net FiLM.
 architecture: unet    # 'unet' ou 'srcnn' (plus léger)
 use_film: true        # FiLM conditioning par le MNT
+residual: true        # sortie = entrée + correction (anti mean-collapse, issue #7)
 
 # Canaux d'entrée météo.
 met_vars:

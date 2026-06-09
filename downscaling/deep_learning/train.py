@@ -286,6 +286,7 @@ def main():
         base_ch=dl_cfg.get("base_ch", 64),
         n_levels=dl_cfg.get("n_levels", 4),
         use_film=not args.no_film,
+        residual=dl_cfg.get("residual", True),
     )
 
     # Import tardif : Lightning n'est requis que pour l'entraînement effectif.

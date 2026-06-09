@@ -209,10 +209,15 @@ class DownscalingUNet(nn.Module):
         base_ch: int = 64,
         n_levels: int = 4,
         use_film: bool = True,
+        residual: bool = True,
     ):
         super().__init__()
         self.n_levels = n_levels
         self.use_film = use_film
+        # Résiduel global : la sortie = entrée + correction apprise. Empêche le
+        # *mean collapse* (le modèle hérite de la température d'entrée, n'apprend que
+        # la déviation locale terrain) — cf. issue #7. coarse/fine = même grille ici.
+        self.residual = residual
         met_out_ch = met_out_ch or met_in_ch
 
         # ---- Encodeur DEM ------------------------------------------------
@@ -298,7 +303,14 @@ class DownscalingUNet(nn.Module):
             x = torch.cat([x, skip], dim=1)
             x = dec(x)
 
-        return self.head(x)
+        out = self.head(x)
+        if self.residual:
+            # Base = canaux d'entrée correspondants (t2m en tête) ; correction additive.
+            base = x_met[:, : out.shape[1]]
+            if base.shape[-2:] != out.shape[-2:]:
+                base = F.interpolate(base, size=out.shape[-2:], mode="bilinear", align_corners=False)
+            out = out + base
+        return out
 
     # ------------------------------------------------------------------
     def count_parameters(self) -> int:
@@ -346,6 +358,7 @@ def build_model(
     base_ch: int = 64,
     n_levels: int = 4,
     use_film: bool = True,
+    residual: bool = True,
 ) -> nn.Module:
     """
     Construit le modèle selon l'architecture choisie.
@@ -354,6 +367,8 @@ def build_model(
     ----------
     architecture:
         'unet' (défaut) ou 'srcnn' (modèle léger).
+    residual:
+        U-Net en mode résiduel (sortie = entrée + correction). Cf. issue #7.
     """
     if architecture == "unet":
         model = DownscalingUNet(
@@ -362,6 +377,7 @@ def build_model(
             base_ch=base_ch,
             n_levels=n_levels,
             use_film=use_film,
+            residual=residual,
         )
     elif architecture == "srcnn":
         model = LightSRCNN(met_in_ch=met_in_ch, dem_in_ch=dem_in_ch)
