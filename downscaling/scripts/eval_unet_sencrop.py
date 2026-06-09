@@ -37,6 +37,36 @@ from downscaling.deep_learning.sparse_calibration import (
 from downscaling.scripts.run_calibration import grids_from_dem, _load_unet_weights
 
 
+def operating_points(pred: np.ndarray, obs: np.ndarray, thr: float) -> dict:
+    """POD/FAR/CSI @ seuil + AUC(ROC) + meilleur POD à FAR<0,20 et meilleur FAR à POD>0,75.
+
+    ROC vectorisé : on déclare gel si Tmin prédit ≤ τ ; en triant par Tmin prédit
+    croissant, TP/FP cumulés donnent toute la courbe en O(n log n).
+    """
+    label = obs < thr
+    P, N = int(label.sum()), int((~label).sum())
+    # Point de fonctionnement au seuil physique (pred < thr)
+    sf = pred < thr
+    hits = int((label & sf).sum()); misses = P - hits
+    fa = int((~label & sf).sum())
+    pod = hits / (hits + misses) if (hits + misses) else float("nan")
+    far = fa / (hits + fa) if (hits + fa) else float("nan")
+    csi = hits / (hits + misses + fa) if (hits + misses + fa) else float("nan")
+    # Courbe ROC (tri croissant sur pred = déclare gel pour les plus froids d'abord)
+    order = np.argsort(pred, kind="mergesort")
+    lab = label[order].astype(np.int64)
+    cum_tp = np.cumsum(lab)
+    cum_fp = np.cumsum(1 - lab)
+    tpr = cum_tp / P if P else np.zeros_like(cum_tp, dtype=float)
+    fpr = cum_fp / N if N else np.zeros_like(cum_fp, dtype=float)
+    far_b = cum_fp / np.maximum(cum_tp + cum_fp, 1)
+    auc = float(np.trapz(np.concatenate([[0.0], tpr]), np.concatenate([[0.0], fpr])))
+    pod_at = float(tpr[far_b < 0.20].max()) if (far_b < 0.20).any() else float("nan")
+    far_at = float(far_b[tpr > 0.75].min()) if (tpr > 0.75).any() else float("nan")
+    return {"pod": pod, "far": far, "csi": csi, "hits": hits, "misses": misses, "fa": fa,
+            "auc": auc, "pod_at_far20": pod_at, "far_at_pod75": far_at}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Éval POD/FAR U-Net vs Sencrop")
     ap.add_argument("--checkpoint", required=True)
@@ -79,7 +109,7 @@ def main() -> None:
     lit.eval()
 
     thr = args.threshold
-    all_pred, all_obs = [], []
+    all_pred, all_obs, all_key = [], [], []
     n_nights = 0
     for i in range(len(dataset)):
         batch = unet_sparse_collate([dataset[i]])
@@ -92,50 +122,36 @@ def main() -> None:
         if dz is not None:
             pa = pa + args.lapse_rate * dz                 # correction d'altitude station/maille
         pa = pa.numpy()
+        key = (row.numpy().astype(np.int64) * 100000 + col.numpy().astype(np.int64))  # maille = proxy station
         m = ~np.isnan(obs) & ~np.isnan(pa)
         if not m.any():
             continue
         n_nights += 1
-        all_pred.append(pa[m]); all_obs.append(obs[m])
+        all_pred.append(pa[m]); all_obs.append(obs[m]); all_key.append(key[m])
 
     pred = np.concatenate(all_pred); obs = np.concatenate(all_obs)
-    of, sf = obs < thr, pred < thr                          # gel observé / prédit @ seuil
-    hits = int((of & sf).sum()); misses = int((of & ~sf).sum())
-    fa = int((~of & sf).sum()); cn = int((~of & ~sf).sum())
-    pod = hits / (hits + misses) if (hits + misses) else float("nan")
-    far = fa / (hits + fa) if (hits + fa) else float("nan")
-    csi = hits / (hits + misses + fa) if (hits + misses + fa) else float("nan")
+    key = np.concatenate(all_key)
     rmse = float(np.sqrt(((pred - obs) ** 2).mean()))
 
-    # --- ROC / AUC : pouvoir discriminant (sweep du seuil de DÉCISION sur Tmin prédit) ---
-    label = of                                              # vrai gel (obs < thr)
-    P, N = int(label.sum()), int((~label).sum())
-    roc = []   # (decision_tau, POD=TPR, FPR, FAR_business)
-    for tau in np.unique(pred):
-        decl = pred <= tau                                  # déclare gel si Tmin prédit ≤ tau
-        tp = int((decl & label).sum()); fp = int((decl & ~label).sum())
-        fn = P - tp
-        tpr = tp / P if P else np.nan
-        fpr = fp / N if N else np.nan
-        far_b = fp / (tp + fp) if (tp + fp) else np.nan
-        roc.append((tau, tpr, fpr, far_b))
-    roc = np.array(roc)
-    order = np.argsort(roc[:, 2])                            # par FPR croissant
-    auc = float(np.trapz(roc[order, 1], roc[order, 2]))
-    # Point de fonctionnement métier : parmi les seuils avec FAR<0,20, POD max
-    ok = roc[(roc[:, 3] < 0.20)]
-    best_pod = float(ok[:, 1].max()) if len(ok) else float("nan")
-    # et : parmi les seuils avec POD>0,75, FAR min
-    ok2 = roc[(roc[:, 1] > 0.75)]
-    best_far = float(ok2[:, 3].min()) if len(ok2) else float("nan")
+    raw = operating_points(pred, obs, thr)
+
+    # Oracle calibration par station : retire le biais médian par maille (≈ étage C).
+    # In-sample → borne SUPÉRIEURE de ce que la calibration station pourrait débloquer.
+    pred_db = pred.copy()
+    for k in np.unique(key):
+        sel = key == k
+        if sel.sum() >= 5:
+            pred_db[sel] = pred[sel] - np.median(pred[sel] - obs[sel])
+    db = operating_points(pred_db, obs, thr)
 
     tag = "ABSOLU" if args.no_residual else "RÉSIDUEL"
     print(f"\n=== Éval U-Net ({tag}) vs Sencrop — {n_nights} nuits, {len(obs)} obs-station, seuil {thr}°C ===")
-    print(f"  Point @{thr}°C : POD={pod:.3f}  FAR={far:.3f}  CSI={csi:.3f}  (hits {hits}/misses {misses}/FA {fa})")
-    print(f"  RMSE Tmin = {rmse:.2f} °C")
-    print(f"\n  Discrimination — AUC(ROC) = {auc:.3f}")
-    print(f"  Meilleur POD atteignable à FAR<0,20 : {best_pod:.3f}")
-    print(f"  Meilleur FAR atteignable à POD>0,75 : {best_far:.3f}")
+    print(f"  Point @{thr}°C : POD={raw['pod']:.3f}  FAR={raw['far']:.3f}  CSI={raw['csi']:.3f}  "
+          f"(hits {raw['hits']}/misses {raw['misses']}/FA {raw['fa']})")
+    print(f"  RMSE Tmin = {rmse:.2f} °C   |   AUC(ROC) = {raw['auc']:.3f}")
+    print(f"  Seuil optimisé   : POD={raw['pod_at_far20']:.3f} @FAR<0,20  ·  FAR={raw['far_at_pod75']:.3f} @POD>0,75")
+    print(f"  + débiais/station: POD={db['pod_at_far20']:.3f} @FAR<0,20  ·  FAR={db['far_at_pod75']:.3f} @POD>0,75"
+          f"  (AUC {db['auc']:.3f}, borne sup. calibration)")
     print(f"\n  Rappel baselines @0°C (médiane 48 st.) : RAW 0,77/0,53 · EQM 0,62/0,40 · KF 0,58/0,25")
     print(f"  Cible : POD>0,75  FAR<0,20")
 
