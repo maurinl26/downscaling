@@ -31,6 +31,20 @@ Cible métier : **FAR < 0,20 et POD > 0,75**.
 5. **Avril 2022 seul est trompeur** (un épisode de gel franc) : toujours valider sur
    plusieurs saisons.
 
+## Multi-variable [t2m, rosée, u10] → CERRA : N'AIDE PAS (résultat clé)
+
+Éval 481 nuits 2022-2025 : POD@0°C 0,886 / FAR 0,494 / **AUC 0,963** / POD@FAR<0,20 **0,256**
+(vs t2m-only 0,316) / +calibration 0,574 (vs 0,611). **Régression légère, AUC inchangé.**
+
+**Pourquoi** : l'étage A reconstruit le **t2m de CERRA** (déjà AUC 0,96). CERRA t2m encode
+déjà l'atmosphère → ajouter rosée/vent en entrée n'aide pas à mieux reconstruire CERRA ;
+le modèle est saturé à la skill de CERRA. **Le plafond = CERRA vs vérité terrain, pas
+l'information d'entrée.** Les prédicteurs radiatifs ne paient que là où la supervision est
+la STATION (gel radiatif local que CERRA lisse) → **étage C**, pas étage A.
+
+→ **Pivot stratégie** : (1) étage C avec entrée multi-var (calibration Sencrop + rosée/vent) ;
+(2) cible plus fine (CERRA 5,5 km en entrée) ou supervision directe station.
+
 ## Décision d'architecture (pour le 15 juin)
 
 `résiduel (acquis) + prédicteurs radiatifs multi-variables + FiLM DEM (cuvettes) +
