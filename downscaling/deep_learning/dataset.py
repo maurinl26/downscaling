@@ -76,6 +76,7 @@ class DownscalingDataset(Dataset):
         fine_files: list[str | Path],
         dem_file: str | Path,
         met_vars: list[str] = DEFAULT_MET_VARS,
+        fine_vars: list[str] | None = None,
         patch_size: int | None = 64,
         stride: int | None = None,
         stats_file: str | Path | None = None,
@@ -86,7 +87,8 @@ class DownscalingDataset(Dataset):
         self.coarse_files = [Path(f) for f in coarse_files]
         self.fine_files = [Path(f) for f in fine_files]
         self.dem_file = Path(dem_file)
-        self.met_vars = met_vars
+        self.met_vars = met_vars            # variables d'ENTRÉE (coarse), ex [t2m,td2m,u10,v10]
+        self.fine_vars = fine_vars or met_vars   # variables CIBLE (fine), ex [t2m]
         self.patch_size = patch_size
         self.stride = stride or patch_size
         self.stats_file = Path(stats_file) if stats_file else None
@@ -125,7 +127,7 @@ class DownscalingDataset(Dataset):
         j1 = j0 + ps if ps else None
 
         x_coarse = self._to_tensor(coarse, self.met_vars, i0, i1, j0, j1, normalize=True)
-        y_fine = self._to_tensor(fine, self.met_vars, i0, i1, j0, j1, normalize=True)
+        y_fine = self._to_tensor(fine, self.fine_vars, i0, i1, j0, j1, normalize=True)
         dem = self._get_dem_patch(i0, i1, j0, j1)
 
         return x_coarse, dem, y_fine
@@ -136,12 +138,21 @@ class DownscalingDataset(Dataset):
         Calcule µ et σ pour chaque variable sur l'ensemble du jeu de données.
         Appeler avant l'entraînement si stats_file n'existe pas.
         """
-        accum = {v: [] for v in self.met_vars + DEFAULT_DEM_VARS}
+        accum = {v: [] for v in set(self.met_vars) | set(self.fine_vars) | set(DEFAULT_DEM_VARS)}
 
+        # Variables CIBLE (incl. t2m) depuis les fichiers fine — t2m partage cette
+        # normalisation entre entrée et cible (indispensable au résiduel).
         for fp in self.fine_files:
             ds = xr.open_dataset(fp, engine="netcdf4")
-            for v in self.met_vars:
+            for v in self.fine_vars:
                 if v in ds:
+                    accum[v].append(ds[v].values.ravel())
+
+        # Variables d'ENTRÉE présentes uniquement côté coarse (td2m, u10, v10…)
+        for fp in self.coarse_files:
+            ds = xr.open_dataset(fp, engine="netcdf4")
+            for v in self.met_vars:
+                if v not in self.fine_vars and v in ds:
                     accum[v].append(ds[v].values.ravel())
 
         # Attributs MNT

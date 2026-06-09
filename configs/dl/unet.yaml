@@ -3,7 +3,7 @@ architecture: unet    # 'unet' ou 'srcnn' (plus léger)
 use_film: true        # FiLM conditioning par le MNT
 residual: true        # sortie = entrée + correction (anti mean-collapse, issue #7)
 
-# Canaux d'entrée météo.
+# Canaux d'entrée météo (coarse). Multi-var radiatif : [t2m, td2m, u10, v10].
 met_vars:
   - t2m
   - tp
@@ -11,6 +11,10 @@ met_vars:
   - v10
   - sp
 met_in_ch: 5
+# Variables CIBLE (fine). t2m seul (CERRA n'a que t2m). t2m partage la normalisation
+# entrée↔cible (indispensable au résiduel).
+fine_vars:
+  - t2m
 
 # Attributs MNT en entrée.
 dem_vars:

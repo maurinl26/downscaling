@@ -359,6 +359,7 @@ def build_model(
     n_levels: int = 4,
     use_film: bool = True,
     residual: bool = True,
+    met_out_ch: int | None = None,
 ) -> nn.Module:
     """
     Construit le modèle selon l'architecture choisie.
@@ -373,6 +374,7 @@ def build_model(
     if architecture == "unet":
         model = DownscalingUNet(
             met_in_ch=met_in_ch,
+            met_out_ch=met_out_ch,
             dem_in_ch=dem_in_ch,
             base_ch=base_ch,
             n_levels=n_levels,
@@ -380,7 +382,7 @@ def build_model(
             residual=residual,
         )
     elif architecture == "srcnn":
-        model = LightSRCNN(met_in_ch=met_in_ch, dem_in_ch=dem_in_ch)
+        model = LightSRCNN(met_in_ch=met_in_ch, dem_in_ch=dem_in_ch, met_out_ch=met_out_ch)
     else:
         raise ValueError(f"Architecture inconnue : {architecture}. Choisir 'unet' ou 'srcnn'.")
 

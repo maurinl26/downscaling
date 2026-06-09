@@ -262,7 +262,8 @@ def main():
     if not coarse_files:
         raise FileNotFoundError(f"Aucun fichier coarse dans {data_dir}/coarse/")
 
-    met_vars = dl_cfg.get("met_vars", ["t2m", "tp", "u10", "v10", "sp"])
+    met_vars = list(dl_cfg.get("met_vars", ["t2m", "tp", "u10", "v10", "sp"]))
+    fine_vars = list(dl_cfg.get("fine_vars", met_vars))   # variables cible (défaut = entrée)
     patch_size = dl_cfg.get("patch_size", 64)
     stats_file = Path(args.checkpoint_dir) / "normalization_stats.json"
 
@@ -271,6 +272,7 @@ def main():
         fine_files=fine_files,
         dem_file=dem_file,
         met_vars=met_vars,
+        fine_vars=fine_vars,
         patch_size=patch_size,
         stats_file=stats_file,
     )
@@ -282,6 +284,7 @@ def main():
     model = build_model(
         architecture=dl_cfg.get("architecture", "unet"),
         met_in_ch=len(met_vars),
+        met_out_ch=len(fine_vars),
         dem_in_ch=dl_cfg.get("dem_in_ch", 4),
         base_ch=dl_cfg.get("base_ch", 64),
         n_levels=dl_cfg.get("n_levels", 4),
