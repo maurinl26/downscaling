@@ -83,3 +83,32 @@
 
 Le combo qui peut réellement atteindre la cible : **résiduel + objectif queue-froide +
 prédicteurs radiatifs + DEM cuvettes + CERRA + calibration Sencrop**, validé en POD/FAR.
+
+---
+
+## Timeline révisée (2026-06-08 — EN AVANCE sur le plan initial)
+
+Beaucoup de briques prévues J9-J13 ont été faites/tranchées en une session :
+résiduel (acquis), multi-var (testé → n'aide pas), étage C MSE (testé → dégrade),
+loss tail-aware (câblée), outillage ROC + éval, infra W&B/S3/CI. → **buffer dégagé.**
+
+| Échéance | Reste à faire | État |
+|---|---|---|
+| Maintenant | Étage C **tail-aware** + **ROC multi-classifieurs** → décide la voie calibration | en cours |
+| +1-2 j | **CERRA 2022-2026** (DL lent, gating) + convert zarr ; calibration station « propre » (débiais+seuil ROC) | DL en cours |
+| +2-3 j | Si CERRA prêt : **supervision station tail-aware + CERRA 5,5 km** (brise le plafond) ; sinon archi garantie figée | — |
+| ~J14 | **Éval finale TEST PUR 2026** + visuels client (ROC, ablation, trajectoire POD/FAR) | — |
+| **15 juin** | Fige l'archi + présentation | — |
+| Buffer (avance) | Robustesse, sensibilité densité, **début du site** | — |
+
+**Filet de sécurité** : archi garantie `résiduel + calibration station` (POD≈0,52 @FAR<0,20)
+déjà mesurée — l'upside CERRA+tail-aware est du bonus.
+
+## Phase déploiement (après/parallèle au gel)
+
+Architecture produit (cf. [[project_deploy_decision]], `infra_pro.md`) :
+- **Back + ML sur Scaleway** : API produit (`api.karpos.pro`), inférence du modèle gel
+  (FrostField), artefacts/poids sur Object Storage S3, entraînements RunPod, monitoring W&B.
+- **Front sur Vercel** : carte (BFF proxy → API Scaleway) + landing-page.
+
+Le modèle gel figé le 15 alimente l'API Scaleway ; le front Vercel consomme l'indice.
