@@ -86,23 +86,40 @@ prédicteurs radiatifs + DEM cuvettes + CERRA + calibration Sencrop**, validé e
 
 ---
 
-## Timeline révisée (2026-06-08 — EN AVANCE sur le plan initial)
+## ✅ DÉCISION ARCHI FIGÉE (2026-06-10)
 
-Beaucoup de briques prévues J9-J13 ont été faites/tranchées en une session :
-résiduel (acquis), multi-var (testé → n'aide pas), étage C MSE (testé → dégrade),
-loss tail-aware (câblée), outillage ROC + éval, infra W&B/S3/CI. → **buffer dégagé.**
+La comparaison à calibration égale a tranché : **CERRA 5,5 km ≫ ERA5-Land 9 km**, et
+**CERRA maille + calibration station franchit la cible métier**, sans U-Net.
+
+**Archi produit retenue : `CERRA 5,5 km (maille native) + calibration station OOS`**
+(biais médian par station + seuil τ*, fit 2022-2024 → test pur 2025).
+
+| Variante (test pur 2025) | AUC | POD@FAR<20 % | Point opérationnel |
+|---|---|---|---|
+| CERRA RAW | 0,976 | 0,47 | — |
+| **CERRA + calibration station** | **0,987** | **0,80** | **POD 0,55 / FAR 0,12** |
+
+Reproductible en une commande : `uv run frost-product` → `reports_product/frost_product_metrics.json`
++ `frost_product_roc.png`. **Le U-Net (étage A dense) n'a plus d'objet** avec CERRA en entrée
+(pas de vérité dense sous 5,5 km) ; le U-Net station-supervisé devient un levier *post-15*
+« couverture parcelles non instrumentées ». Voir [[project_downscaling_trainings]].
+
+## Timeline finalisée (2026-06-10 — produit du 15 SÉCURISÉ)
+
+Tout l'amont data/ML est fait : CERRA téléchargé/converti (2015-2026), protocole figé,
+chiffre produit packagé. Reste surtout de la **restitution** (demain) et du bonus.
 
 | Échéance | Reste à faire | État |
 |---|---|---|
-| Maintenant | Étage C **tail-aware** + **ROC multi-classifieurs** → décide la voie calibration | en cours |
-| +1-2 j | **CERRA 2022-2026** (DL lent, gating) + convert zarr ; calibration station « propre » (débiais+seuil ROC) | DL en cours |
-| +2-3 j | Si CERRA prêt : **supervision station tail-aware + CERRA 5,5 km** (brise le plafond) ; sinon archi garantie figée | — |
-| ~J14 | **Éval finale TEST PUR 2026** + visuels client (ROC, ablation, trajectoire POD/FAR) | — |
-| **15 juin** | Fige l'archi + présentation | — |
-| Buffer (avance) | Robustesse, sensibilité densité, **début du site** | — |
+| ✅ Fait (10/06) | CERRA tranché, `frost-product` reproductible, rapport v2 + figures | **fait** |
+| Demain (restitution) | **App de présentation des résultats**, **présentation + pricing**, début **modèle chilling** | à lancer |
+| Avant le 15 | Éval finale **TEST PUR 2026** quand Sencrop+CERRA 2026 complets (mars-mai en attente CDS) | bloqué saison en cours |
+| **15 juin** | Présentation client — archi figée = CERRA + calibration station | — |
+| Bonus (post-15) | U-Net station-supervisé (parcelles non instrumentées), tail-aware, sensibilité densité | — |
 
-**Filet de sécurité** : archi garantie `résiduel + calibration station` (POD≈0,52 @FAR<0,20)
-déjà mesurée — l'upside CERRA+tail-aware est du bonus.
+**Filet de sécurité — relevé** : l'archi figée mesure **POD@FAR<20 % 0,80** (op 0,55 @ FAR 0,12)
+sur test pur 2025, calibration out-of-sample. Plus besoin d'upside pour défendre le 15 ;
+le U-Net station-supervisé et le tail-aware sont désormais des **améliorations**, pas des prérequis.
 
 ## Phase déploiement (après/parallèle au gel)
 

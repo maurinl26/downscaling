@@ -18,3 +18,10 @@ coverage.xml
 
 # Poids pré-entraînés (Prithvi WxC, Granite) — peuplés par `fetch-pretrained`
 modelstore/
+
+# Sorties lourdes / artefacts générés (checkpoints modèles, runs, figures)
+checkpoints/
+outputs/
+reports_product/
+/*.png
+/*.csv
