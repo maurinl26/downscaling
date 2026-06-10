@@ -23,7 +23,9 @@ import argparse
 import os
 import sys
 
-IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
+# Image officielle PyTorch : exécute le CMD directement (pas d'entrypoint Jupyter qui
+# ignore docker_args, contrairement aux images runpod/*). torch (PyPI) embarque sa CUDA.
+IMAGE = "pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime"
 VOLUME_NAME = "downscaling-workspace"
 MOUNT = "/workspace"
 BRANCH = "exp/frost-weighted-loss"
@@ -52,6 +54,9 @@ def _bootstrap(task: str) -> str:
     (tout le quoting Hydra vit dans le script → pas d'enfer de quoting via l'API)."""
     steps = [
         "set -e",
+        "export DEBIAN_FRONTEND=noninteractive",
+        "(command -v git && command -v curl) >/dev/null 2>&1 || "
+        "(apt-get update && apt-get install -y git curl)",
         "cd /workspace",
         f"(cd downscaling && git fetch && git checkout {BRANCH} && git pull) || "
         f"git clone -b {BRANCH} {REPO} downscaling",
