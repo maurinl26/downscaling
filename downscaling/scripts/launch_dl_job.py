@@ -42,9 +42,11 @@ TASKS = {
         "vram_gb": 20,
         "cmd": (
             "uv run python downscaling/downscaling/scripts/run_dl_train.py"
-            " --data-dir data/training/ --epochs 150 --override cluster=cloud"
+            " --data-dir data/training/ --epochs 150"
+            # Tuiles actuelles = t2m seul (ERA5-Land→CERRA) ; met_in_ch dérivé auto.
+            " --override cluster=cloud dl.met_vars=[t2m]"
         ),
-        "desc": "U-Net FiLM training — Drôme-Ardèche 2000-2021 (~2h, A100)",
+        "desc": "U-Net FiLM training — Drôme-Ardèche 2015-2021, t2m (~2h, A100)",
     },
     "prithvi-finetune": {
         "gpu": "A100",
