@@ -46,6 +46,12 @@ dl = [
     "lightning>=2.2",
 ]
 
+# Infra entraînement pro : monitoring W&B + sync objets Scaleway S3 (cf. docs/infra_pro.md)
+cloud = [
+    "wandb>=0.17",
+    "boto3>=1.34",
+]
+
 # Prithvi WxC (NASA/IBM) — foundation model downscaling
 # Installation Prithvi WxC depuis GitHub (pas encore sur PyPI)
 # pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'
@@ -94,6 +100,7 @@ run-calibration      = "downscaling.scripts.run_calibration:main"
 run-campaign         = "downscaling.scripts.run_campaign:main"
 launch-dl-job        = "downscaling.scripts.launch_dl_job:main"
 run-on-mac           = "downscaling.scripts.run_on_mac:main"
+s3-sync              = "downscaling.scripts.s3_sync:main"
 
 [tool.uv]
 package = true

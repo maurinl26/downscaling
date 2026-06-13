@@ -148,7 +148,28 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float
 # ---------------------------------------------------------------------------
 
 def _build_logger(checkpoint_dir: Path):
-    """MLflow si ``MLFLOW_TRACKING_URI`` est défini, sinon CSV local (sans dép)."""
+    """Logger d'expérience, par ordre de préférence :
+
+    1. **Weights & Biases** si ``WANDB_PROJECT`` (ou ``WANDB_API_KEY``) est défini —
+       monitoring des scores en prod (val/rmse, POD/FAR, hyperparams).
+    2. **MLflow** si ``MLFLOW_TRACKING_URI`` est défini.
+    3. **CSV** local sinon (sans dépendance).
+
+    Tous les imports sont gracieux : une dép manquante → repli sur le suivant.
+    """
+    if os.environ.get("WANDB_PROJECT") or os.environ.get("WANDB_API_KEY"):
+        try:
+            from lightning.pytorch.loggers import WandbLogger
+
+            return WandbLogger(
+                project=os.environ.get("WANDB_PROJECT", "karpos-downscaling"),
+                entity=os.environ.get("WANDB_ENTITY"),
+                save_dir=str(checkpoint_dir),
+                log_model=False,  # les checkpoints partent vers S3 (cf. docs/infra_pro.md)
+            )
+        except Exception:  # pragma: no cover - dépend de l'install wandb
+            log.warning("wandb indisponible (pip install wandb) — repli logger suivant.")
+
     uri = os.environ.get("MLFLOW_TRACKING_URI")
     if uri:
         try:
@@ -253,6 +274,13 @@ def main():
     # Import tardif : Lightning n'est requis que pour l'entraînement effectif.
     from .lightning_module import DownscalingDataModule, DownscalingLitModule
 
+    # Seuil de gel (0 °C) en espace normalisé, pour le suivi POD/FAR (cf. issue #7).
+    frost_threshold_norm = None
+    t2m_stats = dataset.stats.get("t2m") if getattr(dataset, "stats", None) else None
+    if t2m_stats:
+        mean, std = t2m_stats
+        frost_threshold_norm = (0.0 - mean) / std if std else None
+
     lit = DownscalingLitModule(
         model,
         lr=args.lr,
@@ -260,6 +288,7 @@ def main():
         warmup_epochs=dl_cfg.get("warmup_epochs", 5),
         max_epochs=args.epochs,
         loss_weights=dl_cfg.get("loss_weights"),
+        frost_threshold_norm=frost_threshold_norm,
     )
     datamodule = DownscalingDataModule(
         dataset,

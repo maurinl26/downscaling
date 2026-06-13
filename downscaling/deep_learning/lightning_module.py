@@ -33,6 +33,7 @@ class DownscalingLitModule(pl.LightningModule):
         warmup_epochs: int = 5,
         max_epochs: int = 100,
         loss_weights: dict | None = None,
+        frost_threshold_norm: float | None = None,  # seuil gel en espace normalisé = (0−µ)/σ
     ):
         super().__init__()
         self.model = model
@@ -42,6 +43,9 @@ class DownscalingLitModule(pl.LightningModule):
             lambda_spectral=lw.get("spectral", 0.1),
             lambda_gradient=lw.get("gradient", 0.05),
         )
+        # Seuil de détection du gel (queue froide) pour le suivi POD/FAR.
+        self.frost_threshold_norm = frost_threshold_norm
+        self._frost = {"hits": 0, "misses": 0, "fa": 0}
         # Le modèle est un objet injecté (non sérialisable proprement) → exclu.
         self.save_hyperparameters(ignore=["model"])
 
@@ -57,6 +61,9 @@ class DownscalingLitModule(pl.LightningModule):
             self.log(f"train/{name}", value, on_step=False, on_epoch=True)
         return loss
 
+    def on_validation_epoch_start(self):
+        self._frost = {"hits": 0, "misses": 0, "fa": 0}
+
     def validation_step(self, batch, batch_idx):
         x_coarse, dem, y_fine = batch
         pred = self(x_coarse, dem)
@@ -66,6 +73,24 @@ class DownscalingLitModule(pl.LightningModule):
         self.log("val/rmse", metrics["rmse"], prog_bar=True)
         self.log("val/mae", metrics["mae"])
         self.log("val/bias", metrics["bias"])
+
+        # Détection du gel (canal 0 = t2m) au seuil normalisé — accumulé sur l'epoch.
+        if self.frost_threshold_norm is not None:
+            thr = self.frost_threshold_norm
+            obs_f = y_fine[:, 0] < thr
+            src_f = pred[:, 0] < thr
+            self._frost["hits"] += int((obs_f & src_f).sum())
+            self._frost["misses"] += int((obs_f & ~src_f).sum())
+            self._frost["fa"] += int((~obs_f & src_f).sum())
+
+    def on_validation_epoch_end(self):
+        if self.frost_threshold_norm is None:
+            return
+        h, m, fa = self._frost["hits"], self._frost["misses"], self._frost["fa"]
+        pod = h / (h + m) if (h + m) else 0.0
+        far = fa / (h + fa) if (h + fa) else 0.0
+        self.log("val/pod", pod, prog_bar=True)
+        self.log("val/far", far)
 
     def configure_optimizers(self):
         # Instancié ici (pas au __init__) : l'optimiseur doit voir self.parameters().
