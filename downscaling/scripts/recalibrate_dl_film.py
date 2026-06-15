@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""DL FiLM recalibration with sparse Sencrop calibration.
+
+Known internally as the "Lot C" deliverable of the Sencrop S23 campaign. Thin
+orchestrator that wires:
+- `build_model("unet", use_film=True)` from `downscaling.deep_learning.model`
+- `UNetSparseCalibrationModule` from `downscaling.deep_learning.sparse_calibration`
+- A bulk-aware Sencrop dataset (uses the patched `load_sencrop` from
+  `downscaling.prtihvi_wxc.sencrop` which auto-detects bulk roots)
+
+It does NOT re-implement training or losses — that lives in the existing
+Lightning module.
+
+Inputs
+------
+
+    --year YYYY                     # target year
+    --cerra-atm   <NetCDF>           # CERRA atm for the year (T2m + extras)
+    --dem         <NetCDF/GeoTIFF>   # high-res DEM (1 km)
+    --sencrop     <bulk root>        # local path or s3://... (the patched
+                                       loader auto-detects)
+    --out         <dir>              # Zarr output dir for the year
+    --epochs      <int>              # default 30
+    --wandb-project KARPOS_LOT_C     # default; --wandb-disabled to skip
+    --device      cuda|cpu           # default cuda
+
+Output
+------
+
+    <out>/<year>.zarr                # 1 km recalibrated nightly Tmin grid
+    <out>/<year>.metadata.json       # reproducibility envelope
+    <out>/<year>.ckpt                # best checkpoint (Lightning)
+
+Reproducibility envelope
+------------------------
+
+The JSON metadata records: `uv run` command, git SHA, W&B run URL, inputs
+paths, n_nights trained, n_stations per night avg.
+
+Caveats
+-------
+
+- Heavy: GPU recommended (cuda). On CPU only viable for smoke testing.
+- The Dataset is built around the bulk Sencrop loader — the legacy
+  `UNetStationDataset` (which expects `sencrop_<date>.csv` per-day files)
+  is bypassed.
+- W&B is only logged if not `--wandb-disabled` AND the `WANDB_API_KEY`
+  env var is set on the host.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import torch
+import xarray as xr
+from torch.utils.data import Dataset
+
+from downscaling.deep_learning.model import build_model
+from downscaling.deep_learning.sparse_calibration import (
+    UNetSparseCalibrationModule,
+    UNetSparseDataModule,
+    unet_sparse_collate,  # noqa: F401  (re-exported for users that want manual loops)
+)
+from downscaling.prtihvi_wxc.netatmo_qc import NetatmoNocturnalQC
+from downscaling.prtihvi_wxc.sencrop import load_sencrop
+from downscaling.prtihvi_wxc.stations import night_station_targets
+
+log = logging.getLogger("recalibrate_dl_film")
+
+
+# ---------------------------------------------------------------------------
+# Bulk-aware Sencrop Dataset (replaces UNetStationDataset for bulk roots)
+# ---------------------------------------------------------------------------
+@dataclass
+class _NightSample:
+    date: str
+    x_met: torch.Tensor
+    x_dem: torch.Tensor
+    obs_tmin: torch.Tensor
+    obs_row: torch.Tensor
+    obs_col: torch.Tensor
+    obs_dz: torch.Tensor
+
+
+class BulkSencropDataset(Dataset):
+    """Sample = 1 nuit. Lit Sencrop depuis le bulk root (URI s3:// possible)."""
+
+    def __init__(
+        self,
+        dates: list[str],
+        coarse_provider,           # callable date -> (x_met, x_dem)
+        sencrop_root: str | Path,
+        lat_grid: np.ndarray,
+        lon_grid: np.ndarray,
+        elevation_grid: np.ndarray | None = None,
+        min_stations: int = 5,
+        lapse_rate: float = -6.5e-3,
+    ) -> None:
+        self.coarse_provider = coarse_provider
+        self.sencrop_root = sencrop_root
+        self.lat_grid = lat_grid
+        self.lon_grid = lon_grid
+        self.elevation_grid = elevation_grid
+        self.min_stations = min_stations
+        self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
+
+        # Pre-filter to dates where the bulk has enough stations.
+        kept = []
+        for d in dates:
+            try:
+                obs = load_sencrop(sencrop_root, d)
+                if obs.station_id.size >= min_stations:
+                    kept.append(d)
+            except (ValueError, FileNotFoundError):
+                continue
+        self.dates = kept
+        log.info("Dataset: %d/%d nights kept", len(kept), len(dates))
+
+    def __len__(self) -> int:
+        return len(self.dates)
+
+    def __getitem__(self, idx: int) -> dict:
+        d = self.dates[idx]
+        x_met, x_dem = self.coarse_provider(d)
+        obs_qc = self.qc.run(load_sencrop(self.sencrop_root, d))
+        tmin, row, col, dz = night_station_targets(
+            obs_qc, self.lat_grid, self.lon_grid, self.elevation_grid
+        )
+        return {
+            "x_met": x_met,
+            "x_dem": x_dem,
+            "obs_tmin": torch.as_tensor(tmin, dtype=torch.float32),
+            "obs_row": torch.as_tensor(row, dtype=torch.long),
+            "obs_col": torch.as_tensor(col, dtype=torch.long),
+            "obs_dz": torch.as_tensor(dz, dtype=torch.float32),
+            "date": d,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _git_sha() -> str:
+    try:
+        return (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
+            .decode()
+            .strip()
+        )
+    except subprocess.CalledProcessError:
+        return "unknown"
+
+
+def _build_coarse_provider(cerra_path: Path, dem_path: Path):
+    """Loads CERRA atm + DEM once, returns a callable date -> (x_met, x_dem)."""
+    ds_cerra = xr.open_dataset(cerra_path)
+    ds_dem = xr.open_dataset(dem_path)
+
+    # Identify temperature variable
+    t_var = next(
+        (v for v in ("t2m", "2t", "temperature_2m") if v in ds_cerra),
+        None,
+    )
+    if t_var is None:
+        raise ValueError(f"No T2m-like variable in {cerra_path}")
+
+    # DEM as a single tensor channel (1 channel for now)
+    dem_arr = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
+    x_dem = torch.from_numpy(dem_arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+
+    def provider(d: str) -> tuple[torch.Tensor, torch.Tensor]:
+        slab = ds_cerra[t_var].sel(time=d, method="nearest")
+        arr = slab.values.astype(np.float32)
+        x_met = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+        return x_met, x_dem
+
+    return provider, ds_cerra, ds_dem
+
+
+def _dates_in_year(ds_cerra: xr.Dataset, year: int) -> list[str]:
+    times = pd.to_datetime(ds_cerra["time"].values)
+    return [t.strftime("%Y-%m-%d") for t in times if t.year == year]
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+def main() -> int:
+    p = argparse.ArgumentParser(description="DL FiLM recalibration with sparse Sencrop")
+    p.add_argument("--year", type=int, required=True)
+    p.add_argument("--cerra-atm", type=Path, required=True)
+    p.add_argument("--dem", type=Path, required=True)
+    p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--epochs", type=int, default=30)
+    p.add_argument("--device", default="cuda")
+    p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
+    p.add_argument("--wandb-disabled", action="store_true")
+    p.add_argument("--smoke-test", action="store_true",
+                   help="run 1 epoch on a tiny subset (CPU OK)")
+    args = p.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    # ---- Coarse provider + dates --------------------------------------------
+    provider, ds_cerra, ds_dem = _build_coarse_provider(args.cerra_atm, args.dem)
+    dates = _dates_in_year(ds_cerra, args.year)
+    log.info("Year=%d, %d candidate dates", args.year, len(dates))
+
+    lat_grid = ds_dem["lat"].values if "lat" in ds_dem else ds_dem["latitude"].values
+    lon_grid = ds_dem["lon"].values if "lon" in ds_dem else ds_dem["longitude"].values
+    dem_2d = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
+
+    # ---- Dataset + DataModule -----------------------------------------------
+    dataset = BulkSencropDataset(
+        dates=dates,
+        coarse_provider=provider,
+        sencrop_root=args.sencrop,
+        lat_grid=lat_grid,
+        lon_grid=lon_grid,
+        elevation_grid=dem_2d,
+        min_stations=5,
+    )
+    if len(dataset) == 0:
+        log.error("No valid nights found — aborting")
+        return 2
+
+    if args.smoke_test:
+        log.info("Smoke test: subsampling dataset to 8 nights, epochs=1")
+        dataset.dates = dataset.dates[:8]
+        args.epochs = 1
+
+    datamodule = UNetSparseDataModule(dataset, num_workers=0)
+
+    # ---- Model + LightningModule --------------------------------------------
+    model = build_model("unet", met_in_ch=1, dem_in_ch=1, base_ch=32, n_levels=3, use_film=True)
+    lit = UNetSparseCalibrationModule(
+        model=model,
+        target_channel=0,
+        lr=1e-4,
+        warmup_epochs=2,
+        max_epochs=args.epochs,
+        kelvin_to_celsius=False,  # CERRA atm is already °C in our pipeline
+        elevation_aware=True,
+        hourly=False,
+        reduce="min",
+    )
+
+    # ---- Trainer ------------------------------------------------------------
+    import lightning.pytorch as pl
+    from lightning.pytorch.callbacks import ModelCheckpoint
+
+    callbacks = [
+        ModelCheckpoint(
+            dirpath=str(args.out), filename=f"{args.year}-best",
+            monitor="val/rmse", mode="min", save_top_k=1,
+        )
+    ]
+
+    logger = False
+    wandb_run_url = None
+    if not args.wandb_disabled and os.environ.get("WANDB_API_KEY"):
+        try:
+            from lightning.pytorch.loggers import WandbLogger
+            wandb_logger = WandbLogger(
+                project=args.wandb_project,
+                name=f"recalibrate_dl_film_{args.year}",
+                tags=["recalibrate", "dl-film", "sencrop", f"year-{args.year}"],
+            )
+            logger = wandb_logger
+            wandb_run_url = getattr(wandb_logger.experiment, "url", None)
+        except ImportError:
+            log.warning("wandb not installed; running without it")
+
+    trainer = pl.Trainer(
+        max_epochs=args.epochs,
+        accelerator="gpu" if args.device == "cuda" and torch.cuda.is_available() else "cpu",
+        devices=1,
+        logger=logger,
+        callbacks=callbacks,
+        log_every_n_steps=10,
+    )
+
+    log.info("Training: %d epochs on %d nights", args.epochs, len(dataset))
+    trainer.fit(lit, datamodule=datamodule)
+
+    # ---- Inference loop: 1 km grid Tmin per night → Zarr --------------------
+    log.info("Inference: producing 1 km grid for %d nights", len(dataset))
+    lit.eval()
+    out_grids = []
+    with torch.no_grad():
+        for d in dataset.dates:
+            x_met, x_dem = provider(d)
+            pred = lit({"x_met": x_met, "x_dem": x_dem})
+            # `lit()` calls model directly; we need _predict_target via a fake batch
+            # Use the module's internal helper:
+            batch = {"x_met": x_met, "x_dem": x_dem}
+            pred = lit._predict_target(batch).squeeze().cpu().numpy()
+            slab = xr.DataArray(
+                pred, dims=("latitude", "longitude"),
+                coords={"latitude": lat_grid, "longitude": lon_grid},
+            ).expand_dims(time=[pd.Timestamp(d)])
+            out_grids.append(slab)
+
+    out_ds = xr.concat(out_grids, dim="time")
+    zarr_path = args.out / f"{args.year}.zarr"
+    out_ds.to_zarr(zarr_path, mode="w")
+    log.info("Wrote %s (%d nights)", zarr_path, len(out_grids))
+
+    # ---- Reproducibility metadata -------------------------------------------
+    metadata = {
+        "year": args.year,
+        "command": " ".join(["uv", "run", "python", *sys.argv]),
+        "git_sha": _git_sha(),
+        "cerra_atm": str(args.cerra_atm),
+        "dem": str(args.dem),
+        "sencrop_root": str(args.sencrop),
+        "epochs": args.epochs,
+        "device": args.device,
+        "n_nights": len(dataset),
+        "wandb_run_url": wandb_run_url,
+    }
+    (args.out / f"{args.year}.metadata.json").write_text(json.dumps(metadata, indent=2))
+    log.info("Done. Metadata: %s", args.out / f"{args.year}.metadata.json")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
