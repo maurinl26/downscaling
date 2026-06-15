@@ -126,41 +126,41 @@ def test_sencrop_loader_bulk(mock_sencrop_root: Path) -> None:
 def test_download_cerra_imports() -> None:
     """The download entrypoint module imports without side effects."""
     import importlib
-    mod = importlib.import_module("downscaling.scripts.download_cerra_for_pod")
+    mod = importlib.import_module("downscaling.scripts.download_cerra_for_recalibration")
     assert hasattr(mod, "main")
     assert hasattr(mod, "REQUIRED_ENV")
 
 
-def test_run_lot_b_imports() -> None:
+def test_recalibrate_statistical_imports() -> None:
     import importlib
-    mod = importlib.import_module("downscaling.scripts.run_lot_b")
+    mod = importlib.import_module("downscaling.scripts.recalibrate_statistical")
     assert hasattr(mod, "main")
     # _residual_correction should be present
     assert hasattr(mod, "_residual_correction")
 
 
-def test_run_lot_c_imports() -> None:
-    """Lot C imports torch + lightning — skip if unavailable."""
+def test_recalibrate_dl_film_imports() -> None:
+    """DL FiLM script imports torch + lightning, skip if unavailable."""
     pytest.importorskip("torch")
     pytest.importorskip("lightning")
     import importlib
-    mod = importlib.import_module("downscaling.scripts.run_lot_c")
+    mod = importlib.import_module("downscaling.scripts.recalibrate_dl_film")
     assert hasattr(mod, "main")
     assert hasattr(mod, "BulkSencropDataset")
 
 
-def test_lot_b_smoke_run(
+def test_recalibrate_statistical_smoke_run(
     tmp_path: Path,
     mock_cerra: Path,
     mock_dem: Path,
     mock_sencrop_root: Path,
 ) -> None:
-    """End-to-end Lot B on mock data — produces a Zarr."""
+    """End-to-end statistical recalibration on mock data, produces a Zarr."""
     pytest.importorskip("sklearn")  # statistical pipeline pulls scikit-learn
-    out = tmp_path / "lot_b_out"
+    out = tmp_path / "recalibrate_statistical_out"
     sys_argv = sys.argv[:]
     sys.argv = [
-        "run_lot_b.py",
+        "recalibrate_statistical.py",
         "--year", "2022",
         "--cerra-atm",  str(mock_cerra),
         "--cerra-land", str(mock_cerra),  # placeholder, same file
@@ -169,24 +169,24 @@ def test_lot_b_smoke_run(
         "--out",        str(out),
     ]
     try:
-        from downscaling.scripts.run_lot_b import main
+        from downscaling.scripts.recalibrate_statistical import main
         rc = main()
     finally:
         sys.argv = sys_argv
 
-    assert rc == 0, "run_lot_b.main() returned non-zero on smoke data"
+    assert rc == 0, "recalibrate_statistical.main() returned non-zero on smoke data"
     assert (out / "2022.zarr").exists() or (out / "2022.zarr").is_dir(), \
         "expected Zarr output"
 
 
-def test_lot_c_dataset_build(
+def test_recalibrate_dl_film_dataset_build(
     mock_cerra: Path,
     mock_dem: Path,
     mock_sencrop_root: Path,
 ) -> None:
-    """Build the BulkSencropDataset on mock data — verify it has samples."""
+    """Build the BulkSencropDataset on mock data, verify it has samples."""
     pytest.importorskip("torch")
-    from downscaling.scripts.run_lot_c import BulkSencropDataset, _build_coarse_provider
+    from downscaling.scripts.recalibrate_dl_film import BulkSencropDataset, _build_coarse_provider
 
     provider, ds_cerra, ds_dem = _build_coarse_provider(mock_cerra, mock_dem)
     lat = ds_dem["latitude"].values
@@ -211,7 +211,7 @@ def test_pod_entrypoint_shellcheck() -> None:
     """The pod orchestrator bash script has valid syntax (bash -n)."""
     import subprocess
 
-    script = Path(__file__).resolve().parent.parent / "scripts" / "run_lot_d_pod_entrypoint.sh"
+    script = Path(__file__).resolve().parent.parent / "scripts" / "recalibration_pipeline.sh"
     if not script.exists():
         pytest.skip(f"{script} not present")
     rc = subprocess.run(

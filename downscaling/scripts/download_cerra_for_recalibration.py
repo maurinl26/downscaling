@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Download CERRA + CERRA-Land for the Lot D pod (Option C of issue #14).
+"""Download CERRA + CERRA-Land for the recalibration pipeline (Option C of
+parametric_insurance issue #14).
 
-Reads its configuration entirely from environment variables — designed to be
-invoked by the RunPod orchestrator (`run_lot_d_pod_entrypoint.sh`) which itself
-is launched by `parametric_insurance/scripts/runpod_launch.py --with-cerra-download`.
+Reads its configuration entirely from environment variables, designed to be
+invoked by the RunPod orchestrator (`scripts/recalibration_pipeline.sh`), which
+is itself launched by `parametric_insurance/scripts/runpod_launch.py
+--with-cerra-download`.
 
 Required env vars
 -----------------

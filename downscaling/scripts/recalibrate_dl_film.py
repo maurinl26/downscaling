@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Lot C — DL FiLM + sparse Sencrop calibration.
+"""DL FiLM recalibration with sparse Sencrop calibration.
 
-Thin orchestrator that wires:
+Known internally as the "Lot C" deliverable of the Sencrop S23 campaign. Thin
+orchestrator that wires:
 - `build_model("unet", use_film=True)` from `downscaling.deep_learning.model`
 - `UNetSparseCalibrationModule` from `downscaling.deep_learning.sparse_calibration`
 - A bulk-aware Sencrop dataset (uses the patched `load_sencrop` from
@@ -74,7 +75,7 @@ from downscaling.prtihvi_wxc.netatmo_qc import NetatmoNocturnalQC
 from downscaling.prtihvi_wxc.sencrop import load_sencrop
 from downscaling.prtihvi_wxc.stations import night_station_targets
 
-log = logging.getLogger("lot_c")
+log = logging.getLogger("recalibrate_dl_film")
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +196,7 @@ def _dates_in_year(ds_cerra: xr.Dataset, year: int) -> list[str]:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
-    p = argparse.ArgumentParser(description="Lot C: DL FiLM + sparse Sencrop")
+    p = argparse.ArgumentParser(description="DL FiLM recalibration with sparse Sencrop")
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--dem", type=Path, required=True)
@@ -203,7 +204,7 @@ def main() -> int:
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--device", default="cuda")
-    p.add_argument("--wandb-project", default="karpos-lot-c")
+    p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("--smoke-test", action="store_true",
                    help="run 1 epoch on a tiny subset (CPU OK)")
@@ -275,8 +276,8 @@ def main() -> int:
             from lightning.pytorch.loggers import WandbLogger
             wandb_logger = WandbLogger(
                 project=args.wandb_project,
-                name=f"lot_c_{args.year}",
-                tags=["lot-c", "sencrop", f"year-{args.year}"],
+                name=f"recalibrate_dl_film_{args.year}",
+                tags=["recalibrate", "dl-film", "sencrop", f"year-{args.year}"],
             )
             logger = wandb_logger
             wandb_run_url = getattr(wandb_logger.experiment, "url", None)

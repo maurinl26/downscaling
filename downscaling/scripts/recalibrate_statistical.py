@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Lot B — Statistical downscaling (lapse + QDM) + Sencrop residual calibration.
+"""Statistical recalibration (lapse-rate + QDM) with Sencrop residual correction.
 
 Thin orchestrator. Reuses `StatisticalDownscalingPipeline` as-is and adds a
 post-pass sparse residual correction on the Sencrop network for the target
-year. Outputs a Zarr grid under `--out`.
+year. Outputs a Zarr grid under `--out`. Known internally as the "Lot B"
+deliverable of the Sencrop S23 campaign.
 
 Inputs
 ------
 
-CERRA atm + CERRA-Land (downloaded by `download_cerra_for_pod.py`) :
+CERRA atm + CERRA-Land (downloaded by `download_cerra_for_recalibration.py`) :
     --cerra-atm  /workspace/data/cerra/cerra_atm_<year>.nc
     --cerra-land /workspace/data/cerra_land/cerra_land_<year>.nc
 
@@ -45,8 +46,8 @@ Logs to stdout (and a small `<out>/.run_metadata.json`) :
 - N stations actually used per night
 - bbox / years / resolution
 
-Note: this script is **CPU-friendly** (no GPU). For Lot C (DL FiLM) see
-`run_lot_c.py`.
+Note: this script is **CPU-friendly** (no GPU). For the DL FiLM variant see
+`recalibrate_dl_film.py`.
 """
 from __future__ import annotations
 
@@ -69,7 +70,7 @@ from downscaling.prtihvi_wxc.sencrop import (
 )
 from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
 
-log = logging.getLogger("lot_b")
+log = logging.getLogger("recalibrate_statistical")
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +185,7 @@ def _residual_correction(
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
-    p = argparse.ArgumentParser(description="Lot B — statistical downscaling + Sencrop")
+    p = argparse.ArgumentParser(description="Statistical recalibration (lapse + QDM) with Sencrop residual")
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--cerra-land", type=Path, required=True, help="kept for symmetry / future")
@@ -198,7 +199,7 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
-    log.info("Lot B run | year=%d | out=%s", args.year, args.out)
+    log.info("Statistical recalibration | year=%d | out=%s", args.year, args.out)
 
     # 1. Load CERRA, compute nightly Tmin
     ds = xr.open_dataset(args.cerra_atm)
