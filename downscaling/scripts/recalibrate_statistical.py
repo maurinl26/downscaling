@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -195,6 +196,8 @@ def main() -> int:
     p.add_argument("--obs-ref", type=Path, default=None, help="optional CERRA fine ref for QDM calibration")
     p.add_argument("--variable", default="t2m")
     p.add_argument("--sigma-km", type=float, default=7.0)
+    p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
+    p.add_argument("--wandb-disabled", action="store_true")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -250,8 +253,37 @@ def main() -> int:
         .reset_index()
     )
 
+    # 3.bis Init W&B (no-op si pas de clé / désactivé)
+    wandb_run = None
+    if not args.wandb_disabled and os.environ.get("WANDB_API_KEY"):
+        try:
+            import wandb
+
+            wandb_run = wandb.init(
+                project=args.wandb_project,
+                name=f"stat-{args.year}",
+                config={
+                    "stage": "statistical",
+                    "year": args.year,
+                    "sigma_km": args.sigma_km,
+                    "dem": str(args.dem),
+                    "sencrop_root": str(args.sencrop),
+                    "use_qdm": bool(args.obs_ref),
+                    "n_stations_bbox": len(stations),
+                    "bbox": bbox,
+                    "git_sha": _git_sha(),
+                },
+                reinit=True,
+            )
+            log.info("W&B run: %s", wandb_run.url if wandb_run else "n/a")
+        except Exception as exc:
+            log.warning("W&B init failed (continuing without): %s", exc)
+            wandb_run = None
+
     out_grids = []
     n_stations_used = []
+    # Métriques in-sample par nuit (résidus station observation - grid après calibration)
+    per_night_records: list[dict] = []
     for d in nightly.time.values:
         d_py: date = pd.Timestamp(d).date()
         slab = nightly.sel(time=d)
@@ -259,7 +291,7 @@ def main() -> int:
             ds_slab = xr.Dataset({"t2m": slab})
             grid_fine = pipe.run(ds_slab, variables=["t2m"])["t2m"]
         except Exception as exc:
-            log.warning("Pipeline failed for %s: %s — skipping", d_py, exc)
+            log.warning("Pipeline failed for %s: %s, skipping", d_py, exc)
             continue
 
         night_obs = obs_per_night[obs_per_night["night_date"] == d_py]
@@ -279,8 +311,31 @@ def main() -> int:
 
         out_grids.append(grid_corr.expand_dims(time=[d]))
 
+        # Métriques résidus station (in-sample : sur les stations utilisées dans la calibration)
+        if kept_stations:
+            lat_grid = grid_corr["latitude"].values if "latitude" in grid_corr.coords else grid_corr["lat"].values
+            lon_grid = grid_corr["longitude"].values if "longitude" in grid_corr.coords else grid_corr["lon"].values
+            g = grid_corr.values
+            preds = np.array([
+                g[int(np.argmin(np.abs(lat_grid - s.lat))), int(np.argmin(np.abs(lon_grid - s.lon)))]
+                for s in kept_stations
+            ])
+            residuals = obs_tmin - preds  # signed residuals (obs - prediction)
+            tmin_min_obs = float(np.nanmin(obs_tmin))
+            per_night_records.append({
+                "date": str(d_py),
+                "n_stations": len(kept_stations),
+                "tmin_min_obs": tmin_min_obs,
+                "tmin_mean_obs": float(np.nanmean(obs_tmin)),
+                "residual_mean": float(np.nanmean(residuals)),
+                "residual_rmse": float(np.sqrt(np.nanmean(residuals ** 2))),
+                "residual_abs_mean": float(np.nanmean(np.abs(residuals))),
+            })
+
     if not out_grids:
-        log.error("No nightly grids produced — aborting")
+        log.error("No nightly grids produced, aborting")
+        if wandb_run is not None:
+            wandb_run.finish(exit_code=1)
         return 2
 
     out_ds = xr.concat(out_grids, dim="time")
@@ -288,6 +343,33 @@ def main() -> int:
     zarr_path = args.out / f"{args.year}.zarr"
     out_ds.to_zarr(zarr_path, mode="w")
     log.info("Wrote %s (%d nights)", zarr_path, len(out_grids))
+
+    # Synthèse métriques sur les nuits avec résidu calculable
+    if per_night_records:
+        residuals_all = np.array([r["residual_mean"] for r in per_night_records])
+        rmse_all = np.array([r["residual_rmse"] for r in per_night_records])
+        abs_all = np.array([r["residual_abs_mean"] for r in per_night_records])
+        n_stations_arr = np.array([r["n_stations"] for r in per_night_records])
+        # Indicateurs détection gel (sur le minimum observé par nuit, seuil flo)
+        tmin_obs = np.array([r["tmin_min_obs"] for r in per_night_records])
+        frost_threshold = -2.2  # BBCH flo abricot (seuil de référence pitch coopératives)
+        is_frost_night = tmin_obs < frost_threshold
+        summary = {
+            "n_nights_total": len(out_grids),
+            "n_nights_with_residuals": len(per_night_records),
+            "n_frost_nights_obs": int(is_frost_night.sum()),
+            "avg_stations_per_night": float(np.mean(n_stations_arr)),
+            "median_stations_per_night": float(np.median(n_stations_arr)),
+            "residual_mean_year": float(np.nanmean(residuals_all)),
+            "residual_rmse_year": float(np.sqrt(np.nanmean(rmse_all ** 2))),
+            "residual_abs_mean_year": float(np.nanmean(abs_all)),
+        }
+    else:
+        summary = {
+            "n_nights_total": len(out_grids),
+            "n_nights_with_residuals": 0,
+            "avg_stations_per_night": 0.0,
+        }
 
     # Reproducibility envelope
     metadata = {
@@ -299,11 +381,31 @@ def main() -> int:
         "dem": str(args.dem),
         "sencrop_root": str(args.sencrop),
         "sigma_km": args.sigma_km,
-        "n_nights": len(out_grids),
-        "avg_stations_per_night": float(np.mean(n_stations_used)) if n_stations_used else 0.0,
+        **summary,
     }
     (args.out / f"{args.year}.metadata.json").write_text(json.dumps(metadata, indent=2))
     log.info("Done. Metadata: %s", args.out / f"{args.year}.metadata.json")
+
+    if wandb_run is not None:
+        try:
+            import wandb
+
+            wandb.log({"summary/" + k: v for k, v in summary.items()})
+            # Per-night table (lecture rapide dans W&B)
+            if per_night_records:
+                tbl = wandb.Table(
+                    columns=list(per_night_records[0].keys()),
+                    data=[[r[k] for k in per_night_records[0].keys()] for r in per_night_records],
+                )
+                wandb.log({"per_night": tbl})
+            # Log artefact Zarr metadata
+            artifact = wandb.Artifact(f"stat-{args.year}-metadata", type="metadata")
+            artifact.add_file(str(args.out / f"{args.year}.metadata.json"))
+            wandb_run.log_artifact(artifact)
+            wandb_run.finish()
+        except Exception as exc:
+            log.warning("W&B finalize failed: %s", exc)
+
     return 0
 
 
