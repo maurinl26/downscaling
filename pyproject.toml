@@ -40,6 +40,9 @@ regrid = [
 # Pipeline statistique (lapse-rate + QDM) — pas de GPU requis
 statistical = [
     "scikit-learn>=1.4",
+    # SRTM bootstrap quand le DEM IGN BD ALTI n'est pas fourni (cf. Stage 0
+    # du recalibration_pipeline.sh).
+    "elevation>=1.1",
 ]
 
 # Pipeline deep learning — U-Net FiLM (architecture maison)

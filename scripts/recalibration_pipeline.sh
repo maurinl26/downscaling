@@ -60,6 +60,36 @@ YEARS=$(seq "$YEAR_START" "$YEAR_END")
 mkdir -p "$CERRA_OUT_ATM" "$CERRA_OUT_LAND" "$RECALIB_OUT_STATISTICAL" "$RECALIB_OUT_DL_FILM"
 
 # ----------------------------------------------------------------------------
+# Stage 0 — DEM bootstrap (SRTM 30m via `elevation` package)
+# ----------------------------------------------------------------------------
+# The recalibrate_* scripts need a DEM NetCDF (lat, lon, elevation). When the
+# real IGN BD ALTI 25m file is not provided at RECALIB_DEM, we fetch SRTM 30m
+# over the CERRA bbox as a proxy — adequate for PoC Lots B/C, not for prod.
+if [ ! -f "$RECALIB_DEM" ]; then
+  log "Stage 0: DEM absent at $RECALIB_DEM — bootstrapping SRTM 30m"
+  mkdir -p "$(dirname "$RECALIB_DEM")"
+  LAT_MIN="${CERRA_BBOX_LAT_MIN:?bbox required for DEM bootstrap}"
+  LAT_MAX="${CERRA_BBOX_LAT_MAX:?bbox required for DEM bootstrap}"
+  LON_MIN="${CERRA_BBOX_LON_MIN:?bbox required for DEM bootstrap}"
+  LON_MAX="${CERRA_BBOX_LON_MAX:?bbox required for DEM bootstrap}"
+  TMP_TIF="${RECALIB_DEM%.nc}.tif"
+  uv run eio clip --bounds "$LON_MIN" "$LAT_MIN" "$LON_MAX" "$LAT_MAX" \
+    --product SRTM3 -o "$TMP_TIF"
+  uv run python -c "
+import rasterio, xarray as xr, numpy as np
+with rasterio.open('$TMP_TIF') as src:
+    a = src.read(1).astype(np.float32)
+    h, w = a.shape
+    lats = np.linspace(src.bounds.top, src.bounds.bottom, h, dtype=np.float64)
+    lons = np.linspace(src.bounds.left, src.bounds.right, w, dtype=np.float64)
+ds = xr.Dataset({'elevation': (('lat', 'lon'), a)}, coords={'lat': lats, 'lon': lons})
+ds.attrs['source'] = 'SRTM3 30m via elevation package (proxy, not BD ALTI)'
+ds.to_netcdf('$RECALIB_DEM')
+print(f'wrote $RECALIB_DEM shape={a.shape}')
+"
+fi
+
+# ----------------------------------------------------------------------------
 # Stage 1 — CERRA download
 # ----------------------------------------------------------------------------
 log "Stage 1: CERRA download"
