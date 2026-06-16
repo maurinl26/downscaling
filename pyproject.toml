@@ -43,6 +43,9 @@ statistical = [
     # SRTM bootstrap quand le DEM IGN BD ALTI n'est pas fourni (cf. Stage 0
     # du recalibration_pipeline.sh).
     "elevation>=1.1",
+    # Requis par Stage 1b (xr.open_mfdataset) du recalibration_pipeline.sh
+    # — sinon ImportError au runtime. Observé sur pod 9lom8jtx1rxl5p, 2026-06-16.
+    "dask>=2024.1",
 ]
 
 # Pipeline deep learning — U-Net FiLM (architecture maison)

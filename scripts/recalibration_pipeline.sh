@@ -114,10 +114,14 @@ for Y in $YEARS; do
       continue
     fi
     log "  $PREFIX $Y: concat → $YEARLY"
+    # NB: combine='by_coords' tends to deadlock with dask when monthly CERRA
+    # files share the same `valid_time` coordinate header. Forcing nested
+    # concat on the time axis with parallel=False is both faster and
+    # deterministic (observed sur pod 9lom8jtx1rxl5p, 2026-06-16).
     uv run python -c "
 import xarray as xr, glob
 files = sorted(glob.glob('$OUTDIR/${PREFIX}_${Y}_*.nc'))
-ds = xr.open_mfdataset(files, combine='by_coords')
+ds = xr.open_mfdataset(files, combine='nested', concat_dim='valid_time', parallel=False, decode_times=False, mask_and_scale=False)
 ds.to_netcdf('$YEARLY')
 print(f'wrote $YEARLY from {len(files)} monthly files')
 "
