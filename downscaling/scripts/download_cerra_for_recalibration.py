@@ -1,42 +1,32 @@
 #!/usr/bin/env python3
-"""Download CERRA + CERRA-Land for the recalibration pipeline (Option C of
-parametric_insurance issue #14).
+"""Download CERRA + CERRA-Land for the recalibration pipeline — frost-window only.
 
-Reads its configuration entirely from environment variables, designed to be
-invoked by the RunPod orchestrator (`scripts/recalibration_pipeline.sh`), which
-is itself launched by `parametric_insurance/scripts/runpod_launch.py
---with-cerra-download`.
+Env-driven (cf. parametric_insurance/scripts/runpod_launch.py
+--with-cerra-download). Restricted to t2m + skin_temperature only, frost-flo
+window (Feb-April) per year, chunked month-by-month to stay under CDS cost
+limits. Uses ``"grid": [0.05, 0.05]`` to bypass MARS LCC-crop unsupported
+error (croppedRepresentation not implemented for the native CERRA grid).
 
 Required env vars
 -----------------
 
-    CDSAPI_URL              # forwarded from the host shell
-    CDSAPI_KEY              # forwarded from the host shell
-    CERRA_START             # ISO date, e.g. "2022-01-01"
-    CERRA_END               # ISO date, e.g. "2026-05-31" (inclusive year boundaries)
-    CERRA_BBOX_LAT_MIN      # float
-    CERRA_BBOX_LAT_MAX      # float
-    CERRA_BBOX_LON_MIN      # float
-    CERRA_BBOX_LON_MAX      # float
-    CERRA_OUT_ATM           # output dir for atmospheric NetCDF (e.g. /workspace/data/cerra/)
-    CERRA_OUT_LAND          # output dir for CERRA-Land NetCDF (e.g. /workspace/data/cerra_land/)
+    CDSAPI_URL, CDSAPI_KEY
+    CERRA_START, CERRA_END                          # ISO dates (year resolution)
+    CERRA_BBOX_LAT_MIN/MAX, CERRA_BBOX_LON_MIN/MAX  # WGS84 bbox
+    CERRA_OUT_ATM, CERRA_OUT_LAND                   # NetCDF output dirs
 
 Output
 ------
 
-NetCDF files, one per (variable × year), schema matching the existing
-`parametric_insurance/backtest/scripts/convert_nc_to_zarr.py` normalization.
-
-CERRA atmospheric variables:  2m_temperature, 2m_dewpoint_temperature,
-                              10m_wind_speed, total_precipitation
-CERRA-Land variables:         skin_temperature, total_precipitation
+NetCDF files, one per (dataset × year × month). Naming:
+    cerra_atm_<year>_<MM>.nc
+    cerra_land_<year>_<MM>.nc
 
 Failure mode
 ------------
 
-Hard-exits non-zero if any required env var is missing or empty — avoids
-burning GPU time on a doomed run. Lets the caller (entrypoint.sh) abort
-before training.
+Hard-exits non-zero if any required env var is missing or empty. Each CDS
+request that fails leaves the file absent (re-running the script will retry).
 """
 from __future__ import annotations
 
@@ -57,25 +47,27 @@ REQUIRED_ENV = (
     "CERRA_OUT_LAND",
 )
 
-# CERRA atmospheric — schéma figé (cf. backtest/config_drome_ardeche.yaml)
+# CERRA atmospheric — t2m only (frost calibration use case).
 ATM_DATASET = "reanalysis-cerra-single-levels"
-ATM_VARIABLES = [
-    "2m_temperature",
-    "2m_dewpoint_temperature",
-    "10m_wind_speed",
-    "total_precipitation",
-]
+ATM_VARIABLES = ["2m_temperature"]
 ATM_TIMES = ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00"]
 
-# CERRA-Land — surface, forecast leadtime 1-3h depuis 4 init/jour (12 timesteps/jour)
+# CERRA-Land — skin_temperature only, 4 init × 3 leadtimes = 12 timesteps/day.
 LAND_DATASET = "reanalysis-cerra-land"
-LAND_VARIABLES = ["skin_temperature", "total_precipitation"]
+LAND_VARIABLES = ["skin_temperature"]
 LAND_INIT_TIMES = ["00:00", "06:00", "12:00", "18:00"]
 LAND_LEADTIME_HOURS = ["1", "2", "3"]
 
+# Frost-flo window for apricot Baronnies (BBCH 53→69) — Feb-April.
+FROST_MONTHS = ["02", "03", "04"]
+
+# 0.05° ≈ 5 km regular grid (matches CERRA native resolution after regridding).
+# Required to bypass MARS "croppedRepresentation() not implemented" on the
+# native LCC grid when "area" is set.
+GRID = [0.05, 0.05]
+
 
 def _require_env() -> dict[str, str]:
-    """Return validated env dict or hard-exit non-zero."""
     missing = [k for k in REQUIRED_ENV if not os.environ.get(k)]
     if missing:
         print(
@@ -88,14 +80,12 @@ def _require_env() -> dict[str, str]:
 
 
 def _write_cdsapirc(url: str, key: str) -> None:
-    """Write the cdsapi credentials file from env (overrides any pre-existing one)."""
     path = Path.home() / ".cdsapirc"
     path.write_text(f"url: {url}\nkey: {key}\n", encoding="utf-8")
     path.chmod(0o600)
 
 
 def _area(env: dict[str, str]) -> list[float]:
-    """CDS API uses [North, West, South, East]."""
     return [
         float(env["CERRA_BBOX_LAT_MAX"]),
         float(env["CERRA_BBOX_LON_MIN"]),
@@ -112,13 +102,13 @@ def _years(env: dict[str, str]) -> list[int]:
     return list(range(start, end + 1))
 
 
-def _download_atm(client, env: dict[str, str], year: int, out: Path) -> Path:
-    target = out / f"cerra_atm_{year}.nc"
+def _download_atm(client, env: dict[str, str], year: int, month: str, out: Path) -> Path:
+    target = out / f"cerra_atm_{year}_{month}.nc"
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         print(f"[atm] skip (exists): {target}")
         return target
-    print(f"[atm] requesting {year} → {target}")
+    print(f"[atm] requesting {year}-{month} → {target}")
     client.retrieve(
         ATM_DATASET,
         {
@@ -127,24 +117,25 @@ def _download_atm(client, env: dict[str, str], year: int, out: Path) -> Path:
             "data_type": "reanalysis",
             "product_type": "analysis",
             "year": str(year),
-            "month": [f"{m:02d}" for m in range(1, 13)],
+            "month": [month],
             "day": [f"{d:02d}" for d in range(1, 32)],
             "time": ATM_TIMES,
             "area": _area(env),
-            "format": "netcdf",
+            "data_format": "netcdf",
+            "grid": GRID,
         },
         str(target),
     )
     return target
 
 
-def _download_land(client, env: dict[str, str], year: int, out: Path) -> Path:
-    target = out / f"cerra_land_{year}.nc"
+def _download_land(client, env: dict[str, str], year: int, month: str, out: Path) -> Path:
+    target = out / f"cerra_land_{year}_{month}.nc"
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         print(f"[land] skip (exists): {target}")
         return target
-    print(f"[land] requesting {year} → {target}")
+    print(f"[land] requesting {year}-{month} → {target}")
     client.retrieve(
         LAND_DATASET,
         {
@@ -152,12 +143,13 @@ def _download_land(client, env: dict[str, str], year: int, out: Path) -> Path:
             "level_type": "surface",
             "product_type": "forecast",
             "year": str(year),
-            "month": [f"{m:02d}" for m in range(1, 13)],
+            "month": [month],
             "day": [f"{d:02d}" for d in range(1, 32)],
             "time": LAND_INIT_TIMES,
             "leadtime_hour": LAND_LEADTIME_HOURS,
             "area": _area(env),
-            "format": "netcdf",
+            "data_format": "netcdf",
+            "grid": GRID,
         },
         str(target),
     )
@@ -168,7 +160,6 @@ def main() -> int:
     env = _require_env()
     _write_cdsapirc(env["CDSAPI_URL"], env["CDSAPI_KEY"])
 
-    # Import after env check so the failure happens before any heavy import.
     import cdsapi
 
     client = cdsapi.Client()
@@ -176,15 +167,19 @@ def main() -> int:
     out_atm = Path(env["CERRA_OUT_ATM"])
     out_land = Path(env["CERRA_OUT_LAND"])
     years = _years(env)
-    print(f"CERRA download: years={years} bbox={_area(env)}")
+    print(
+        f"CERRA frost-window download: years={years} months={FROST_MONTHS} "
+        f"bbox={_area(env)} grid={GRID}"
+    )
     print(f"  atm  → {out_atm}")
     print(f"  land → {out_land}")
 
     for y in years:
-        _download_atm(client, env, y, out_atm)
-        _download_land(client, env, y, out_land)
+        for m in FROST_MONTHS:
+            _download_atm(client, env, y, m, out_atm)
+            _download_land(client, env, y, m, out_land)
 
-    print("CERRA download done.")
+    print("CERRA frost-window download done.")
     return 0
 
 
