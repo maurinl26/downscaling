@@ -1583,6 +1583,7 @@ regrid = [
     { name = "xesmf" },
 ]
 statistical = [
+    { name = "dask" },
     { name = "elevation" },
     { name = "scikit-learn" },
 ]
@@ -1607,6 +1608,7 @@ requires-dist = [
     { name = "cartopy", marker = "extra == 'viz'", specifier = ">=0.22" },
     { name = "cdsapi", marker = "extra == 'all'", specifier = ">=0.6" },
     { name = "dask", marker = "extra == 'all'", specifier = ">=2024.1" },
+    { name = "dask", marker = "extra == 'statistical'", specifier = ">=2024.1" },
     { name = "downscaling", extras = ["statistical", "dl", "prithvi", "pmap"], marker = "extra == 'all'" },
     { name = "elevation", marker = "extra == 'statistical'", specifier = ">=1.1" },
     { name = "fsspec", specifier = ">=2024.1" },
