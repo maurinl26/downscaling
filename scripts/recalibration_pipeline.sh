@@ -73,8 +73,9 @@ if [ ! -f "$RECALIB_DEM" ]; then
   LON_MIN="${CERRA_BBOX_LON_MIN:?bbox required for DEM bootstrap}"
   LON_MAX="${CERRA_BBOX_LON_MAX:?bbox required for DEM bootstrap}"
   TMP_TIF="${RECALIB_DEM%.nc}.tif"
+  # eio --product is a top-level flag (not on clip). SRTM1 (30m) is default.
   uv run eio clip --bounds "$LON_MIN" "$LAT_MIN" "$LON_MAX" "$LAT_MAX" \
-    --product SRTM3 -o "$TMP_TIF"
+    -o "$TMP_TIF"
   uv run python -c "
 import rasterio, xarray as xr, numpy as np
 with rasterio.open('$TMP_TIF') as src:
@@ -90,10 +91,38 @@ print(f'wrote $RECALIB_DEM shape={a.shape}')
 fi
 
 # ----------------------------------------------------------------------------
-# Stage 1 — CERRA download
+# Stage 1 — CERRA download (frost-window only, chunked month-by-month)
 # ----------------------------------------------------------------------------
-log "Stage 1: CERRA download"
+log "Stage 1: CERRA download (frost-window only)"
 uv run python -m downscaling.scripts.download_cerra_for_recalibration
+
+# ----------------------------------------------------------------------------
+# Stage 1b — Concat monthly NetCDF → yearly NetCDF (input expected by Stage 2/3)
+# ----------------------------------------------------------------------------
+log "Stage 1b: concat monthly NetCDF → yearly"
+for Y in $YEARS; do
+  for prefix_outdir in "cerra_atm:$CERRA_OUT_ATM" "cerra_land:$CERRA_OUT_LAND"; do
+    PREFIX="${prefix_outdir%:*}"; OUTDIR="${prefix_outdir#*:}"
+    YEARLY="$OUTDIR/${PREFIX}_${Y}.nc"
+    if [ -f "$YEARLY" ]; then
+      log "  $PREFIX $Y: skip (yearly exists)"
+      continue
+    fi
+    MONTHLY=$(ls "$OUTDIR"/${PREFIX}_${Y}_*.nc 2>/dev/null || true)
+    if [ -z "$MONTHLY" ]; then
+      log "  $PREFIX $Y: no monthly files, skipping concat"
+      continue
+    fi
+    log "  $PREFIX $Y: concat → $YEARLY"
+    uv run python -c "
+import xarray as xr, glob
+files = sorted(glob.glob('$OUTDIR/${PREFIX}_${Y}_*.nc'))
+ds = xr.open_mfdataset(files, combine='by_coords')
+ds.to_netcdf('$YEARLY')
+print(f'wrote $YEARLY from {len(files)} monthly files')
+"
+  done
+done
 
 # ----------------------------------------------------------------------------
 # Stage 2 — Statistical recalibration per year
