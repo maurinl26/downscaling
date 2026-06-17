@@ -53,6 +53,15 @@ RECALIB_SENCROP="${RECALIB_SENCROP:-${SENCROP_DATA_ROOT:-/workspace/data/sencrop
 RECALIB_DL_FILM_EPOCHS="${RECALIB_DL_FILM_EPOCHS:-30}"
 RECALIB_PUSH_TARGET="${RECALIB_PUSH_TARGET:-/Users/loicmaurin/kDrive/karpos_datasets/output}"
 
+# Gating des stages : permet de découper le pipeline sur pods séparés.
+# Valeurs possibles : "all" (défaut), "stat" (Stage 0+1+2+4, pas de DL),
+# "dl" (Stage 0+1+3+4, pas de stat). Utilisé par entrypoint-downscaling.sh
+# pour lancer Stage 2 sur pod CPU et Stage 3 sur pod GPU séparément.
+RECALIBRATION_STAGES="${RECALIBRATION_STAGES:-all}"
+_run_stat() { [[ "$RECALIBRATION_STAGES" == "all" || "$RECALIBRATION_STAGES" == "stat" ]]; }
+_run_dl()   { [[ "$RECALIBRATION_STAGES" == "all" || "$RECALIBRATION_STAGES" == "dl" ]]; }
+log "RECALIBRATION_STAGES=$RECALIBRATION_STAGES"
+
 YEAR_START=$(date -d "${CERRA_START}" +%Y 2>/dev/null || python3 -c "from datetime import date; print(date.fromisoformat('${CERRA_START}').year)")
 YEAR_END=$(date -d "${CERRA_END}" +%Y 2>/dev/null || python3 -c "from datetime import date; print(date.fromisoformat('${CERRA_END}').year)")
 YEARS=$(seq "$YEAR_START" "$YEAR_END")
@@ -131,6 +140,7 @@ done
 # ----------------------------------------------------------------------------
 # Stage 2 — Statistical recalibration per year
 # ----------------------------------------------------------------------------
+if _run_stat; then
 log "Stage 2: statistical recalibration (lapse + QDM + Sencrop residual)"
 CERRA_OROG="$CERRA_OUT_ATM/cerra_orography.nc"
 for Y in $YEARS; do
@@ -153,7 +163,9 @@ for Y in $YEARS; do
     --sencrop    "$RECALIB_SENCROP" \
     --out        "$RECALIB_OUT_STATISTICAL"
 done
+fi  # _run_stat
 
+if _run_dl; then
 # ----------------------------------------------------------------------------
 # Stage 3 — DL FiLM recalibration per year (GPU)
 # ----------------------------------------------------------------------------
@@ -176,6 +188,7 @@ for Y in $YEARS; do
     --out       "$RECALIB_OUT_DL_FILM" \
     --epochs    "$RECALIB_DL_FILM_EPOCHS"
 done
+fi  # _run_dl
 
 # ----------------------------------------------------------------------------
 # Stage 4 — Push artefacts to kDrive / S3

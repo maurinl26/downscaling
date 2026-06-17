@@ -102,39 +102,6 @@ def _years(env: dict[str, str]) -> list[int]:
     return list(range(start, end + 1))
 
 
-def _download_orography(client, env: dict[str, str], out: Path) -> Path:
-    """Download CERRA orography (time-invariant). One-shot, pas par mois.
-
-    Sans orographie, le StatisticalDownscalingPipeline tombe sur le fallback
-    z_source = 0 m, ce qui injecte un biais lapse-rate spurieux de ~+3-4°C
-    en moyenne sur les Baronnies (audit à froid juin 2026, bug #13).
-    """
-    target = out / "cerra_orography.nc"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        print(f"[orog] skip (exists): {target}")
-        return target
-    print(f"[orog] requesting CERRA orography → {target}")
-    client.retrieve(
-        ATM_DATASET,
-        {
-            "variable": ["orography"],
-            "level_type": "surface_or_atmosphere",
-            "data_type": "reanalysis",
-            "product_type": "analysis",
-            "year": "2022",
-            "month": ["01"],
-            "day": ["01"],
-            "time": ["00:00"],
-            "area": _area(env),
-            "data_format": "netcdf",
-            "grid": GRID,
-        },
-        str(target),
-    )
-    return target
-
-
 def _download_atm(client, env: dict[str, str], year: int, month: str, out: Path) -> Path:
     target = out / f"cerra_atm_{year}_{month}.nc"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -207,9 +174,10 @@ def main() -> int:
     print(f"  atm  → {out_atm}")
     print(f"  land → {out_land}")
 
-    # Orographie one-shot (time-invariant). Indispensable pour corriger le biais
-    # lapse-rate dans recalibrate_statistical (cf. C1.1 issue maurinl26/downscaling#17).
-    _download_orography(client, env, out_atm)
+    # NB: l'orographie CERRA (time-invariant) est gérée hors de ce script :
+    # downloadée une fois via backtest/scripts/download_cerra.py --variable orography
+    # depuis parametric_insurance, puis upload S3 Scaleway ; le pod la lit via
+    # recalibrate_statistical --cerra-orog s3://karpos-backtest-data/...
 
     for y in years:
         for m in FROST_MONTHS:
