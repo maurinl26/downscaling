@@ -224,6 +224,18 @@ def load_timeseries(
     return out
 
 
+# Cache process-local des chargements année-entière pour le bulk Sencrop.
+# Évite N téléchargements S3 redondants quand `load_sencrop` est appelé en boucle
+# par BulkSencropDataset (Lot C entraînement). Clé : (root, year, bbox_tuple).
+_BULK_YEAR_CACHE: dict = {}
+
+
+def _bbox_key(bbox: dict[str, float] | None) -> tuple | None:
+    if bbox is None:
+        return None
+    return tuple(sorted(bbox.items()))
+
+
 def _build_normalized_df_from_bulk(
     root: str | Path,
     date: str,
@@ -231,8 +243,15 @@ def _build_normalized_df_from_bulk(
 ) -> pd.DataFrame:
     """Produit un DataFrame ``(station_id, lat, lon, elevation_m, timestamp, t_celsius)``
     couvrant la nuit du ``date`` (20h → 08h+1 selon ``dataframe_to_station_obs``).
-    Lit la partition de l'année de ``date``, joint au catalogue stations."""
+    Lit la partition de l'année de ``date``, joint au catalogue stations.
+
+    Cache process-local par (root, year, bbox) : un appel en boucle sur plusieurs
+    nuits de la même année ne refait pas le téléchargement S3 N fois.
+    """
     year = pd.Timestamp(date).year
+    cache_key = (str(root), year, _bbox_key(bbox))
+    if cache_key in _BULK_YEAR_CACHE:
+        return _BULK_YEAR_CACHE[cache_key]
     stations = load_stations_catalog(root, bbox=bbox)
     bucket_ids = stations["bucket_id"].tolist()
     ts = load_timeseries(
@@ -246,12 +265,14 @@ def _build_normalized_df_from_bulk(
     joined["timestamp"] = (
         pd.to_datetime(joined["timestamp"], utc=True).dt.tz_convert(None)
     )
-    return joined.rename(columns={
+    out = joined.rename(columns={
         "latitude": "lat",
         "longitude": "lon",
         "altitude_m": "elevation_m",
         "temperature": "t_celsius",
     })[["station_id", "lat", "lon", "elevation_m", "timestamp", "t_celsius"]]
+    _BULK_YEAR_CACHE[cache_key] = out
+    return out
 
 
 # ---------------------------------------------------------------------------

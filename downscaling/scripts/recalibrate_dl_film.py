@@ -199,24 +199,37 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
         ds_cerra[t_var] = ds_cerra[t_var] - 273.15
         ds_cerra[t_var].attrs["units"] = "degC"
 
-    # DEM as a single tensor channel (1 channel for now)
+    # Provider retourne des tenseurs (C, H, W). Le DataLoader ajoute la dim batch
+    # → (B, C, H, W) attendu par Conv2d. En inference directe (hors DataLoader),
+    # il faut unsqueeze(0) manuellement (cf. boucle d'inférence ci-dessous).
+    # CERRA est sur grille 5 km (~31×31 sur Drôme-Ardèche), DEM sur grille 1 km
+    # (~167×118). On regridde x_met vers la résolution DEM par bilinéaire pour
+    # que les deux channels partagent la même grille, indispensable au U-Net.
+    import torch.nn.functional as F
     dem_arr = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
-    x_dem = torch.from_numpy(dem_arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+    H_fine, W_fine = dem_arr.shape
+    x_dem = torch.from_numpy(dem_arr).unsqueeze(0)  # (1, H, W)
+    log.info("Provider grids: DEM (%d, %d) | CERRA t2m yearly %s",
+             H_fine, W_fine, tuple(ds_cerra[t_var].shape))
 
     def provider(d: str) -> tuple[torch.Tensor, torch.Tensor]:
         slab = ds_cerra[t_var].sel(time=d, method="nearest")
         arr = slab.values.astype(np.float32)
-        x_met = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+        # (H_coarse, W_coarse) → bilinear → (H_fine, W_fine)
+        coarse = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, Hc, Wc)
+        fine = F.interpolate(coarse, size=(H_fine, W_fine), mode="bilinear", align_corners=False)
+        x_met = fine.squeeze(0)  # (1, H_fine, W_fine)
         return x_met, x_dem
 
     return provider, ds_cerra, ds_dem
 
 
 def _dates_in_year(ds_cerra: xr.Dataset, year: int) -> list[str]:
+    """Retourne les dates uniques de l'année (CERRA = 8 timesteps/jour, on dédup)."""
     # Le provider a déjà renommé valid_time → time.
     time_var = "time" if "time" in ds_cerra else "valid_time"
     times = pd.to_datetime(ds_cerra[time_var].values)
-    return [t.strftime("%Y-%m-%d") for t in times if t.year == year]
+    return sorted({t.strftime("%Y-%m-%d") for t in times if t.year == year})
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +367,10 @@ def main() -> int:
     with torch.no_grad():
         for d in dataset.dates:
             x_met, x_dem = provider(d)
+            # provider retourne (C, H, W) ; le modèle attend (B, C, H, W)
             batch = {
-                "x_met": x_met.to(inference_device),
-                "x_dem": x_dem.to(inference_device),
+                "x_met": x_met.unsqueeze(0).to(inference_device),
+                "x_dem": x_dem.unsqueeze(0).to(inference_device),
             }
             pred = lit._predict_target(batch).squeeze().cpu().numpy()
             slab = xr.DataArray(
