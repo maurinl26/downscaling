@@ -102,8 +102,26 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
     ds = xr.open_zarr(year_zarr)
     var_name = list(ds.data_vars)[0]  # t2m généralement
     da = ds[var_name]
+    # Auto-detect Kelvin (CERRA T2m) → convert to Celsius
+    # Utilise la médiane sur quelques pixels non-NaN pour robustesse.
+    sample_arr = da.isel(time=0).values
+    sample_finite = sample_arr[np.isfinite(sample_arr)]
+    sample = float(np.median(sample_finite)) if sample_finite.size > 0 else 0.0
+    log.info("Sample value (median time=0): %.2f", sample)
+    if sample > 100:  # > 100 °C impossible, donc Kelvin
+        log.info("Detected Kelvin units, converting to Celsius")
+        da = da - 273.15
     bbox = _bbox_from_grid(da)
     year = int(year_zarr.stem)
+
+    # Tolère time stocké en int (bug Stage 2 antérieur) : synthétise les dates
+    # à partir de l'année + fenêtre frost-flo (fév 1 → ...). 90 nuits attendues.
+    if da["time"].dtype.kind != "M":
+        n = da.sizes.get("time", 0)
+        start = pd.Timestamp(f"{year}-02-01")
+        synth_times = start + pd.to_timedelta(da["time"].values, unit="D")
+        da = da.assign_coords(time=synth_times)
+        log.info("Synthesized time coord from int index → %s … %s", synth_times[0], synth_times[-1] if n > 0 else "n/a")
 
     # Stations & timeseries Sencrop dans la bbox
     stations_df = load_stations_catalog(sencrop_root, bbox=bbox)
@@ -123,8 +141,12 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
     lat_grid = da[lat_name].values
     lon_grid = da[lon_name].values
 
-    # Stations lookup
-    station_meta = stations_df.set_index("bucket_id")[["latitude", "longitude"]]
+    # Stations lookup (dedup au cas où le bulk a des duplicats par bucket)
+    station_meta = (
+        stations_df[["bucket_id", "latitude", "longitude"]]
+        .drop_duplicates(subset=["bucket_id"], keep="first")
+        .set_index("bucket_id")
+    )
 
     per_night_records: list[dict] = []
     all_obs: list[float] = []
@@ -275,22 +297,16 @@ def main() -> int:
                 log.warning("W&B log year %s failed: %s", s["year"], exc)
 
     # Synthèse multi-années (POD/FAR/CSI agrégés)
-    if all_summaries:
-        agg_obs = []
-        agg_pred = []
-        # Reconstituer les pairs depuis per_night n'est pas possible sans rerefitting,
-        # on agrège plutôt les compteurs de chaque année
-        for s in all_summaries:
-            for k, v in s["contingency"].items():
-                pass  # déjà loggé par année
+    valid = [s for s in all_summaries if "contingency" in s and s.get("n_pairs_station_night", 0) > 0]
+    if valid:
         # Moyenne pondérée des résiduels
-        weights = np.array([s["n_pairs_station_night"] for s in all_summaries], dtype=float)
+        weights = np.array([s["n_pairs_station_night"] for s in valid], dtype=float)
         rmse_w = float(np.sqrt(np.average(
-            [s["residual_rmse_year"] ** 2 for s in all_summaries], weights=weights)))
-        bias_w = float(np.average([s["residual_mean_year"] for s in all_summaries], weights=weights))
-        abs_w = float(np.average([s["residual_abs_mean_year"] for s in all_summaries], weights=weights))
+            [s["residual_rmse_year"] ** 2 for s in valid], weights=weights)))
+        bias_w = float(np.average([s["residual_mean_year"] for s in valid], weights=weights))
+        abs_w = float(np.average([s["residual_abs_mean_year"] for s in valid], weights=weights))
         global_summary = {
-            "n_years": len(all_summaries),
+            "n_years": len(valid),
             "total_pairs": int(weights.sum()),
             "weighted_rmse": rmse_w,
             "weighted_bias": bias_w,

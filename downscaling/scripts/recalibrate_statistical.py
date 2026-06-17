@@ -81,9 +81,20 @@ def _nightly_tmin(da: xr.DataArray) -> xr.DataArray:
     """Aggregate hourly/3-hourly T2m → nightly Tmin keyed to the morning date.
 
     Convention: night DATE = 15h UTC DATE → 09h UTC DATE+1.
+    Handles CERRA NetCDF which uses `valid_time` instead of `time`.
     """
+    # CERRA NetCDF utilise valid_time ; renommer en time.
+    if "valid_time" in da.dims and "time" not in da.dims:
+        da = da.rename({"valid_time": "time"})
+    elif "valid_time" in da.coords and "time" not in da.coords:
+        da = da.rename({"valid_time": "time"})
+    # Si la coord time n'est pas datetime, convertir depuis hours since 1900
+    if da["time"].dtype.kind != "M":
+        ref = pd.Timestamp("1900-01-01")
+        # CERRA time is hours since 1900
+        da = da.assign_coords(time=ref + pd.to_timedelta(da["time"].values, unit="h"))
     # Shift -9h so that the morning's date labels the previous night.
-    da = da.assign_coords(time=da.time - pd.Timedelta("9h"))
+    da = da.assign_coords(time=da["time"] - pd.Timedelta("9h"))
     return da.resample(time="1D").min()
 
 
@@ -217,6 +228,14 @@ def main() -> int:
 
     nightly = _nightly_tmin(ds[t_var])
     nightly = nightly.where(nightly.time.dt.year == args.year, drop=True)
+    # Normalise latitude/longitude → lat/lon pour matcher le DEM SRTM.
+    rename = {}
+    if "latitude" in nightly.dims:
+        rename["latitude"] = "lat"
+    if "longitude" in nightly.dims:
+        rename["longitude"] = "lon"
+    if rename:
+        nightly = nightly.rename(rename)
 
     # 2. Statistical pipeline (lapse + optional QDM)
     pipe = StatisticalDownscalingPipeline(
