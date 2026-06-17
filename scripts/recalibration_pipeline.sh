@@ -132,6 +132,7 @@ done
 # Stage 2 — Statistical recalibration per year
 # ----------------------------------------------------------------------------
 log "Stage 2: statistical recalibration (lapse + QDM + Sencrop residual)"
+CERRA_OROG="$CERRA_OUT_ATM/cerra_orography.nc"
 for Y in $YEARS; do
   CERRA_ATM="$CERRA_OUT_ATM/cerra_atm_${Y}.nc"
   CERRA_LAND="$CERRA_OUT_LAND/cerra_land_${Y}.nc"
@@ -147,6 +148,7 @@ for Y in $YEARS; do
     --year "$Y" \
     --cerra-atm  "$CERRA_ATM" \
     --cerra-land "$CERRA_LAND" \
+    --cerra-orog "$CERRA_OROG" \
     --dem        "$RECALIB_DEM" \
     --sencrop    "$RECALIB_SENCROP" \
     --out        "$RECALIB_OUT_STATISTICAL"

@@ -102,13 +102,15 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
     ds = xr.open_zarr(year_zarr)
     var_name = list(ds.data_vars)[0]  # t2m généralement
     da = ds[var_name]
-    # Auto-detect Kelvin (CERRA T2m) → convert to Celsius
-    # Utilise la médiane sur quelques pixels non-NaN pour robustesse.
-    sample_arr = da.isel(time=0).values
-    sample_finite = sample_arr[np.isfinite(sample_arr)]
-    sample = float(np.median(sample_finite)) if sample_finite.size > 0 else 0.0
-    log.info("Sample value (median time=0): %.2f", sample)
-    if sample > 100:  # > 100 °C impossible, donc Kelvin
+    # Auto-detect Kelvin (CERRA T2m) → convert to Celsius.
+    # Détection robuste : (1) attrs["units"] si présent, (2) médiane GLOBALE
+    # (toute la grille, toutes les nuits) au lieu de time=0 seul, pour résister à un
+    # Zarr bimodal (zones près des stations ramenées en °C par RBF, zones lointaines
+    # encore en K). Cf. audit à froid juin 2026, bug #17.
+    src_units = str(da.attrs.get("units", "")).lower()
+    sample_global = float(np.nanmedian(da.values))
+    log.info("Sample value (median global): %.2f, units attr: %r", sample_global, src_units)
+    if src_units in ("k", "kelvin") or sample_global > 100:
         log.info("Detected Kelvin units, converting to Celsius")
         da = da - 273.15
     bbox = _bbox_from_grid(da)
