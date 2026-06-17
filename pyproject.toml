@@ -53,6 +53,7 @@ dl = [
     "torch>=2.2",
     "torchvision>=0.17",
     "lightning>=2.2",
+    "wandb>=0.17",
 ]
 
 # Infra entraînement pro : monitoring W&B + sync objets Scaleway S3 (cf. docs/infra_pro.md)
