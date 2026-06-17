@@ -81,9 +81,20 @@ def _nightly_tmin(da: xr.DataArray) -> xr.DataArray:
     """Aggregate hourly/3-hourly T2m → nightly Tmin keyed to the morning date.
 
     Convention: night DATE = 15h UTC DATE → 09h UTC DATE+1.
+    Handles CERRA NetCDF which uses `valid_time` instead of `time`.
     """
+    # CERRA NetCDF utilise valid_time ; renommer en time.
+    if "valid_time" in da.dims and "time" not in da.dims:
+        da = da.rename({"valid_time": "time"})
+    elif "valid_time" in da.coords and "time" not in da.coords:
+        da = da.rename({"valid_time": "time"})
+    # Si la coord time n'est pas datetime, convertir depuis hours since 1900
+    if da["time"].dtype.kind != "M":
+        ref = pd.Timestamp("1900-01-01")
+        # CERRA time is hours since 1900
+        da = da.assign_coords(time=ref + pd.to_timedelta(da["time"].values, unit="h"))
     # Shift -9h so that the morning's date labels the previous night.
-    da = da.assign_coords(time=da.time - pd.Timedelta("9h"))
+    da = da.assign_coords(time=da["time"] - pd.Timedelta("9h"))
     return da.resample(time="1D").min()
 
 
@@ -190,6 +201,9 @@ def main() -> int:
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--cerra-land", type=Path, required=True, help="kept for symmetry / future")
+    p.add_argument("--cerra-orog", type=Path, default=None,
+                   help="CERRA orography NetCDF (time-invariant). Indispensable pour corriger le "
+                        "biais lapse-rate ; sans, fallback z_source=0 m (biais +3-4°C connu).")
     p.add_argument("--dem", type=Path, required=True)
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
     p.add_argument("--out", type=Path, required=True)
@@ -217,6 +231,63 @@ def main() -> int:
 
     nightly = _nightly_tmin(ds[t_var])
     nightly = nightly.where(nightly.time.dt.year == args.year, drop=True)
+
+    # Conversion Kelvin → Celsius EXPLICITE (CERRA t2m natif K).
+    # Critique car le RBF residual mélange obs Sencrop (°C) et grille (K natif),
+    # ce qui injecte un biais -273°C dans la correction (cf. audit à froid, bug #18).
+    src_units = str(ds[t_var].attrs.get("units", "")).lower()
+    nightly_median = float(np.nanmedian(nightly.values))
+    if src_units in ("k", "kelvin") or nightly_median > 100:
+        log.info("Convertit Kelvin → Celsius (units=%r, median=%.2f K)", src_units, nightly_median)
+        nightly = nightly - 273.15
+        nightly.attrs["units"] = "degC"
+    else:
+        log.info("Température déjà en Celsius (units=%r, median=%.2f)", src_units, nightly_median)
+        nightly.attrs["units"] = "degC"
+
+    # Normalise latitude/longitude → lat/lon pour matcher le DEM SRTM.
+    rename = {}
+    if "latitude" in nightly.dims:
+        rename["latitude"] = "lat"
+    if "longitude" in nightly.dims:
+        rename["longitude"] = "lon"
+    if rename:
+        nightly = nightly.rename(rename)
+
+    # Chargement orographie CERRA (time-invariant). Indispensable pour corriger
+    # le biais lapse-rate ; sans, fallback z_source=0 m → biais +3-4°C
+    # (audit à froid, bug #13). Le pipeline tolère absent, on warn lourdement.
+    orog_da = None
+    if args.cerra_orog and args.cerra_orog.exists():
+        orog_ds = xr.open_dataset(args.cerra_orog)
+        for orog_name in ("orography", "orog", "z", "surface_geopotential"):
+            if orog_name in orog_ds:
+                orog_da = orog_ds[orog_name]
+                if orog_name in ("z", "surface_geopotential"):
+                    # Geopotential (m²/s²) → altitude (m)
+                    orog_da = orog_da / 9.80665
+                # Drop time dim si présente (orog est time-invariant)
+                for tdim in ("valid_time", "time"):
+                    if tdim in orog_da.dims:
+                        orog_da = orog_da.isel({tdim: 0}, drop=True)
+                # Aligne sur le naming lat/lon du t2m
+                orog_rename = {}
+                if "latitude" in orog_da.dims:
+                    orog_rename["latitude"] = "lat"
+                if "longitude" in orog_da.dims:
+                    orog_rename["longitude"] = "lon"
+                if orog_rename:
+                    orog_da = orog_da.rename(orog_rename)
+                orog_da = orog_da.rename("orog")
+                log.info("Orographie CERRA chargée depuis %s (var=%s, shape=%s, mean=%.1f m)",
+                         args.cerra_orog, orog_name, orog_da.shape, float(np.nanmean(orog_da.values)))
+                break
+        if orog_da is None:
+            log.warning("--cerra-orog %s : aucune variable orog connue (cherché : orography, "
+                        "orog, z, surface_geopotential), fallback z_source=0 m", args.cerra_orog)
+    else:
+        log.warning("--cerra-orog absent : fallback z_source=0 m (BUG biais +3-4°C connu, "
+                    "cf. audit à froid juin 2026)")
 
     # 2. Statistical pipeline (lapse + optional QDM)
     pipe = StatisticalDownscalingPipeline(
@@ -288,7 +359,10 @@ def main() -> int:
         d_py: date = pd.Timestamp(d).date()
         slab = nightly.sel(time=d)
         try:
-            ds_slab = xr.Dataset({"t2m": slab})
+            slab_vars = {"t2m": slab}
+            if orog_da is not None:
+                slab_vars["orog"] = orog_da
+            ds_slab = xr.Dataset(slab_vars)
             grid_fine = pipe.run(ds_slab, variables=["t2m"])["t2m"]
         except Exception as exc:
             log.warning("Pipeline failed for %s: %s, skipping", d_py, exc)
