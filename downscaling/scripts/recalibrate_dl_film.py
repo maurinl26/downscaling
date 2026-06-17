@@ -162,9 +162,25 @@ def _git_sha() -> str:
 
 
 def _build_coarse_provider(cerra_path: Path, dem_path: Path):
-    """Loads CERRA atm + DEM once, returns a callable date -> (x_met, x_dem)."""
+    """Loads CERRA atm + DEM once, returns a callable date -> (x_met, x_dem).
+
+    Gère le mismatch CERRA NetCDF : variable temporelle 'valid_time' au lieu de
+    'time', t2m en Kelvin. Convertit en Celsius côté provider pour cohérence
+    avec le module de calibration (kelvin_to_celsius=False).
+    """
     ds_cerra = xr.open_dataset(cerra_path)
     ds_dem = xr.open_dataset(dem_path)
+
+    # Normalise time coord (CERRA utilise valid_time)
+    if "valid_time" in ds_cerra.dims and "time" not in ds_cerra.dims:
+        ds_cerra = ds_cerra.rename({"valid_time": "time"})
+    elif "valid_time" in ds_cerra.coords and "time" not in ds_cerra.coords:
+        ds_cerra = ds_cerra.rename({"valid_time": "time"})
+    if ds_cerra["time"].dtype.kind != "M":
+        ref = pd.Timestamp("1900-01-01")
+        ds_cerra = ds_cerra.assign_coords(
+            time=ref + pd.to_timedelta(ds_cerra["time"].values, unit="h")
+        )
 
     # Identify temperature variable
     t_var = next(
@@ -174,22 +190,46 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
     if t_var is None:
         raise ValueError(f"No T2m-like variable in {cerra_path}")
 
-    # DEM as a single tensor channel (1 channel for now)
+    # Détecte unités K et convertit en °C une seule fois.
+    src_units = str(ds_cerra[t_var].attrs.get("units", "")).lower()
+    sample = float(np.nanmedian(ds_cerra[t_var].values))
+    is_kelvin = src_units in ("k", "kelvin") or sample > 100
+    if is_kelvin:
+        log.info("CERRA t2m en Kelvin (median=%.1f K), conversion → Celsius", sample)
+        ds_cerra[t_var] = ds_cerra[t_var] - 273.15
+        ds_cerra[t_var].attrs["units"] = "degC"
+
+    # Provider retourne des tenseurs (C, H, W). Le DataLoader ajoute la dim batch
+    # → (B, C, H, W) attendu par Conv2d. En inference directe (hors DataLoader),
+    # il faut unsqueeze(0) manuellement (cf. boucle d'inférence ci-dessous).
+    # CERRA est sur grille 5 km (~31×31 sur Drôme-Ardèche), DEM sur grille 1 km
+    # (~167×118). On regridde x_met vers la résolution DEM par bilinéaire pour
+    # que les deux channels partagent la même grille, indispensable au U-Net.
+    import torch.nn.functional as F
     dem_arr = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
-    x_dem = torch.from_numpy(dem_arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+    H_fine, W_fine = dem_arr.shape
+    x_dem = torch.from_numpy(dem_arr).unsqueeze(0)  # (1, H, W)
+    log.info("Provider grids: DEM (%d, %d) | CERRA t2m yearly %s",
+             H_fine, W_fine, tuple(ds_cerra[t_var].shape))
 
     def provider(d: str) -> tuple[torch.Tensor, torch.Tensor]:
         slab = ds_cerra[t_var].sel(time=d, method="nearest")
         arr = slab.values.astype(np.float32)
-        x_met = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
+        # (H_coarse, W_coarse) → bilinear → (H_fine, W_fine)
+        coarse = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0)  # (1, 1, Hc, Wc)
+        fine = F.interpolate(coarse, size=(H_fine, W_fine), mode="bilinear", align_corners=False)
+        x_met = fine.squeeze(0)  # (1, H_fine, W_fine)
         return x_met, x_dem
 
     return provider, ds_cerra, ds_dem
 
 
 def _dates_in_year(ds_cerra: xr.Dataset, year: int) -> list[str]:
-    times = pd.to_datetime(ds_cerra["time"].values)
-    return [t.strftime("%Y-%m-%d") for t in times if t.year == year]
+    """Retourne les dates uniques de l'année (CERRA = 8 timesteps/jour, on dédup)."""
+    # Le provider a déjà renommé valid_time → time.
+    time_var = "time" if "time" in ds_cerra else "valid_time"
+    times = pd.to_datetime(ds_cerra[time_var].values)
+    return sorted({t.strftime("%Y-%m-%d") for t in times if t.year == year})
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +243,9 @@ def main() -> int:
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--epochs", type=int, default=30)
-    p.add_argument("--device", default="cuda")
+    p.add_argument("--device", default="auto",
+                   choices=("auto", "cuda", "mps", "cpu"),
+                   help="Accelerator. 'auto' = MPS si Apple Silicon, sinon CUDA, sinon CPU.")
     p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("--smoke-test", action="store_true",
@@ -284,9 +326,30 @@ def main() -> int:
         except ImportError:
             log.warning("wandb not installed; running without it")
 
+    # Resolve accelerator (auto = MPS > CUDA > CPU).
+    def _resolve_accelerator(requested: str) -> str:
+        has_cuda = torch.cuda.is_available()
+        has_mps = torch.backends.mps.is_available() and torch.backends.mps.is_built()
+        if requested == "auto":
+            return "mps" if has_mps else ("gpu" if has_cuda else "cpu")
+        if requested == "mps":
+            if not has_mps:
+                log.warning("MPS demandé mais indisponible, fallback CPU")
+                return "cpu"
+            return "mps"
+        if requested == "cuda":
+            if not has_cuda:
+                log.warning("CUDA demandé mais indisponible, fallback CPU")
+                return "cpu"
+            return "gpu"
+        return "cpu"
+
+    accelerator = _resolve_accelerator(args.device)
+    log.info("Lightning accelerator=%s (--device %s)", accelerator, args.device)
+
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        accelerator="gpu" if args.device == "cuda" and torch.cuda.is_available() else "cpu",
+        accelerator=accelerator,
         devices=1,
         logger=logger,
         callbacks=callbacks,
@@ -299,14 +362,16 @@ def main() -> int:
     # ---- Inference loop: 1 km grid Tmin per night → Zarr --------------------
     log.info("Inference: producing 1 km grid for %d nights", len(dataset))
     lit.eval()
+    inference_device = next(lit.parameters()).device
     out_grids = []
     with torch.no_grad():
         for d in dataset.dates:
             x_met, x_dem = provider(d)
-            pred = lit({"x_met": x_met, "x_dem": x_dem})
-            # `lit()` calls model directly; we need _predict_target via a fake batch
-            # Use the module's internal helper:
-            batch = {"x_met": x_met, "x_dem": x_dem}
+            # provider retourne (C, H, W) ; le modèle attend (B, C, H, W)
+            batch = {
+                "x_met": x_met.unsqueeze(0).to(inference_device),
+                "x_dem": x_dem.unsqueeze(0).to(inference_device),
+            }
             pred = lit._predict_target(batch).squeeze().cpu().numpy()
             slab = xr.DataArray(
                 pred, dims=("latitude", "longitude"),
