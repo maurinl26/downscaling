@@ -201,9 +201,10 @@ def main() -> int:
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--cerra-land", type=Path, required=True, help="kept for symmetry / future")
-    p.add_argument("--cerra-orog", type=Path, default=None,
+    p.add_argument("--cerra-orog", type=str, default=None,
                    help="CERRA orography NetCDF (time-invariant). Indispensable pour corriger le "
-                        "biais lapse-rate ; sans, fallback z_source=0 m (biais +3-4°C connu).")
+                        "biais lapse-rate ; sans, fallback z_source=0 m (biais +3-4°C connu). "
+                        "Supporte chemin local OU URL s3://bucket/key (téléchargé vers /tmp).")
     p.add_argument("--dem", type=Path, required=True)
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
     p.add_argument("--out", type=Path, required=True)
@@ -257,9 +258,28 @@ def main() -> int:
     # Chargement orographie CERRA (time-invariant). Indispensable pour corriger
     # le biais lapse-rate ; sans, fallback z_source=0 m → biais +3-4°C
     # (audit à froid, bug #13). Le pipeline tolère absent, on warn lourdement.
+    # Supporte chemin local OU URL s3:// (download vers /tmp via s3fs).
     orog_da = None
-    if args.cerra_orog and args.cerra_orog.exists():
-        orog_ds = xr.open_dataset(args.cerra_orog)
+    orog_local: Path | None = None
+    if args.cerra_orog:
+        if args.cerra_orog.startswith("s3://"):
+            import tempfile
+            import s3fs
+
+            orog_local = Path(tempfile.gettempdir()) / "cerra_orography.nc"
+            log.info("Téléchargement orographie depuis %s → %s", args.cerra_orog, orog_local)
+            fs = s3fs.S3FileSystem(
+                endpoint_url=os.environ.get("AWS_ENDPOINT_URL")
+                or os.environ.get("AWS_S3_ENDPOINT"),
+            )
+            fs.get(args.cerra_orog.replace("s3://", "", 1), str(orog_local))
+        else:
+            orog_local = Path(args.cerra_orog)
+        if not orog_local.exists():
+            log.warning("--cerra-orog %s introuvable, fallback z_source=0 m", orog_local)
+            orog_local = None
+    if orog_local is not None:
+        orog_ds = xr.open_dataset(orog_local)
         for orog_name in ("orography", "orog", "z", "surface_geopotential"):
             if orog_name in orog_ds:
                 orog_da = orog_ds[orog_name]
@@ -280,11 +300,11 @@ def main() -> int:
                     orog_da = orog_da.rename(orog_rename)
                 orog_da = orog_da.rename("orog")
                 log.info("Orographie CERRA chargée depuis %s (var=%s, shape=%s, mean=%.1f m)",
-                         args.cerra_orog, orog_name, orog_da.shape, float(np.nanmean(orog_da.values)))
+                         orog_local, orog_name, orog_da.shape, float(np.nanmean(orog_da.values)))
                 break
         if orog_da is None:
             log.warning("--cerra-orog %s : aucune variable orog connue (cherché : orography, "
-                        "orog, z, surface_geopotential), fallback z_source=0 m", args.cerra_orog)
+                        "orog, z, surface_geopotential), fallback z_source=0 m", orog_local)
     else:
         log.warning("--cerra-orog absent : fallback z_source=0 m (BUG biais +3-4°C connu, "
                     "cf. audit à froid juin 2026)")
