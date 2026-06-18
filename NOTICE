@@ -1,0 +1,27 @@
+karpos-downscaling
+Copyright 2026 Loïc Maurin (Karpos)
+
+This product includes software developed at Karpos
+(https://github.com/maurinl26/downscaling).
+
+The methodology is documented in the docs/ directory and may be cited as :
+
+  Maurin, L. (2026). karpos-downscaling: A regime-aware statistical
+  downscaling framework for spring frost forecasting in mountainous
+  arboriculture (Drôme Baronnies, France).
+  https://github.com/maurinl26/downscaling
+
+This product makes use of third-party software and datasets under their own
+licenses :
+
+- ERA5 / CERRA reanalyses (Copernicus Climate Data Store) — Copernicus license
+- Sencrop weather station data — commercial license (not redistributed here)
+- PyTorch, PyTorch Lightning — BSD-style licenses
+- xarray, NumPy, SciPy, pandas, scikit-learn — BSD-style licenses
+- Prithvi-WxC (NASA/IBM) — Apache 2.0 (optional dependency)
+- Wandb (optional) — MIT license
+
+The downstream productive integration (PWA, FastAPI BFF, calibrated artefacts
+for the Drôme/Baronnies region) is maintained as a separate proprietary code
+base in the parent repository `karpos/parametric_insurance` and is NOT covered
+by this License.

@@ -1,16 +1,25 @@
-# Downscaling ERA5 / CERRA → 1 km pour indices d'assurance paramétrique
+# karpos-downscaling
 
-Descente d'échelle de réanalyses atmosphériques vers une résolution kilométrique,
-conditionnée par le modèle numérique de terrain (MNT), pour produire des champs
-météorologiques haute résolution et en dériver des **indices d'assurance
-paramétrique** (gel, précipitations extrêmes, vent, canicule).
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+Descente d'échelle de réanalyses atmosphériques (ERA5, CERRA) vers une
+résolution kilométrique, conditionnée par le modèle numérique de terrain (MNT)
+et calibrée par des réseaux de stations parcimonieux (Sencrop), pour produire
+des champs météorologiques haute résolution et en dériver des **indices
+d'assurance paramétrique** (gel, précipitations extrêmes, vent, canicule).
 
 Trois familles de méthodes cohabitent derrière une **configuration unique** (Hydra)
 et un **compute interchangeable** (Mac MPS local ↔ GPU cloud) :
 
-1. **Statistique** — lapse-rate + quantile mapping (CPU, sans réseau de neurones).
-2. **Deep learning** — U-Net FiLM conditionné par le MNT (Lightning).
+1. **Statistique** — lapse-rate + quantile mapping + RBF Sencrop (CPU).
+2. **Deep learning** — U-Net FiLM conditionné par le MNT (PyTorch Lightning).
 3. **Foundation model** — Prithvi WxC (NASA/IBM), backbone gelé + adapter DEM.
+
+> **Licence Apache 2.0** depuis juin 2026. Méthodologie scientifique
+> documentée dans [`docs/methodology/`](docs/methodology/README.md).
+> La pile produit/commerciale (PWA, API, artefacts calibrés, registry
+> parcelles) reste privée dans le repo parent
+> [`karpos/parametric_insurance`](https://github.com/maurinl26/parametric_insurance).
 
 ---
 
