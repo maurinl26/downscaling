@@ -86,8 +86,9 @@ class FiLMLayer(nn.Module):
     """
     Feature-wise Linear Modulation.
 
-    Génère les paramètres de modulation (γ, β) depuis les features DEM,
-    puis applique y = γ · x + β aux features météo.
+    Génère les paramètres de modulation (γ, β) depuis les features DEM
+    (optionnellement enrichies d'un vecteur de contexte global type régime
+    synoptique), puis applique y = γ · x + β aux features météo.
 
     Parameters
     ----------
@@ -95,26 +96,51 @@ class FiLMLayer(nn.Module):
         Nombre de canaux DEM en entrée.
     met_ch:
         Nombre de canaux météo à moduler (= out_ch du bloc encoder correspondant).
+    context_dim:
+        Dimension d'un vecteur de contexte global concaténé aux features DEM
+        avant le MLP qui prédit (γ, β). Sert au conditioning par régime
+        synoptique (cf. docs/methodology/regime-conditioning-design.md).
+        Défaut 0 = pas de contexte (rétro-compatible avec les ckpts <= juin 2026).
     """
 
-    def __init__(self, dem_ch: int, met_ch: int):
+    def __init__(self, dem_ch: int, met_ch: int, context_dim: int = 0):
         super().__init__()
         hidden = max(met_ch, 32)
+        self.context_dim = context_dim
+        self.pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),   # pooling spatial → vecteur
-            nn.Flatten(),
-            nn.Linear(dem_ch, hidden),
+            nn.Linear(dem_ch + context_dim, hidden),
             nn.ReLU(inplace=True),
             nn.Linear(hidden, 2 * met_ch),  # [γ, β] concaténés
         )
-        # Init : γ=1, β=0 (identité)
+        # Init : γ=1, β=0 (identité, comportement neutre avant entraînement)
         nn.init.zeros_(self.fc[-1].weight)
         nn.init.constant_(self.fc[-1].bias[:met_ch], 1.0)   # γ
         nn.init.zeros_(self.fc[-1].bias[met_ch:])            # β
 
-    def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x_met: torch.Tensor,
+        x_dem: torch.Tensor,
+        context: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         B, C, H, W = x_met.shape
-        params = self.fc(x_dem)           # (B, 2C)
+        feat_dem = self.pool(x_dem).flatten(1)  # (B, dem_ch)
+        if self.context_dim > 0:
+            if context is None:
+                raise ValueError(
+                    f"FiLMLayer was built with context_dim={self.context_dim} "
+                    "but forward() was called without context."
+                )
+            if context.shape[-1] != self.context_dim:
+                raise ValueError(
+                    f"Expected context of shape (B, {self.context_dim}), "
+                    f"got {tuple(context.shape)}."
+                )
+            feat = torch.cat([feat_dem, context], dim=-1)
+        else:
+            feat = feat_dem
+        params = self.fc(feat)            # (B, 2C)
         gamma = params[:, :C].view(B, C, 1, 1)
         beta = params[:, C:].view(B, C, 1, 1)
         return gamma * x_met + beta
@@ -209,6 +235,8 @@ class DownscalingUNet(nn.Module):
         base_ch: int = 64,
         n_levels: int = 4,
         use_film: bool = True,
+        n_regimes: int = 0,
+        regime_embed_dim: int = 8,
     ):
         super().__init__()
         self.n_levels = n_levels
@@ -235,11 +263,19 @@ class DownscalingUNet(nn.Module):
             self.enc_channels.append(ch_out)
             ch_in = ch_out
 
+        # ---- Regime embedding (optionnel, cf. docs/methodology/regime-conditioning-design.md)
+        self.n_regimes = n_regimes
+        self.regime_embed_dim = regime_embed_dim if n_regimes > 0 else 0
+        if n_regimes > 0:
+            self.regime_emb = nn.Embedding(n_regimes, regime_embed_dim)
+        else:
+            self.regime_emb = None
+
         # ---- FiLM layers -------------------------------------------------
         if use_film:
             dem_channels = [base_ch // 2 * (2 ** i) for i in range(n_levels)]
             self.film_layers = nn.ModuleList([
-                FiLMLayer(dem_ch, met_ch)
+                FiLMLayer(dem_ch, met_ch, context_dim=self.regime_embed_dim)
                 for dem_ch, met_ch in zip(dem_channels, self.enc_channels, strict=False)
             ])
 
@@ -260,7 +296,12 @@ class DownscalingUNet(nn.Module):
         # ---- Tête de sortie -----------------------------------------------
         self.head = nn.Conv2d(base_ch, met_out_ch, 1)
 
-    def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x_met: torch.Tensor,
+        x_dem: torch.Tensor,
+        regime: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Parameters
         ----------
@@ -268,6 +309,10 @@ class DownscalingUNet(nn.Module):
             Champs météo basse résolution (B, C_met, H, W).
         x_dem:
             Attributs MNT haute résolution (B, C_dem, H, W).
+        regime:
+            Index entier du régime synoptique par sample (B,) — ignoré si le
+            modèle n'a pas été construit avec n_regimes > 0. Cf.
+            docs/methodology/regime-conditioning-design.md.
 
         Returns
         -------
@@ -276,13 +321,23 @@ class DownscalingUNet(nn.Module):
         # Encode DEM à toutes les résolutions
         dem_feats = self.dem_encoder(x_dem)  # liste du plus fin au plus grossier
 
+        # Contexte régime (embedding) si activé, sinon None.
+        context: torch.Tensor | None = None
+        if self.regime_emb is not None:
+            if regime is None:
+                raise ValueError(
+                    f"Model built with n_regimes={self.n_regimes}; forward() "
+                    "needs a `regime` tensor of shape (B,)."
+                )
+            context = self.regime_emb(regime)  # (B, regime_embed_dim)
+
         # ---- Encodage météo -----------------------------------------------
         enc_feats = []
         x = x_met
         for i, (enc, dem_f) in enumerate(zip(self.met_encoders, dem_feats, strict=False)):
             x = enc(x)
             if self.use_film:
-                x = self.film_layers[i](x, dem_f)
+                x = self.film_layers[i](x, dem_f, context=context)
             enc_feats.append(x)
             if i < self.n_levels - 1:
                 x = self.met_pools[i](x)
@@ -346,6 +401,8 @@ def build_model(
     base_ch: int = 64,
     n_levels: int = 4,
     use_film: bool = True,
+    n_regimes: int = 0,
+    regime_embed_dim: int = 8,
 ) -> nn.Module:
     """
     Construit le modèle selon l'architecture choisie.
@@ -354,6 +411,13 @@ def build_model(
     ----------
     architecture:
         'unet' (défaut) ou 'srcnn' (modèle léger).
+    n_regimes:
+        Si > 0, ajoute un embedding régime (one int per sample) et
+        propage le vecteur de contexte aux FiLM layers. Cf.
+        docs/methodology/regime-conditioning-design.md. 0 = inactif
+        (rétro-compatible avec les ckpts <= juin 2026).
+    regime_embed_dim:
+        Dimension de l'embedding régime. Ignoré si n_regimes == 0.
     """
     if architecture == "unet":
         model = DownscalingUNet(
@@ -362,6 +426,8 @@ def build_model(
             base_ch=base_ch,
             n_levels=n_levels,
             use_film=use_film,
+            n_regimes=n_regimes,
+            regime_embed_dim=regime_embed_dim,
         )
     elif architecture == "srcnn":
         model = LightSRCNN(met_in_ch=met_in_ch, dem_in_ch=dem_in_ch)

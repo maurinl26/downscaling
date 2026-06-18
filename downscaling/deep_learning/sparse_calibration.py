@@ -81,7 +81,16 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         self.reduce = reduce
         self.save_hyperparameters(ignore=["model"])
 
-    def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x_met: torch.Tensor,
+        x_dem: torch.Tensor,
+        regime: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # `regime` est requis seulement si le modèle a été construit avec
+        # n_regimes > 0. Cf. docs/methodology/regime-conditioning-design.md.
+        if regime is not None:
+            return self.model(x_met, x_dem, regime=regime)
         return self.model(x_met, x_dem)
 
     def _reduce_time(self, series: torch.Tensor) -> torch.Tensor:
@@ -95,14 +104,19 @@ class UNetSparseCalibrationModule(pl.LightningModule):
     def _predict_target(self, batch) -> torch.Tensor:
         """Champ cible 1 km ``(1, 1, H, W)`` — descente horaire + réduction si ``hourly``."""
         c = self.target_channel
+        # Régime optionnel : batch["regime"] est un Tensor int (B,) si fourni.
+        regime = batch.get("regime")
         if self.hourly:
             # x_met : (1, T, C, H, W) → descente d'échelle heure par heure.
             xm = batch["x_met"][0]                              # (T, C, H, W)
             xd = batch["x_dem"].expand(xm.shape[0], -1, -1, -1)  # (T, C_dem, H, W)
-            series = self.model(xm, xd)[:, c]                   # (T, H, W)
+            # Même régime appliqué à toutes les heures de la nuit
+            reg_t = regime.expand(xm.shape[0]) if regime is not None else None
+            series = self.model(xm, xd, regime=reg_t)[:, c] if reg_t is not None else self.model(xm, xd)[:, c]
             pred = self._reduce_time(series)[None, None]        # (1, 1, H, W)
         else:
-            pred = self(batch["x_met"], batch["x_dem"])[:, c:c + 1]  # (1, 1, H, W)
+            out = self(batch["x_met"], batch["x_dem"], regime=regime)
+            pred = out[:, c:c + 1]  # (1, 1, H, W)
         # La sortie du U-Net est en espace NORMALISÉ (z-score des stats d'entraînement).
         # Dénormaliser → °C (les cibles d'entraînement sont en °C). À défaut de stats,
         # repli historique : soustraction Kelvin (suppose une sortie physique en K).
