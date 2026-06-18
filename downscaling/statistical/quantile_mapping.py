@@ -211,6 +211,10 @@ class QuantileDeltaMapping:
 
             mask_m = np.isfinite(mod_vals)
             mask_o = np.isfinite(obs_vals)
+            # Skip months sans données suffisantes (campagne Sencrop limitée Fév-Mai
+            # par exemple) — transform() retombera sur l'identité pour ces mois.
+            if mask_m.sum() < 10 or mask_o.sum() < 10:
+                continue
             mod_q = np.percentile(mod_vals[mask_m], quantiles)
             obs_q = np.percentile(obs_vals[mask_o], quantiles)
 
@@ -251,6 +255,11 @@ class QuantileDeltaMapping:
         months = list(range(1, 13)) if self.by_month else [0]
 
         for m in months:
+            # Mois sans fonction de transfert calibrée (fit a skip → données insuffisantes) :
+            # on laisse le bloc tel quel (identité). Cohérent avec une campagne Sencrop
+            # qui ne couvre que Fév-Mai par exemple.
+            if m not in self._mod_cdf:
+                continue
             idx = slice(None) if m == 0 else (modeled_future.time.dt.month == m)
             block = modeled_future.sel(time=idx).values  # numpy
 

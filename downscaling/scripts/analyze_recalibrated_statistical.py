@@ -97,7 +97,24 @@ def _contingency(obs: np.ndarray, pred: np.ndarray, threshold: float) -> dict[st
     }
 
 
-def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dict:
+def _load_regimes(regimes_csv: Path | None) -> dict[str, str]:
+    """Load regime labels keyed by ISO date string. Empty dict if not provided."""
+    if regimes_csv is None or not regimes_csv.exists():
+        return {}
+    df = pd.read_csv(regimes_csv)
+    if "date" not in df.columns or "regime" not in df.columns:
+        log.warning("--regimes-csv : colonnes 'date' et 'regime' attendues, skip")
+        return {}
+    df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
+    return dict(zip(df["date"], df["regime"]))
+
+
+def _analyze_year(
+    year_zarr: Path,
+    sencrop_root: str,
+    threshold_c: float,
+    regimes: dict[str, str] | None = None,
+) -> dict:
     """Charge un Zarr annuel, extrait résidus station, calcule métriques."""
     ds = xr.open_zarr(year_zarr)
     var_name = list(ds.data_vars)[0]  # t2m généralement
@@ -153,8 +170,11 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
     per_night_records: list[dict] = []
     all_obs: list[float] = []
     all_pred: list[float] = []
+    all_regimes: list[str] = []   # régime synoptique de la nuit, repeated par pair
+    regimes = regimes or {}
     for d in da["time"].values:
         d_py = pd.Timestamp(d).date()
+        regime_d = regimes.get(d_py.isoformat(), "R?")  # R? si pas de label
         slab = da.sel(time=d).values  # (lat, lon)
         nights = obs_per_night[obs_per_night["night_date"] == d_py]
         if nights.empty:
@@ -177,6 +197,7 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
             rec_pred.append(pred_val)
             all_obs.append(obs_val)
             all_pred.append(pred_val)
+            all_regimes.append(regime_d)
         if not rec_obs:
             continue
         rec_obs_a = np.array(rec_obs)
@@ -184,6 +205,7 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
         residuals = rec_obs_a - rec_pred_a
         per_night_records.append({
             "date": str(d_py),
+            "regime": regime_d,
             "n_stations": len(rec_obs),
             "tmin_obs_min": float(np.min(rec_obs_a)),
             "tmin_obs_mean": float(np.mean(rec_obs_a)),
@@ -206,6 +228,25 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
         for thr in (threshold_c, 0.0, -5.0)
     }
 
+    # Stratification par régime synoptique (C5.3). Calcule POD/FAR/CSI au seuil
+    # principal seulement, pour chaque régime ayant ≥ 30 paires.
+    contingency_by_regime: dict[str, dict] = {}
+    arr_regimes = np.array(all_regimes)
+    if regimes:
+        for r in ("R1", "R2", "R3", "R4", "R0", "R?"):
+            mask = arr_regimes == r
+            n = int(mask.sum())
+            if n < 30:
+                continue
+            contingency_by_regime[r] = {
+                "n_pairs": n,
+                f"thr_{int(threshold_c * 10) / 10}": _contingency(
+                    arr_obs[mask], arr_pred[mask], threshold_c
+                ),
+                "rmse": float(np.sqrt(np.mean((arr_obs[mask] - arr_pred[mask]) ** 2))),
+                "bias": float(np.mean(arr_obs[mask] - arr_pred[mask])),
+            }
+
     summary = {
         "year": year,
         "n_nights": len(per_night_records),
@@ -217,6 +258,7 @@ def _analyze_year(year_zarr: Path, sencrop_root: str, threshold_c: float) -> dic
         "residual_bias_p10": float(np.percentile(residuals_all, 10)),
         "residual_bias_p90": float(np.percentile(residuals_all, 90)),
         "contingency": contingency,
+        "contingency_by_regime": contingency_by_regime,
         "per_night": per_night_records,
         "bbox": bbox,
     }
@@ -228,6 +270,9 @@ def main() -> int:
     p.add_argument("--root", type=Path, required=True, help="Dir avec <year>.zarr")
     p.add_argument("--sencrop", type=str, required=True, help="Sencrop root (local ou s3://)")
     p.add_argument("--threshold-c", type=float, default=-2.2)
+    p.add_argument("--regimes-csv", type=Path, default=None,
+                   help="CSV avec colonnes 'date' et 'regime' (cf. flag_regimes.py). "
+                        "Active la stratification POD/FAR/CSI par régime synoptique (C5.3).")
     p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("--years", type=int, nargs="*", default=None, help="Subset, défaut: tous les *.zarr trouvés")
@@ -264,11 +309,16 @@ def main() -> int:
         except Exception as exc:
             log.warning("W&B init failed: %s", exc)
 
+    regimes = _load_regimes(args.regimes_csv)
+    if regimes:
+        log.info("Régimes synoptiques chargés : %d nuits dans %s",
+                 len(regimes), args.regimes_csv)
+
     all_summaries: list[dict] = []
     for z in zarrs:
         log.info("--- year %s ---", z.stem)
         try:
-            s = _analyze_year(z, args.sencrop, args.threshold_c)
+            s = _analyze_year(z, args.sencrop, args.threshold_c, regimes=regimes)
         except Exception as exc:
             log.exception("Year %s failed: %s", z.stem, exc)
             continue
