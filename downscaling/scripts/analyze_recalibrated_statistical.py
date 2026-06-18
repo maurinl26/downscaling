@@ -233,7 +233,7 @@ def _analyze_year(
     contingency_by_regime: dict[str, dict] = {}
     arr_regimes = np.array(all_regimes)
     if regimes:
-        for r in ("R1", "R2", "R3", "R4", "R0", "R?"):
+        for r in ("R1", "R2", "R3", "R4", "R4a", "R4b", "R0", "R?"):
             mask = arr_regimes == r
             n = int(mask.sum())
             if n < 30:

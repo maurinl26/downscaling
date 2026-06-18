@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Downscaling ERA5/CERRA → 1 km pour indices d'assurance paramétrique gel"
 authors = [{ name = "Loïc Maurin", email = "loic.maurin@karpos.pro" }]
 requires-python = ">=3.11"
-license = { text = "Proprietary" }
+license = { text = "Apache-2.0" }
 
 dependencies = [
     "numpy>=1.26",
