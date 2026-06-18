@@ -209,6 +209,9 @@ def main() -> int:
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--obs-ref", type=Path, default=None, help="optional CERRA fine ref for QDM calibration")
+    p.add_argument("--qdm-joblib", type=Path, default=None,
+                   help="Pre-fitted QuantileDeltaMapping joblib (cf. calibrate_qdm.py). "
+                        "Applied after lapse-rate, before RBF Sencrop residual. C4.1.")
     p.add_argument("--variable", default="t2m")
     p.add_argument("--sigma-km", type=float, default=7.0)
     p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
@@ -309,15 +312,26 @@ def main() -> int:
         log.warning("--cerra-orog absent : fallback z_source=0 m (BUG biais +3-4°C connu, "
                     "cf. audit à froid juin 2026)")
 
-    # 2. Statistical pipeline (lapse + optional QDM)
+    # 2. Statistical pipeline (lapse-rate only ; QDM via joblib pré-calibré).
+    # NB: l'ancien `pipe.calibrate(ref_ds, ref_ds)` était un placeholder cassé
+    # (calibrait QDM sur elle-même, no-op). Remplacé par chargement joblib
+    # produit par `calibrate_qdm.py` (C4.1, issue maurinl26/downscaling#32).
     pipe = StatisticalDownscalingPipeline(
         dem_path=args.dem,
-        obs_ref_path=args.obs_ref,
-        use_qdm=bool(args.obs_ref),
+        obs_ref_path=None,
+        use_qdm=False,  # QDM appliquée manuellement après pipe.run, avant RBF
     )
-    if args.obs_ref is not None:
-        ref_ds = xr.open_dataset(args.obs_ref)
-        pipe.calibrate(ref_ds, ref_ds)  # placeholder; production would use a true high-res ref
+
+    qdm = None
+    if args.qdm_joblib is not None:
+        import joblib
+
+        if not args.qdm_joblib.exists():
+            log.error("--qdm-joblib %s introuvable", args.qdm_joblib)
+            return 2
+        qdm = joblib.load(args.qdm_joblib)
+        log.info("QDM chargée depuis %s (n_quantiles=%d, by_month=%s)",
+                 args.qdm_joblib, qdm.n_quantiles, qdm.by_month)
 
     # 3. For each night, run the pipeline + Sencrop residual correction
     stations_df = load_stations_catalog(args.sencrop)
@@ -387,6 +401,19 @@ def main() -> int:
         except Exception as exc:
             log.warning("Pipeline failed for %s: %s, skipping", d_py, exc)
             continue
+
+        # 2.5 QDM monthly correction (C4.1) — appliquée après lapse-rate,
+        # avant RBF résiduel. Transform attend une DataArray avec coord time
+        # (pour le filtre time.dt.month). On wrappe grid_fine sur 1 timestamp.
+        if qdm is not None:
+            try:
+                if "time" not in grid_fine.dims:
+                    grid_t = grid_fine.expand_dims(time=[pd.Timestamp(d_py)])
+                else:
+                    grid_t = grid_fine
+                grid_fine = qdm.transform(grid_t).squeeze("time", drop=True)
+            except Exception as exc:
+                log.warning("QDM transform failed for %s: %s, fallback lapse-only", d_py, exc)
 
         night_obs = obs_per_night[obs_per_night["night_date"] == d_py]
         kept_stations = [s for s in stations if s.bucket_id in set(night_obs["station_id"])]
@@ -475,6 +502,7 @@ def main() -> int:
         "dem": str(args.dem),
         "sencrop_root": str(args.sencrop),
         "sigma_km": args.sigma_km,
+        "qdm_joblib": str(args.qdm_joblib) if args.qdm_joblib else None,
         **summary,
     }
     (args.out / f"{args.year}.metadata.json").write_text(json.dumps(metadata, indent=2))
