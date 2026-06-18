@@ -246,6 +246,12 @@ def main() -> int:
     p.add_argument("--device", default="auto",
                    choices=("auto", "cuda", "mps", "cpu"),
                    help="Accelerator. 'auto' = MPS si Apple Silicon, sinon CUDA, sinon CPU.")
+    p.add_argument("--base-ch", type=int, default=32,
+                   help="U-Net base channels (capacity). Issue #28: 64 ≈ 4.6M params.")
+    p.add_argument("--n-levels", type=int, default=3,
+                   help="U-Net depth. Issue #28: 4 augmente receptive field.")
+    p.add_argument("--early-stopping-patience", type=int, default=0,
+                   help="If >0, EarlyStopping on val/rmse with this patience (issue #28).")
     p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("--smoke-test", action="store_true",
@@ -287,7 +293,11 @@ def main() -> int:
     datamodule = UNetSparseDataModule(dataset, num_workers=0)
 
     # ---- Model + LightningModule --------------------------------------------
-    model = build_model("unet", met_in_ch=1, dem_in_ch=1, base_ch=32, n_levels=3, use_film=True)
+    model = build_model(
+        "unet", met_in_ch=1, dem_in_ch=1,
+        base_ch=args.base_ch, n_levels=args.n_levels, use_film=True,
+    )
+    log.info("U-Net: base_ch=%d, n_levels=%d", args.base_ch, args.n_levels)
     lit = UNetSparseCalibrationModule(
         model=model,
         target_channel=0,
@@ -302,7 +312,7 @@ def main() -> int:
 
     # ---- Trainer ------------------------------------------------------------
     import lightning.pytorch as pl
-    from lightning.pytorch.callbacks import ModelCheckpoint
+    from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
     callbacks = [
         ModelCheckpoint(
@@ -310,6 +320,12 @@ def main() -> int:
             monitor="val/rmse", mode="min", save_top_k=1,
         )
     ]
+    if args.early_stopping_patience > 0:
+        callbacks.append(EarlyStopping(
+            monitor="val/rmse", mode="min",
+            patience=args.early_stopping_patience, min_delta=1e-3,
+        ))
+        log.info("EarlyStopping enabled: patience=%d", args.early_stopping_patience)
 
     logger = False
     wandb_run_url = None
