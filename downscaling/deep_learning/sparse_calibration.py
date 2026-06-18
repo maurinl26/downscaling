@@ -33,7 +33,7 @@ KELVIN = 273.15
 
 def unet_sparse_collate(samples: list[dict]) -> dict:
     """Collate batch=1 : empile les entrées denses, liste les obs sparse."""
-    return {
+    batch = {
         "x_met": torch.stack([s["x_met"] for s in samples]),
         "x_dem": torch.stack([s["x_dem"] for s in samples]),
         "obs_tmin": [s["obs_tmin"] for s in samples],
@@ -42,6 +42,12 @@ def unet_sparse_collate(samples: list[dict]) -> dict:
         "obs_dz": [s.get("obs_dz") for s in samples],
         "date": [s["date"] for s in samples],
     }
+    # Régime synoptique optionnel (cf. docs/methodology/regime-conditioning-design.md).
+    # Empilé comme un tensor (B,) si tous les samples l'ont, sinon ignoré
+    # silencieusement (rétro-compat avec datasets sans régime).
+    if all("regime" in s for s in samples):
+        batch["regime"] = torch.stack([s["regime"] for s in samples])
+    return batch
 
 
 class UNetSparseCalibrationModule(pl.LightningModule):
@@ -104,15 +110,21 @@ class UNetSparseCalibrationModule(pl.LightningModule):
     def _predict_target(self, batch) -> torch.Tensor:
         """Champ cible 1 km ``(1, 1, H, W)`` — descente horaire + réduction si ``hourly``."""
         c = self.target_channel
-        # Régime optionnel : batch["regime"] est un Tensor int (B,) si fourni.
+        # Régime optionnel : batch["regime"] est un Tensor int (B,) si fourni
+        # par le collate (cf. unet_sparse_collate). À device-aligner sur le modèle.
         regime = batch.get("regime")
+        if regime is not None:
+            regime = regime.to(batch["x_met"].device)
         if self.hourly:
             # x_met : (1, T, C, H, W) → descente d'échelle heure par heure.
             xm = batch["x_met"][0]                              # (T, C, H, W)
             xd = batch["x_dem"].expand(xm.shape[0], -1, -1, -1)  # (T, C_dem, H, W)
             # Même régime appliqué à toutes les heures de la nuit
-            reg_t = regime.expand(xm.shape[0]) if regime is not None else None
-            series = self.model(xm, xd, regime=reg_t)[:, c] if reg_t is not None else self.model(xm, xd)[:, c]
+            if regime is not None:
+                reg_t = regime[0].expand(xm.shape[0])
+                series = self.model(xm, xd, regime=reg_t)[:, c]
+            else:
+                series = self.model(xm, xd)[:, c]
             pred = self._reduce_time(series)[None, None]        # (1, 1, H, W)
         else:
             out = self(batch["x_met"], batch["x_dem"], regime=regime)

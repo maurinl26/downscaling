@@ -92,8 +92,53 @@ class _NightSample:
     obs_dz: torch.Tensor
 
 
+# Mapping régime → indice d'embedding. Doit rester cohérent avec ce qui est
+# loggué dans le rapport méthodologique et avec `flag_regimes.py` (issue #37).
+# Ordre : R0=catch-all (NaN / missing), R1, R2, R3, R4 (legacy fallback sans T850),
+# R4a, R4b. Cf. docs/methodology/regime-conditioning-design.md §"Training strategy".
+REGIME_TO_IDX: dict[str, int] = {
+    "R0": 0,
+    "R1": 1,
+    "R2": 2,
+    "R3": 3,
+    "R4": 4,    # legacy si T850 manquant
+    "R4a": 4,   # alias : cold pool, partage l'idx du legacy R4
+    "R4b": 5,
+}
+N_REGIMES_DEFAULT = 6  # 0..5 inclusivement
+
+
+def _load_regimes_csv(csv_path: Path) -> dict[str, int]:
+    """Charge un CSV régime émis par `flag_regimes.py` → {date_iso: regime_idx}.
+
+    Le CSV peut être par année (regimes_2022.csv) ou global (regimes_all.csv).
+    Colonnes minimales requises : `date`, `regime`.
+    """
+    df = pd.read_csv(csv_path)
+    if "date" not in df.columns or "regime" not in df.columns:
+        raise ValueError(
+            f"CSV régime {csv_path} doit contenir les colonnes 'date' et 'regime'."
+        )
+    df["date_iso"] = pd.to_datetime(df["date"]).dt.date.astype(str)
+    mapping: dict[str, int] = {}
+    for _, row in df.iterrows():
+        label = str(row["regime"])
+        if label not in REGIME_TO_IDX:
+            log.warning("Régime inconnu %r → R0 (catch-all)", label)
+            mapping[row["date_iso"]] = REGIME_TO_IDX["R0"]
+        else:
+            mapping[row["date_iso"]] = REGIME_TO_IDX[label]
+    log.info("Régimes chargés : %d nuits depuis %s", len(mapping), csv_path)
+    return mapping
+
+
 class BulkSencropDataset(Dataset):
-    """Sample = 1 nuit. Lit Sencrop depuis le bulk root (URI s3:// possible)."""
+    """Sample = 1 nuit. Lit Sencrop depuis le bulk root (URI s3:// possible).
+
+    Si `regimes` est fourni, chaque sample inclut `regime` (long tensor) pour
+    activer le conditioning FiLM par régime. Cf.
+    docs/methodology/regime-conditioning-design.md.
+    """
 
     def __init__(
         self,
@@ -105,6 +150,7 @@ class BulkSencropDataset(Dataset):
         elevation_grid: np.ndarray | None = None,
         min_stations: int = 5,
         lapse_rate: float = -6.5e-3,
+        regimes: dict[str, int] | None = None,
     ) -> None:
         self.coarse_provider = coarse_provider
         self.sencrop_root = sencrop_root
@@ -113,6 +159,7 @@ class BulkSencropDataset(Dataset):
         self.elevation_grid = elevation_grid
         self.min_stations = min_stations
         self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
+        self.regimes = regimes  # None = pas de conditioning
 
         # Pre-filter to dates where the bulk has enough stations.
         kept = []
@@ -125,6 +172,12 @@ class BulkSencropDataset(Dataset):
                 continue
         self.dates = kept
         log.info("Dataset: %d/%d nights kept", len(kept), len(dates))
+        if regimes is not None:
+            n_with = sum(1 for d in kept if d in regimes)
+            log.info(
+                "  Régimes : %d/%d nuits ont un label (les autres → R0)",
+                n_with, len(kept),
+            )
 
     def __len__(self) -> int:
         return len(self.dates)
@@ -136,7 +189,7 @@ class BulkSencropDataset(Dataset):
         tmin, row, col, dz = night_station_targets(
             obs_qc, self.lat_grid, self.lon_grid, self.elevation_grid
         )
-        return {
+        sample: dict = {
             "x_met": x_met,
             "x_dem": x_dem,
             "obs_tmin": torch.as_tensor(tmin, dtype=torch.float32),
@@ -145,6 +198,11 @@ class BulkSencropDataset(Dataset):
             "obs_dz": torch.as_tensor(dz, dtype=torch.float32),
             "date": d,
         }
+        if self.regimes is not None:
+            # R0 (catch-all) si la date est absente du CSV.
+            regime_idx = self.regimes.get(d, REGIME_TO_IDX["R0"])
+            sample["regime"] = torch.as_tensor(regime_idx, dtype=torch.long)
+        return sample
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +304,13 @@ def main() -> int:
     p.add_argument("--device", default="auto",
                    choices=("auto", "cuda", "mps", "cpu"),
                    help="Accelerator. 'auto' = MPS si Apple Silicon, sinon CUDA, sinon CPU.")
+    p.add_argument("--regimes-csv", type=Path, default=None,
+                   help="CSV émis par flag_regimes.py (colonnes date,regime). Active "
+                        "le conditioning FiLM par régime synoptique avec "
+                        "n_regimes=6 (R0..R4b). Cf. docs/methodology/"
+                        "regime-conditioning-design.md")
+    p.add_argument("--regime-embed-dim", type=int, default=8,
+                   help="Dimension de l'embedding régime (ignoré si --regimes-csv absent).")
     p.add_argument("--base-ch", type=int, default=32,
                    help="U-Net base channels (capacity). Issue #28: 64 ≈ 4.6M params.")
     p.add_argument("--n-levels", type=int, default=3,
@@ -271,6 +336,11 @@ def main() -> int:
     lon_grid = ds_dem["lon"].values if "lon" in ds_dem else ds_dem["longitude"].values
     dem_2d = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
 
+    # ---- Régime synoptique optionnel (FiLM conditioning) --------------------
+    regimes_map: dict[str, int] | None = None
+    if args.regimes_csv is not None:
+        regimes_map = _load_regimes_csv(args.regimes_csv)
+
     # ---- Dataset + DataModule -----------------------------------------------
     dataset = BulkSencropDataset(
         dates=dates,
@@ -280,6 +350,7 @@ def main() -> int:
         lon_grid=lon_grid,
         elevation_grid=dem_2d,
         min_stations=5,
+        regimes=regimes_map,
     )
     if len(dataset) == 0:
         log.error("No valid nights found — aborting")
@@ -293,11 +364,17 @@ def main() -> int:
     datamodule = UNetSparseDataModule(dataset, num_workers=0)
 
     # ---- Model + LightningModule --------------------------------------------
+    n_regimes = N_REGIMES_DEFAULT if regimes_map is not None else 0
     model = build_model(
         "unet", met_in_ch=1, dem_in_ch=1,
         base_ch=args.base_ch, n_levels=args.n_levels, use_film=True,
+        n_regimes=n_regimes, regime_embed_dim=args.regime_embed_dim,
     )
-    log.info("U-Net: base_ch=%d, n_levels=%d", args.base_ch, args.n_levels)
+    log.info(
+        "U-Net: base_ch=%d, n_levels=%d, n_regimes=%d, regime_embed_dim=%d",
+        args.base_ch, args.n_levels, n_regimes,
+        args.regime_embed_dim if n_regimes > 0 else 0,
+    )
     lit = UNetSparseCalibrationModule(
         model=model,
         target_channel=0,
@@ -388,6 +465,12 @@ def main() -> int:
                 "x_met": x_met.unsqueeze(0).to(inference_device),
                 "x_dem": x_dem.unsqueeze(0).to(inference_device),
             }
+            # Régime synoptique : R0 (catch-all) si absent du CSV.
+            if regimes_map is not None:
+                regime_idx = regimes_map.get(d, REGIME_TO_IDX["R0"])
+                batch["regime"] = torch.tensor(
+                    [regime_idx], dtype=torch.long, device=inference_device,
+                )
             pred = lit._predict_target(batch).squeeze().cpu().numpy()
             slab = xr.DataArray(
                 pred, dims=("latitude", "longitude"),
