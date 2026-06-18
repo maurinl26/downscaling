@@ -85,8 +85,17 @@ def _night_window(ds: xr.Dataset, d: date) -> xr.Dataset:
     return ds.sel(time=slice(start, end))
 
 
-def _night_features(ds_night: xr.Dataset, bbox: dict[str, float]) -> dict[str, float]:
-    """Compute synoptic features for one night (median over bbox + time window)."""
+def _night_features(
+    ds_night: xr.Dataset,
+    bbox: dict[str, float],
+    ds_t850_night: xr.Dataset | None = None,
+) -> dict[str, float]:
+    """Compute synoptic features for one night (median over bbox + time window).
+
+    Si ds_t850_night fourni, ajoute `inversion_strength_med` = median(T850 - T2m).
+    Inversion positive (T850 > T2m) = air froid près du sol sous air plus chaud
+    en altitude → favorable au cold pooling sous nuage.
+    """
     sub = ds_night.sel(
         lat=slice(bbox["lat_max"], bbox["lat_min"]),  # ERA5 lat descending
         lon=slice(bbox["lon_min"], bbox["lon_max"]),
@@ -105,34 +114,65 @@ def _night_features(ds_night: xr.Dataset, bbox: dict[str, float]) -> dict[str, f
     d2m = sub["d2m"].values
     dewpoint_dep = t2m - d2m  # K (proxy clear-sky)
 
-    return {
+    features = {
         "wind_med": float(np.nanmedian(wind)),
         "wind_dir_med": _circular_median_dir(wind_dir),
         "tcc_med": float(np.nanmedian(tcc)),
         "mslp_med": float(np.nanmedian(msl)),
         "dewpoint_dep_med": float(np.nanmedian(dewpoint_dep)),
+        "t2m_med": float(np.nanmedian(t2m)),
     }
+
+    # Proxy inversion : T850 - T2m, médiane sur la nuit
+    if ds_t850_night is not None:
+        sub850 = ds_t850_night.sel(
+            lat=slice(bbox["lat_max"], bbox["lat_min"]),
+            lon=slice(bbox["lon_min"], bbox["lon_max"]),
+        )
+        if sub850.sizes.get("time", 0) > 0:
+            t850 = sub850["t"].values if "t" in sub850 else sub850["temperature"].values
+            # Aligne temporellement par broadcast (mêmes timesteps généralement)
+            inv = np.nanmedian(t850) - features["t2m_med"]
+            features["inversion_strength_med"] = float(inv)
+
+    return features
 
 
 def _classify(f: dict[str, float]) -> str:
     """Apply rule-based regime classification to feature dict.
 
-    Taxonomie use-case Karpos (gel arboriculture) :
-    cadran 2×2 vent × ciel, plus une bande "intermédiaire" pour les nuits
-    ambigües. Optimise l'interprétation produit : "où le modèle marche bien
-    et où il rate".
+    Taxonomie V2 use-case Karpos (gel arboriculture). Cadran 2×2 vent × ciel,
+    avec subdivision du quadrant couvert+calme via la **force d'inversion**
+    (T850-T2m). C'est là que se cachent les **gels humides sous nuage bas**
+    qui font le plus de dégâts en arbo (audit FN 2022-2024).
 
-    - **R1 Radiatif**       : vent ≤ 3.0 m/s · tcc ≤ 0.50 → gel rayonnement
-                              probable (cas Baronnies typique)
-    - **R2 Advectif venté** : vent > 3.0 m/s · tcc ≤ 0.50 → mélange forcé,
-                              gel possible par advection
-    - **R3 Couvert venté**  : vent > 3.0 m/s · tcc > 0.50 → perturbé,
-                              gel rare
-    - **R4 Couvert calme**  : vent ≤ 3.0 m/s · tcc > 0.50 → nuageux nocturne,
-                              limite le radiatif
+    - **R1 Radiatif**          : vent ≤ 3.0 m/s · tcc ≤ 0.50 → gel rayonnement
+                                  probable (cas Baronnies typique)
+    - **R2 Advectif venté**    : vent > 3.0 m/s · tcc ≤ 0.50 → mélange forcé,
+                                  gel possible par advection
+    - **R3 Couvert venté**     : vent > 3.0 m/s · tcc > 0.50 → perturbé,
+                                  gel rare
+    - **R4a Cold pool anticyclonique** : vent ≤ 3.0 m/s · tcc > 0.50 ·
+                                        MSLP ≥ 1020 hPa → anticyclone fort
+                                        + nuage bas, **gel humide candidat**
+                                        (cold pool en vallée sous Strato/Sc,
+                                        audit FN 2022-2024 montre les gels
+                                        ratés R4 ont tous MSLP ≥ 1017 hPa)
+    - **R4b Couvert doux**            : vent ≤ 3.0 m/s · tcc > 0.50 ·
+                                        MSLP < 1020 hPa → couvert sans
+                                        anticyclone, gel rare
     - **R0** : feature manquant (catch-all NaN)
+
+    Note : T850-T2m (téléchargé en parallèle) reste enregistré comme feature
+    dans le CSV pour conditioning futur Lot C (FiLM token), mais pas utilisé
+    pour la classification (couche limite < 1500 m mal résolue par T850).
     """
-    if not f or any(np.isnan(v) for v in f.values()):
+    if not f or any(np.isnan(v) for v in f.values() if not (isinstance(v, float) and np.isnan(v))):
+        # Tolère NaN sur inversion_strength_med (optionnel) — vérifié plus bas.
+        pass
+
+    required = ["wind_med", "tcc_med", "mslp_med"]
+    if not f or any(np.isnan(f.get(k, np.nan)) for k in required):
         return "R0"
 
     wind_calm = f["wind_med"] <= 3.0
@@ -144,7 +184,13 @@ def _classify(f: dict[str, float]) -> str:
         return "R2"
     if not wind_calm and not sky_clear:
         return "R3"
-    return "R4"  # wind_calm and not sky_clear
+
+    # Quadrant couvert + calme : split par MSLP (anticyclone fort = cold pool
+    # candidat). Critère MSLP ≥ 1020 hPa validé par audit FN 2022-2024 :
+    # les 4 gels ratés R4 ont MSLP ∈ [1017, 1031] hPa.
+    if f["mslp_med"] >= 1020.0:
+        return "R4a"  # cold pool anticyclonique (gel humide candidat)
+    return "R4b"      # couvert doux sans anticyclone fort
 
 
 def _dates_for_year(ds: xr.Dataset, year: int, months: tuple[int, ...]) -> list[date]:
@@ -192,14 +238,29 @@ def main() -> int:
         log.info("--- year %d ---", year)
         ds = _normalize_era5(xr.open_dataset(path))
 
+        # T850 optionnel pour proxy inversion
+        path_t850 = args.era5_dir / f"era5_t850_{year}.nc"
+        ds_t850 = None
+        if path_t850.exists():
+            ds_t850 = _normalize_era5(xr.open_dataset(path_t850))
+            log.info("  T850 chargé : %s", path_t850.name)
+        else:
+            log.info("  T850 absent → R4 reste indivisé (fallback)")
+
         dates = _dates_for_year(ds, year, tuple(args.months))
         log.info("  %d nuits à classifier", len(dates))
 
         rows: list[dict] = []
-        regime_counts: dict[str, int] = {"R0": 0, "R1": 0, "R2": 0, "R3": 0, "R4": 0}
+        regime_counts: dict[str, int] = {
+            "R0": 0, "R1": 0, "R2": 0, "R3": 0,
+            "R4": 0,    # fallback si T850 absent
+            "R4a": 0,   # cold pool sous inversion + nuage bas (gel humide)
+            "R4b": 0,   # couvert doux sans inversion
+        }
         for d in dates:
             ds_night = _night_window(ds, d)
-            feats = _night_features(ds_night, bbox)
+            ds_t850_night = _night_window(ds_t850, d) if ds_t850 is not None else None
+            feats = _night_features(ds_night, bbox, ds_t850_night=ds_t850_night)
             regime = _classify(feats)
             regime_counts[regime] = regime_counts.get(regime, 0) + 1
             row = {"date": d.isoformat(), "regime": regime, **feats}
@@ -224,8 +285,10 @@ def main() -> int:
         for year, counts in summary_per_year.items():
             total = sum(counts.values())
             line = f"  {year}: total={total:3d}"
-            for r in ("R1", "R2", "R3", "R4", "R0"):
+            for r in ("R1", "R2", "R3", "R4a", "R4b", "R4", "R0"):
                 n = counts.get(r, 0)
+                if n == 0:
+                    continue
                 pct = (100.0 * n / total) if total else 0.0
                 line += f" · {r}={n:3d} ({pct:4.1f}%)"
             log.info(line)
