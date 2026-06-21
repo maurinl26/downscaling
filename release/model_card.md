@@ -32,7 +32,7 @@ Code repository: <https://github.com/maurinl26/downscaling>
 
 ## Model description
 
-Four-level U-Net (~1.9 M parameters) with FiLM modulation `x ← γ(DEM) · x + β(DEM)` applied at every encoder and decoder level. A small pyramidal DEM encoder produces spatially-varying `(γ_ℓ, β_ℓ)` maps shared between encoder and decoder. The output is **residual**: `ŷ = t2m_input + δ(x_met, DEM)`. Training combines a reanalysis target (stage A) with tail-weighted in-situ supervision against Sencrop minima (stage C).
+Four-level U-Net (≈ 19 M parameters; exactly 19,053,030 across 246 tensors) with FiLM modulation `x ← γ(DEM) · x + β(DEM)` applied at every encoder and decoder level. A small pyramidal DEM encoder produces spatially-varying `(γ_ℓ, β_ℓ)` maps shared between encoder and decoder. The output is **residual**: `ŷ = t2m_input + δ(x_met, DEM)`. Training combines a reanalysis target (stage A) with tail-weighted in-situ supervision against Sencrop minima (stage C).
 
 ## Training data
 
