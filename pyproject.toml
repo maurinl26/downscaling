@@ -83,9 +83,19 @@ pmap = [
     "pmap",
 ]
 
+# Documentation — Sphinx + myst-parser pour build docs/ et déploiement Read the Docs
+docs = [
+    "sphinx>=7.0",
+    "myst-parser>=2.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinx-autodoc-typehints>=2.0",
+    "sphinxcontrib-bibtex>=2.6",
+    "linkify-it-py>=2.0",
+]
+
 # Toutes les dépendances pour développement complet
 all = [
-    "downscaling[statistical,dl,prithvi,pmap]",
+    "downscaling[statistical,dl,prithvi,pmap,docs]",
     "jupyter>=1.0",
     "matplotlib>=3.8",
     "cartopy>=0.22",
