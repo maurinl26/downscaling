@@ -8,10 +8,14 @@ build:
   tools:
     python: "3.11"
   jobs:
-    # Install uv (fast Python package manager) then sync with docs extra.
+    # Install uv (fast Python package manager) then install the docs extra
+    # only. We intentionally do NOT install [statistical], [dl], [prithvi]
+    # or [pmap] — autodoc_mock_imports in docs/conf.py handles all heavy
+    # scientific dependencies (torch, sklearn, dask, elevation, etc.).
+    # Build is fast (~2 min) instead of 15-20 min compiling GDAL/sklearn.
     post_install:
       - pip install uv
-      - uv pip install --system -e ".[docs,statistical]"
+      - uv pip install --system -e ".[docs]"
 
 sphinx:
   configuration: docs/conf.py
