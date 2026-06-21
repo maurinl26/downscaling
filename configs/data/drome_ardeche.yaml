@@ -1,0 +1,21 @@
+# @package data
+# Sources de données pour l'expérience Drôme-Ardèche.
+#
+# Les chemins sont des placeholders. À override au runtime via Hydra :
+#   - data.sencrop_root=/path/to/sencrop/bulk
+#   - data.cerra_atm_dir=/path/to/cerra/atm
+#   - etc.
+#
+# Ou en créant un fichier local data/drome_ardeche.local.yaml ignoré par git.
+#
+# Ce fichier existe principalement pour faire composer correctement l'expérience
+# `experiment=drome_ardeche` et passer les tests de composition Hydra
+# (cf. tests/test_hydra_compose.py).
+
+sencrop_root: ""        # Local path ou s3:// vers le bulk export Sencrop
+cerra_atm_dir: ""       # Dir contenant cerra_atm_<year>.nc
+cerra_land_dir: ""      # Dir contenant cerra_land_<year>.nc
+cerra_orography: ""     # NetCDF orographie CERRA (time-invariant)
+dem: ""                 # NetCDF DEM (IGN BD ALTI 25 m ou SRTM 30 m)
+era5_synoptic_dir: ""   # Dir contenant era5_synoptic_<year>.nc (pour flag_regimes)
+regimes_dir: ""         # Dir contenant regimes_<year>.csv (output de flag_regimes)

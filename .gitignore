@@ -1,4 +1,7 @@
 data/
+# Exception : les fichiers de config Hydra dans configs/data/ sont à versionner
+# (ils décrivent où chercher les données, pas les données elles-mêmes).
+!configs/data/
 __pycache__/
 
 # Artefacts de build / packaging

@@ -158,17 +158,18 @@ To evaluate against in-situ observations:
 
 ```bash
 uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
-  --recalibrated-dir /tmp/karpos-quickstart/recalibrated \
+  --root /tmp/karpos-quickstart/recalibrated \
   --sencrop /path/to/your/sencrop/bulk \
   --years 2024 \
-  --thresholds -2.2 0.0 -5.0 \
-  --out /tmp/karpos-quickstart/analyze \
+  --threshold-c -2.2 \
   --wandb-disabled
 ```
 
-This produces a `summary.json` in `/tmp/karpos-quickstart/analyze` with
-contingency tables at three thresholds (–2.2 °C frost on flowering abricot,
-0 °C reference, –5 °C severe).
+This produces a `summary.json` describing the contingency table at the
+flowering apricot threshold (–2.2 °C). The script writes the summary to
+standard output and to W&B (unless `--wandb-disabled`). To evaluate
+multiple thresholds, re-run with a different `--threshold-c` value
+(0.0 for the reference, –5.0 for severe events).
 
 ## Step 6 (optional) — Stratify by synoptic regime
 
@@ -193,12 +194,11 @@ uv run python -m downscaling.scripts.flag_regimes \
 
 # 3. Re-run the analyzer with regime stratification
 uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
-  --recalibrated-dir /tmp/karpos-quickstart/recalibrated \
+  --root /tmp/karpos-quickstart/recalibrated \
   --sencrop /path/to/your/sencrop/bulk \
   --years 2024 \
   --regimes-csv /tmp/karpos-quickstart/regimes \
-  --thresholds -2.2 0.0 -5.0 \
-  --out /tmp/karpos-quickstart/analyze-stratified \
+  --threshold-c -2.2 \
   --wandb-disabled
 ```
 
