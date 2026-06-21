@@ -18,3 +18,4 @@ coverage.xml
 
 # Poids pré-entraînés (Prithvi WxC, Granite) — peuplés par `fetch-pretrained`
 modelstore/
+docs/_build/

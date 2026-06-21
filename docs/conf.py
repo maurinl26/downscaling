@@ -82,6 +82,42 @@ autodoc_default_options = {
     "show-inheritance": True,
 }
 
+# Mock heavy / optional dependencies that may not be installed in the
+# Read the Docs build environment. Autodoc will still parse signatures and
+# docstrings, but imports of these modules will not trigger ImportError.
+# Update this list if a new heavy dependency is added to deep_learning or
+# prithvi submodules.
+autodoc_mock_imports = [
+    "torch",
+    "torch.nn",
+    "torch.utils",
+    "torch.utils.data",
+    "torch.nn.functional",
+    "pytorch_lightning",
+    "lightning",
+    "wandb",
+    "prithviwxc",
+    "terratorch",
+    "hydra",
+    "omegaconf",
+    "rasterio",
+    "elevation",
+    "boto3",
+    "s3fs",
+    "fsspec",
+    "joblib",
+    "sklearn",
+    "scikit-learn",
+    "matplotlib",
+    "cartopy",
+    "cdsapi",
+    "xesmf",
+    "esmpy",
+    "pyproj",
+    "dask",
+    "pyspark",
+]
+
 # Intersphinx mapping — cross-link to common scientific libraries.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
