@@ -1,5 +1,11 @@
 # Read the Docs configuration for karpos-downscaling.
 # https://docs.readthedocs.io/en/stable/config-file/v2.html
+#
+# Format canonical : python.install standard + sphinx.configuration explicite.
+# On évite build.jobs.post_install qui empêchait RTD d'utiliser correctement
+# notre sphinx.configuration (sphinx était lancé avec . au lieu de docs/).
+# L'extra [docs] est tout ce qu'il faut grâce à autodoc_mock_imports dans
+# docs/conf.py (les imports torch, sklearn, dask, elevation, etc. sont mockés).
 
 version: 2
 
@@ -7,15 +13,13 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
-  jobs:
-    # Install uv (fast Python package manager) then install the docs extra
-    # only. We intentionally do NOT install [statistical], [dl], [prithvi]
-    # or [pmap] — autodoc_mock_imports in docs/conf.py handles all heavy
-    # scientific dependencies (torch, sklearn, dask, elevation, etc.).
-    # Build is fast (~2 min) instead of 15-20 min compiling GDAL/sklearn.
-    post_install:
-      - pip install uv
-      - uv pip install --system -e ".[docs]"
+
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
 
 sphinx:
   configuration: docs/conf.py
