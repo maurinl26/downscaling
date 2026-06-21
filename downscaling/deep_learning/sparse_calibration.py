@@ -57,6 +57,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         warmup_epochs: int = 5,
         max_epochs: int = 50,
         loss_weights: dict | None = None,
+        loss_quantile: float | None = None,
         kelvin_to_celsius: bool = True,
         denorm: tuple[float, float] | None = None,  # (µ, σ) t2m : dénormalise la sortie → °C
         lapse_rate: float = -6.5e-3,
@@ -72,6 +73,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
             lambda_obs=lw.get("obs", 1.0),
             lambda_tv=lw.get("tv", 0.01),
             lambda_smooth=lw.get("smooth", 0.001),
+            loss_quantile=loss_quantile,
         )
         self.target_channel = target_channel
         self.kelvin_to_celsius = kelvin_to_celsius
@@ -124,13 +126,15 @@ class UNetSparseCalibrationModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss, parts = self._shared_step(batch)
         self.log("train/loss", loss, prog_bar=True, batch_size=1)
-        self.log("train/rmse", parts["loss_obs"], prog_bar=True, batch_size=1)
+        # Always log RMSE in degrees Celsius for comparability across loss types
+        self.log("train/rmse", parts.get("rmse_obs", parts["loss_obs"]), prog_bar=True, batch_size=1)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, parts = self._shared_step(batch)
         self.log("val/loss", loss, prog_bar=True, batch_size=1)
-        self.log("val/rmse", parts["loss_obs"], prog_bar=True, batch_size=1)
+        # Always log RMSE in °C for comparability across loss types (EarlyStopping monitors this)
+        self.log("val/rmse", parts.get("rmse_obs", parts["loss_obs"]), prog_bar=True, batch_size=1)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

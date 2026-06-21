@@ -259,6 +259,11 @@ def main() -> int:
                    help="U-Net depth. Issue #28: 4 augmente receptive field.")
     p.add_argument("--early-stopping-patience", type=int, default=0,
                    help="If >0, EarlyStopping on val/rmse with this patience (issue #28).")
+    p.add_argument("--loss-quantile", type=float, default=None,
+                   help="If set in (0,1), use pinball/quantile loss instead of RMSE on station "
+                        "observations. q<0.5 penalizes under-prediction of cold (missed frost) "
+                        "more than over-prediction. Recommended for frost detection: q=0.1 "
+                        "(misses cost ×9 false alarms). Issue #5.")
     p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("--smoke-test", action="store_true",
@@ -318,11 +323,16 @@ def main() -> int:
         lr=1e-4,
         warmup_epochs=2,
         max_epochs=args.epochs,
+        loss_quantile=args.loss_quantile,
         kelvin_to_celsius=False,  # CERRA atm is already °C in our pipeline
         elevation_aware=True,
         hourly=False,
         reduce="min",
     )
+    if args.loss_quantile is not None:
+        log.info("Loss : pinball quantile q=%.2f (tail-aware, issue #5)", args.loss_quantile)
+    else:
+        log.info("Loss : RMSE (symmetric, baseline)")
 
     # ---- Trainer ------------------------------------------------------------
     import lightning.pytorch as pl
@@ -424,6 +434,11 @@ def main() -> int:
         "sencrop_root": str(args.sencrop),
         "epochs": args.epochs,
         "device": args.device,
+        "base_ch": args.base_ch,
+        "n_levels": args.n_levels,
+        "loss": "pinball" if args.loss_quantile is not None else "rmse",
+        "loss_quantile": args.loss_quantile,
+        "early_stopping_patience": args.early_stopping_patience,
         "n_nights": len(dataset),
         "wandb_run_url": wandb_run_url,
     }

@@ -31,7 +31,17 @@ KELVIN = 273.15
 class SparseSupervisedLoss(nn.Module):
     """Loss de supervision sparse aux stations + régularisation spatiale.
 
-    ``L = λ_obs · RMSE(stations) + λ_tv · TV + λ_smooth · ‖Laplacien‖²``
+    ``L = λ_obs · L_obs(stations) + λ_tv · TV + λ_smooth · ‖Laplacien‖²``
+
+    ``L_obs`` est par défaut une RMSE (symétrique). Passer ``loss_quantile=q``
+    avec ``0 < q < 1`` active une **pinball loss** (asymétrique, "tail-aware") :
+
+    - ``q < 0.5`` : pénalise les sur-prédictions (pred > obs) ×(1-q)/q vs les
+      sous-prédictions. Pour la détection de gel, on veut q faible (e.g. 0.1)
+      car prédire trop chaud quand il fait froid = FN catastrophique (frost
+      manqué), prédire trop froid = juste fausse alerte.
+
+    Référence : Koenker & Bassett 1978 (quantile regression).
     """
 
     def __init__(
@@ -39,11 +49,15 @@ class SparseSupervisedLoss(nn.Module):
         lambda_obs: float = 1.0,
         lambda_tv: float = 0.01,
         lambda_smooth: float = 0.001,
+        loss_quantile: float | None = None,
     ):
         super().__init__()
         self.lambda_obs = lambda_obs
         self.lambda_tv = lambda_tv
         self.lambda_smooth = lambda_smooth
+        if loss_quantile is not None and not (0.0 < loss_quantile < 1.0):
+            raise ValueError(f"loss_quantile must be in (0,1), got {loss_quantile}")
+        self.loss_quantile = loss_quantile
 
     def forward(
         self,
@@ -62,7 +76,16 @@ class SparseSupervisedLoss(nn.Module):
         # réelle du capteur avant comparaison (fonds froids de vallée, etc.).
         if obs_dz is not None:
             pred_at_obs = pred_at_obs + lapse_rate * obs_dz
-        l_obs = torch.sqrt(torch.mean((pred_at_obs - obs_tmin) ** 2))
+        # Always compute RMSE for monitoring (val/rmse, train/rmse comparability across runs)
+        rmse_obs = torch.sqrt(torch.mean((pred_at_obs - obs_tmin) ** 2))
+        if self.loss_quantile is None:
+            l_obs = rmse_obs
+        else:
+            # Pinball / quantile loss. r = obs - pred ; r>0 ↔ pred too cold (FP risk),
+            # r<0 ↔ pred too warm (FN risk = missed frost).
+            r = obs_tmin - pred_at_obs
+            q = self.loss_quantile
+            l_obs = torch.where(r >= 0, q * r, (q - 1.0) * r).mean()
 
         # L_TV : variation totale (cohérence spatiale)
         diff_h = pred[:, :, 1:, :] - pred[:, :, :-1, :]
@@ -85,6 +108,7 @@ class SparseSupervisedLoss(nn.Module):
             "loss_obs": l_obs.item(),
             "loss_tv": l_tv.item(),
             "loss_smooth": l_smooth.item(),
+            "rmse_obs": rmse_obs.item(),
         }
 
 
