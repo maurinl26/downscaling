@@ -18,4 +18,13 @@ exists.
 
 The license is Apache 2.0; the scientific methodology is documented under
 ``docs/methodology/`` and in the forthcoming GMD paper.
+
+Released reference checkpoints can be loaded directly from the HuggingFace
+Hub via :func:`downscaling.hub.load_baronnies_v1` (see ``downscaling.hub``
+for the full registry of releases).
 """
+
+from downscaling.hub import load_baronnies_v1, load_from_hub
+
+__all__ = ["load_baronnies_v1", "load_from_hub"]
+

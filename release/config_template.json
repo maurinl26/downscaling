@@ -1,0 +1,41 @@
+{
+  "architecture": "unet",
+  "met_in_ch": 5,
+  "dem_in_ch": 4,
+  "base_ch": 64,
+  "n_levels": 4,
+  "use_film": true,
+  "input_grid": {
+    "height": 168,
+    "width": 120,
+    "resolution_km": 1.0,
+    "region": "Baronnies Provençales (lat 44.1-44.6 N, lon 5.1-5.7 E)",
+    "crs": "EPSG:4326"
+  },
+  "training": {
+    "period": "2015-2021 (Oct-May)",
+    "n_time_steps_3h": 9200,
+    "optimizer": "Adam",
+    "lr_schedule": "cosine with 5-epoch warmup",
+    "batch_size": 16,
+    "epochs": 100,
+    "early_stopping": "val/rmse, patience 10",
+    "seeds": [0, 1, 2, 3, 4]
+  },
+  "validation": {
+    "period": "2022-2025 (Feb-May)",
+    "n_nights": 481,
+    "n_station_obs": 16768,
+    "auc": 0.964,
+    "pod_at_far_0_20": 0.316,
+    "pod_at_far_0_20_with_station_debias": 0.611
+  },
+  "release": {
+    "version": "v1.0.0",
+    "date": "2026-06-21",
+    "code_repo": "https://github.com/maurinl26/downscaling",
+    "license_weights": "CC-BY-4.0",
+    "license_code": "Apache-2.0",
+    "zenodo_doi": "10.5281/zenodo.20783564"
+  }
+}
