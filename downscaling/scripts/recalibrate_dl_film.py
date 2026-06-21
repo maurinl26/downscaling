@@ -74,6 +74,7 @@ from downscaling.deep_learning.sparse_calibration import (
 from downscaling.prtihvi_wxc.netatmo_qc import NetatmoNocturnalQC
 from downscaling.prtihvi_wxc.sencrop import load_sencrop
 from downscaling.prtihvi_wxc.stations import night_station_targets
+from downscaling.utils.io import describe, is_remote, make_zarr_store, write_sidecar
 
 log = logging.getLogger("recalibrate_dl_film")
 
@@ -241,7 +242,13 @@ def main() -> int:
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--dem", type=Path, required=True)
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
-    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--out", type=str, required=True,
+                   help="Output target: local dir OR s3:// / scw:// URL "
+                        "(zarr + sidecar metadata.json written there). "
+                        "Lightning checkpoints stay local (--checkpoint-dir).")
+    p.add_argument("--checkpoint-dir", type=str, default=None,
+                   help="Local dir for Lightning ModelCheckpoint. "
+                        "Default: <out> if local, else ./checkpoints/<year>.")
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--device", default="auto",
                    choices=("auto", "cuda", "mps", "cpu"),
@@ -260,7 +267,14 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
-    args.out.mkdir(parents=True, exist_ok=True)
+    # Resolve checkpoint dir : local default if --out is remote
+    if args.checkpoint_dir:
+        ckpt_dir = Path(args.checkpoint_dir)
+    elif is_remote(args.out):
+        ckpt_dir = Path("./checkpoints") / str(args.year)
+    else:
+        ckpt_dir = Path(args.out)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- Coarse provider + dates --------------------------------------------
     provider, ds_cerra, ds_dem = _build_coarse_provider(args.cerra_atm, args.dem)
@@ -316,7 +330,7 @@ def main() -> int:
 
     callbacks = [
         ModelCheckpoint(
-            dirpath=str(args.out), filename=f"{args.year}-best",
+            dirpath=str(ckpt_dir), filename=f"{args.year}-best",
             monitor="val/rmse", mode="min", save_top_k=1,
         )
     ]
@@ -396,9 +410,9 @@ def main() -> int:
             out_grids.append(slab)
 
     out_ds = xr.concat(out_grids, dim="time")
-    zarr_path = args.out / f"{args.year}.zarr"
-    out_ds.to_zarr(zarr_path, mode="w")
-    log.info("Wrote %s (%d nights)", zarr_path, len(out_grids))
+    zarr_store = make_zarr_store(args.out, args.year)
+    out_ds.to_zarr(zarr_store, mode="w")
+    log.info("Wrote %s (%d nights)", describe(args.out, args.year, ".zarr"), len(out_grids))
 
     # ---- Reproducibility metadata -------------------------------------------
     metadata = {
@@ -413,8 +427,8 @@ def main() -> int:
         "n_nights": len(dataset),
         "wandb_run_url": wandb_run_url,
     }
-    (args.out / f"{args.year}.metadata.json").write_text(json.dumps(metadata, indent=2))
-    log.info("Done. Metadata: %s", args.out / f"{args.year}.metadata.json")
+    metadata_path = write_sidecar(args.out, args.year, ".metadata.json", json.dumps(metadata, indent=2))
+    log.info("Done. Metadata: %s", metadata_path)
     return 0
 
 

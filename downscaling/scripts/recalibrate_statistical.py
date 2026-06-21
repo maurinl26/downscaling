@@ -70,6 +70,7 @@ from downscaling.prtihvi_wxc.sencrop import (
     load_timeseries,
 )
 from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
+from downscaling.utils.io import describe, is_remote, make_zarr_store, write_sidecar
 
 log = logging.getLogger("recalibrate_statistical")
 
@@ -207,7 +208,9 @@ def main() -> int:
                         "Supporte chemin local OU URL s3://bucket/key (téléchargé vers /tmp).")
     p.add_argument("--dem", type=Path, required=True)
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
-    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--out", type=str, required=True,
+                   help="Output target: local dir OR s3:// / scw:// URL "
+                        "(zarr + sidecar metadata.json written there).")
     p.add_argument("--obs-ref", type=Path, default=None, help="optional CERRA fine ref for QDM calibration")
     p.add_argument("--qdm-joblib", type=Path, default=None,
                    help="Pre-fitted QuantileDeltaMapping joblib (cf. calibrate_qdm.py). "
@@ -460,10 +463,9 @@ def main() -> int:
         return 2
 
     out_ds = xr.concat(out_grids, dim="time")
-    args.out.mkdir(parents=True, exist_ok=True)
-    zarr_path = args.out / f"{args.year}.zarr"
-    out_ds.to_zarr(zarr_path, mode="w")
-    log.info("Wrote %s (%d nights)", zarr_path, len(out_grids))
+    zarr_store = make_zarr_store(args.out, args.year)
+    out_ds.to_zarr(zarr_store, mode="w")
+    log.info("Wrote %s (%d nights)", describe(args.out, args.year, ".zarr"), len(out_grids))
 
     # Synthèse métriques sur les nuits avec résidu calculable
     if per_night_records:
@@ -505,8 +507,8 @@ def main() -> int:
         "qdm_joblib": str(args.qdm_joblib) if args.qdm_joblib else None,
         **summary,
     }
-    (args.out / f"{args.year}.metadata.json").write_text(json.dumps(metadata, indent=2))
-    log.info("Done. Metadata: %s", args.out / f"{args.year}.metadata.json")
+    metadata_path = write_sidecar(args.out, args.year, ".metadata.json", json.dumps(metadata, indent=2))
+    log.info("Done. Metadata: %s", metadata_path)
 
     if wandb_run is not None:
         try:
@@ -520,9 +522,12 @@ def main() -> int:
                     data=[[r[k] for k in per_night_records[0].keys()] for r in per_night_records],
                 )
                 wandb.log({"per_night": tbl})
-            # Log artefact Zarr metadata
+            # Log artefact Zarr metadata (file local OR reference S3)
             artifact = wandb.Artifact(f"stat-{args.year}-metadata", type="metadata")
-            artifact.add_file(str(args.out / f"{args.year}.metadata.json"))
+            if is_remote(metadata_path):
+                artifact.add_reference(metadata_path.replace("scw://", "s3://"))
+            else:
+                artifact.add_file(metadata_path)
             wandb_run.log_artifact(artifact)
             wandb_run.finish()
         except Exception as exc:
