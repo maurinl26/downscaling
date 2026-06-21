@@ -46,6 +46,9 @@ statistical = [
     # Requis par Stage 1b (xr.open_mfdataset) du recalibration_pipeline.sh
     # — sinon ImportError au runtime. Observé sur pod 9lom8jtx1rxl5p, 2026-06-16.
     "dask>=2024.1",
+    # Sérialisation des objets QDM (Pickle alternative) — requis par
+    # downscaling/scripts/calibrate_qdm.py. Sinon ImportError sur --help.
+    "joblib>=1.3",
 ]
 
 # Pipeline deep learning — U-Net FiLM (architecture maison)
