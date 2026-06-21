@@ -115,6 +115,22 @@ class CERRALoader:
         self.pl_path = Path(pl_path) if pl_path else None
 
     def load_sl(self, variables: list[str] | None = None) -> xr.Dataset:
+        """Load the CERRA single-levels NetCDF.
+
+        Parameters
+        ----------
+        variables : list of str, optional
+            Variable names to keep. Accepts both the CDS long name (e.g.
+            ``"2m_temperature"``) and the short name (``"t2m"``). If ``None``,
+            returns all variables.
+
+        Returns
+        -------
+        xarray.Dataset
+            The requested CERRA single-levels variables. Coordinates can be
+            ``(y, x)`` or ``(latitude, longitude)`` depending on the CDS
+            processing level.
+        """
         ds = xr.open_dataset(self.sl_path, engine="netcdf4")
         if variables is not None:
             short = set(variables)
@@ -123,6 +139,24 @@ class CERRALoader:
         return ds
 
     def load_pl(self, pressure_levels: list[int] | None = None) -> xr.Dataset:
+        """Load the CERRA pressure-levels NetCDF.
+
+        Parameters
+        ----------
+        pressure_levels : list of int, optional
+            Pressure levels in hPa to keep (e.g. ``[850, 700, 500]``).
+            If ``None``, returns all available levels.
+
+        Returns
+        -------
+        xarray.Dataset
+            The pressure-levels dataset.
+
+        Raises
+        ------
+        FileNotFoundError
+            If no pressure-level file was provided at construction time.
+        """
         if self.pl_path is None:
             raise FileNotFoundError("Aucun fichier CERRA pression spécifié.")
         ds = xr.open_dataset(self.pl_path, engine="netcdf4")

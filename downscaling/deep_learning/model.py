@@ -347,13 +347,44 @@ def build_model(
     n_levels: int = 4,
     use_film: bool = True,
 ) -> nn.Module:
-    """
-    Construit le modèle selon l'architecture choisie.
+    """Construct a downscaling model with the requested architecture.
 
     Parameters
     ----------
-    architecture:
-        'unet' (défaut) ou 'srcnn' (modèle léger).
+    architecture : {'unet', 'srcnn'}, default 'unet'
+        Architecture identifier:
+
+        - ``'unet'`` (default): the full ``DownscalingUNet`` with optional
+          FiLM conditioning on the digital elevation model (DEM).
+        - ``'srcnn'``: the lightweight ``LightSRCNN`` baseline, used for
+          smoke tests and ablation studies.
+    met_in_ch : int, default 5
+        Number of meteorological input channels (e.g. T2m, U10, V10, MSLP,
+        humidity). Only used by ``'unet'``.
+    dem_in_ch : int, default 4
+        Number of DEM-derived input channels (e.g. elevation, slope,
+        aspect, sky-view factor). Only used by ``'unet'``.
+    base_ch : int, default 64
+        Number of channels at the first U-Net level. The capacity doubles
+        at each downsampling step (``base_ch * 2**i`` at level ``i``).
+        Only used by ``'unet'``.
+    n_levels : int, default 4
+        Number of encoder/decoder levels in the U-Net. Only used by
+        ``'unet'``.
+    use_film : bool, default True
+        If True, inject FiLM (Feature-wise Linear Modulation) conditioning
+        on the DEM at each encoder level. Only used by ``'unet'``.
+
+    Returns
+    -------
+    torch.nn.Module
+        The instantiated model, on CPU. Move to GPU/MPS via ``.to(device)``
+        if needed.
+
+    Raises
+    ------
+    ValueError
+        If ``architecture`` is not one of ``'unet'`` or ``'srcnn'``.
     """
     if architecture == "unet":
         model = DownscalingUNet(

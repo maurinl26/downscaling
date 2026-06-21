@@ -83,6 +83,7 @@ api/index
 community/contributing
 community/code-of-conduct
 community/security
+community/docstring-conventions
 ```
 
 ## Indices and tables
