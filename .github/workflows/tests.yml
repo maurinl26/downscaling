@@ -60,3 +60,40 @@ jobs:
       # mypy = informatif (typage progressif, cf. [tool.mypy]) — non bloquant.
       - name: mypy (informatif)
         run: uv run mypy downscaling || true
+
+  docs-build:
+    # Vérifie que la doc Sphinx compile sans erreur sur chaque PR.
+    # Évite les régressions silencieuses qui ne se découvriraient qu'au
+    # prochain push sur main quand Read the Docs replanterait.
+    #
+    # Note : on n'utilise pas -W (fail-on-warning) pour l'instant car les
+    # docstrings héritées de PyTorch Lightning produisent du bruit
+    # (paramref, multiple-dataloaders) qu'on tolère. Durcissement possible
+    # plus tard via suppress_warnings dans docs/conf.py.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      # L'extra [docs] suffit grâce à autodoc_mock_imports dans
+      # docs/conf.py (tous les imports lourds sont mockés).
+      - name: Sync dependencies (docs extra)
+        run: uv sync --extra docs
+
+      - name: Sphinx build
+        run: uv run sphinx-build -b html docs docs/_build/html
+
+      # Upload du HTML build comme artefact pour debug rapide en cas de
+      # divergence avec ce que Read the Docs produit.
+      - name: Upload built docs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html
+          retention-days: 7
