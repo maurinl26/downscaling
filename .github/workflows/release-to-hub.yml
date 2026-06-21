@@ -1,0 +1,109 @@
+# Release a reference checkpoint to the HuggingFace Hub.
+#
+# Manual trigger from the GitHub UI (Actions → "Release reference checkpoint
+# to HuggingFace Hub" → Run workflow). The job:
+#   1. pulls the source checkpoint from Scaleway Object Storage,
+#   2. strips Lightning prefixes and converts to safetensors,
+#   3. uploads the bundle (weights + config + model card) to the HF repo.
+#
+# Required secrets (configured at the repository level):
+#   - SCW_ACCESS_KEY / SCW_SECRET_KEY : read access on the Scaleway bucket
+#   - HF_TOKEN                       : a HuggingFace write token
+
+name: Release reference checkpoint to HuggingFace Hub
+
+on:
+  workflow_dispatch:
+    inputs:
+      checkpoint_uri:
+        description: "Source checkpoint URI (s3://bucket/path/to/file.ckpt)"
+        required: true
+        default: "s3://karpos-backtest-data/downscaling/checkpoints/mv_run/best_model.ckpt"
+      release_name:
+        description: "Release name (matches an entry in downscaling.hub.RELEASES)"
+        required: true
+        default: "baronnies-v1"
+      hf_repo:
+        description: "Target HuggingFace repository (org/name)"
+        required: true
+        default: "karpos26/karpos-downscaling-baronnies"
+      dry_run:
+        description: "Build the bundle locally and skip the HF upload"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_HUB_ENABLE_HF_TRANSFER: "0"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install release dependencies
+        run: |
+          uv pip install --system \
+            "boto3>=1.35" "botocore>=1.35" "pyyaml" \
+            "safetensors>=0.4" "huggingface-hub>=0.22" "torch>=2.0" \
+            -e .
+
+      - name: Fetch model-card and config template from this repo
+        # Templates are kept in the repo so the workflow has everything it
+        # needs without pulling from the Obsidian vault on a maintainer's
+        # laptop. They live under release/ for clarity.
+        run: |
+          mkdir -p release
+          test -f release/model_card.md \
+            || (echo "release/model_card.md missing — commit it first" && exit 1)
+          test -f release/config_template.json \
+            || (echo "release/config_template.json missing — commit it first" && exit 1)
+
+      - name: Resolve dry-run flag
+        id: flags
+        run: |
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            echo "extra_flag=--no-upload" >> "$GITHUB_OUTPUT"
+          else
+            echo "extra_flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run release pipeline
+        run: |
+          python downscaling/scripts/release_to_hub.py \
+            --checkpoint "${{ github.event.inputs.checkpoint_uri }}" \
+            --release "${{ github.event.inputs.release_name }}" \
+            --hf-repo "${{ github.event.inputs.hf_repo }}" \
+            --model-card release/model_card.md \
+            --config-template release/config_template.json \
+            --bundle-dir release/bundle \
+            ${{ steps.flags.outputs.extra_flag }} \
+            --verbose
+
+      - name: Upload assembled bundle as a workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle-${{ github.event.inputs.release_name }}
+          path: release/bundle/
+          if-no-files-found: warn
+          retention-days: 14
