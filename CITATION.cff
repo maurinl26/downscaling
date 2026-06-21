@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+title: karpos-downscaling
+message: >-
+  If you use this software in academic work or commercial products,
+  please cite it using the metadata in this file.
+type: software
+authors:
+  - family-names: Maurin
+    given-names: Loïc
+    affiliation: Karpos
+    email: loic.maurin@karpos.pro
+repository-code: "https://github.com/maurinl26/downscaling"
+url: "https://github.com/maurinl26/downscaling"
+license: Apache-2.0
+keywords:
+  - atmospheric-reanalysis
+  - downscaling
+  - statistical-downscaling
+  - deep-learning
+  - U-Net
+  - FiLM
+  - climate
+  - frost
+  - parametric-insurance
+  - agriculture
+  - viticulture
+  - arboriculture
+  - CERRA
+  - ERA5
+  - Sencrop
+abstract: >-
+  karpos-downscaling provides Python tools for downscaling atmospheric
+  reanalyses (ERA5, CERRA) to kilometer-scale resolution, conditioned on
+  digital elevation models and calibrated against sparse in-situ sensor
+  networks (Sencrop). The package supports three families of methods behind
+  a single configuration: statistical (lapse-rate + quantile mapping + RBF
+  Sencrop), deep learning (U-Net with FiLM conditioning), and foundation
+  models (Prithvi WxC fine-tuning). Applications include the derivation of
+  parametric agricultural insurance indices for frost, extreme precipitation,
+  wind, and heat. The methodology supports stratification by synoptic regime
+  for interpretable performance reporting.
