@@ -95,7 +95,7 @@ Software release:
   title        = {karpos-downscaling — Baronnies v1},
   year         = 2026,
   version      = {v1.0.0},
-  doi          = {10.5281/zenodo.20783564},
+  doi          = {10.5281/zenodo.20783563},
   url          = {https://huggingface.co/karpos26/karpos-downscaling-baronnies}
 }
 ```

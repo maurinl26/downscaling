@@ -16,7 +16,7 @@ date-released: "2026-06-21"
 license: Apache-2.0
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.20783564
+    value: 10.5281/zenodo.20783563
     description: >-
       The concept DOI of karpos-downscaling, resolving to the latest archived
       version on Zenodo.
