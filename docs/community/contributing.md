@@ -3,7 +3,7 @@
 This page is a short pointer. The full contributing guidelines live at the
 root of the repository:
 
-📄 **[CONTRIBUTING.md](https://github.com/maurinl26/downscaling/blob/main/CONTRIBUTING.md)**
+📄 **[CONTRIBUTING.md](https://github.com/maurinl26/karpos-downscaling/blob/main/CONTRIBUTING.md)**
 
 It covers:
 

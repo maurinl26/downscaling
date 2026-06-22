@@ -15,4 +15,4 @@ Key features:
 - Configurable U-Net capacity, early stopping, learning rate schedules
 
 References to come: Park et al. 2022 (Weather4Cast), Chapman et al. 2024
-(RUFCO). See [`scripts/recalibrate_dl_film.py`](https://github.com/maurinl26/downscaling/blob/main/scripts/recalibrate_dl_film.py).
+(RUFCO). See [`scripts/recalibrate_dl_film.py`](https://github.com/maurinl26/karpos-downscaling/blob/main/scripts/recalibrate_dl_film.py).

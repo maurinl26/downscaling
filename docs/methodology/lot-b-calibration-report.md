@@ -236,7 +236,7 @@ uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
 - `s3://karpos-backtest-data/recalibrated/statistical/2022.metadata.json`
 - `s3://karpos-backtest-data/recalibrated/statistical/2023.zarr/` (en cours d'upload)
 - `s3://karpos-backtest-data/recalibrated/statistical/2023.posthoc.json` (à pousser manuellement)
-- Repository `maurinl26/downscaling` branche `main` au commit `a24278b` (W&B instrumentation + analyze script)
+- Repository `maurinl26/karpos-downscaling` branche `main` au commit `a24278b` (W&B instrumentation + analyze script)
 - Repository `maurinl26/parametric_insurance` branche `main` au commit post-PR #67 (PWA contraste aligné)
 
 ### 6.3 Citations
@@ -288,7 +288,7 @@ Diagnostic complet après lecture ligne à ligne de `recalibrate_statistical.py`
 
 | Ordre | Bug(s) | Justification | Effort |
 |---|---|---|---|
-| **1** | #13 + #18 (orographie + mix K/C) | LE bug scientifique. Tant qu'il n'est pas levé, POD/FAR sont des artefacts. À traiter en bundle dans une seule PR sur `maurinl26/downscaling`. | 2-4 h |
+| **1** | #13 + #18 (orographie + mix K/C) | LE bug scientifique. Tant qu'il n'est pas levé, POD/FAR sont des artefacts. À traiter en bundle dans une seule PR sur `maurinl26/karpos-downscaling`. | 2-4 h |
 | **2** | #8 SIGKILL refactor write incrémental | Sans 4 années, pas de Go/No-Go robuste. Refactor : `to_zarr(append_dim="time")` par nuit + checkpoint + `psutil` logging RAM. **Couple avec #20**. | 4-6 h |
 | **3** | #10 + #20 analyze OOM + chunking | Sans analyze qui tourne sans planter, pas de métriques. **Couple avec #2**. | 2 h |
 | **4** | #12 + #19 time coord int + fenêtre fev-avr | Matching 18/90 → ~80/91 attendu. | 1-2 h |
@@ -372,9 +372,9 @@ Seul gain net : seuil -5°C année 2023, POD 0.22 → 0.24, FAR 0.45 → 0.37 (q
 - **PR #31 (calibrate_qdm + --qdm-joblib)** reste mergeable comme infra A/B mais QDM **non activé par défaut**.
 
 **Issues d'amélioration ouvertes pour septembre** (post-V1, conditions partenariats) :
-- [downscaling#33](https://github.com/maurinl26/downscaling/issues/33) — Validation LOO QDM avant intégration (le bon test scientifique)
-- [downscaling#34](https://github.com/maurinl26/downscaling/issues/34) — QDM tail-only (quantiles ≤ 0.20) pour cibler le gel
-- [downscaling#35](https://github.com/maurinl26/downscaling/issues/35) — QDM avec sigma_km RBF réduit (3 au lieu de 7)
+- [downscaling#33](https://github.com/maurinl26/karpos-downscaling/issues/33) — Validation LOO QDM avant intégration (le bon test scientifique)
+- [downscaling#34](https://github.com/maurinl26/karpos-downscaling/issues/34) — QDM tail-only (quantiles ≤ 0.20) pour cibler le gel
+- [downscaling#35](https://github.com/maurinl26/karpos-downscaling/issues/35) — QDM avec sigma_km RBF réduit (3 au lieu de 7)
 
 ---
 

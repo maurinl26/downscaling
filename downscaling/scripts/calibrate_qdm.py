@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fit QDM monthly transfer functions on (CERRA-lapse, Sencrop) point pairs.
 
-C4.1 (issue maurinl26/downscaling#32). Fixes the placeholder
+C4.1 (issue maurinl26/karpos-downscaling#32). Fixes the placeholder
 `pipe.calibrate(ref_ds, ref_ds)` in `recalibrate_statistical.py`.
 
 Pools (predicted_lapse_at_station, sencrop_tmin) point pairs across train years

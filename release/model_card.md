@@ -28,7 +28,7 @@ Reference weights for the **residual U-Net with FiLM-conditioned terrain modulat
 - *karpos-downscaling: A meteorological super-resolution framework bridging numerical weather prediction and machine learning* (JOSS, in submission)
 - *FiLM-conditioned residual U-Net downscaling of frost-risk temperature fields* (GMD, in submission)
 
-Code repository: <https://github.com/maurinl26/downscaling>
+Code repository: <https://github.com/maurinl26/karpos-downscaling>
 
 ## Model description
 

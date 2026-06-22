@@ -80,6 +80,6 @@ which prevents the mean-collapse pathology of absolute U-Nets [@stengel2020] and
 
 # Acknowledgements
 
-This work was conducted in the context of the **Karpos** project (https://github.com/maurinl26/downscaling), targeting parametric frost insurance for French viticulture and arboriculture. The author thanks Sencrop for sensor network access, the Copernicus Climate Change Service for CERRA and ERA5-Land reanalyses, and the SURFEX and AROME development teams at Météo-France and CNRM. Collaborator acknowledgements will be added on submission.
+This work was conducted in the context of the **Karpos** project (https://github.com/maurinl26/karpos-downscaling), targeting parametric frost insurance for French viticulture and arboriculture. The author thanks Sencrop for sensor network access, the Copernicus Climate Change Service for CERRA and ERA5-Land reanalyses, and the SURFEX and AROME development teams at Météo-France and CNRM. Collaborator acknowledgements will be added on submission.
 
 # References

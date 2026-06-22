@@ -52,7 +52,7 @@ publications, please cite :
                   downscaling framework for spring frost forecasting},
   year         = 2026,
   publisher    = {Karpos},
-  url          = {https://github.com/maurinl26/downscaling},
+  url          = {https://github.com/maurinl26/karpos-downscaling},
   license      = {Apache-2.0}
 }
 ```

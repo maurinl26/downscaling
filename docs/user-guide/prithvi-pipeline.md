@@ -8,5 +8,5 @@ model (DEM).
 
 Status: experimental. The backbone is loaded from `prithviwxc` (and
 optionally fine-tuned via `terratorch[wxc]`); see `pyproject.toml` for the
-`prithvi` extra and the [`scripts/`](https://github.com/maurinl26/downscaling/tree/main/scripts)
+`prithvi` extra and the [`scripts/`](https://github.com/maurinl26/karpos-downscaling/tree/main/scripts)
 folder for entry points.

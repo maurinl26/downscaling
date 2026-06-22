@@ -27,7 +27,7 @@ reproducibility, speed, and lockfile-driven environments.
 ## Cloning the repository
 
 ```bash
-git clone git@github.com:maurinl26/downscaling.git
+git clone git@github.com:maurinl26/karpos-downscaling.git
 cd downscaling
 ```
 

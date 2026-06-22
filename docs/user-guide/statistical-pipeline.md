@@ -9,6 +9,6 @@ combining:
 2. **Quantile mapping (QDM)** with optional conditional regimes
 3. **Sparse Sencrop residual correction** via gaussian RBF interpolation
 
-See [`scripts/recalibrate_statistical.py`](https://github.com/maurinl26/downscaling/blob/main/scripts/recalibrate_statistical.py)
+See [`scripts/recalibrate_statistical.py`](https://github.com/maurinl26/karpos-downscaling/blob/main/scripts/recalibrate_statistical.py)
 and the [Lot B calibration report](../methodology/lot-b-calibration-report.md)
 for details until this page is expanded.

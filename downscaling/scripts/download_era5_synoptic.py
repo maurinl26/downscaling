@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download ERA5 single-level synoptic variables for regime classification.
 
-C5.1 (issue maurinl26/downscaling#TBD). Pulls the variables needed by
+C5.1 (issue maurinl26/karpos-downscaling#TBD). Pulls the variables needed by
 `flag_regimes.py` to classify each frost-flo night into a synoptic regime
 (radiative, advective N/NE, cyclonic, anticyclonic doux, mixed).
 

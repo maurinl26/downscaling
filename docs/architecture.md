@@ -166,7 +166,7 @@ indépendants du choix de chemin (A ou B).
 | Étage | Composant | État |
 |-------|-----------|------|
 | A | Backbone Prithvi WxC réel (`loader.py`) | ✅ câblé + testé (config jouet) |
-| A | Pipeline d'entrée **MERRA-2** (`FrostNightDataset → batch`) | 🔴 **manquant** ([#1](https://github.com/maurinl26/downscaling/issues/1)) |
+| A | Pipeline d'entrée **MERRA-2** (`FrostNightDataset → batch`) | 🔴 **manquant** ([#1](https://github.com/maurinl26/karpos-downscaling/issues/1)) |
 | B | U-Net FiLM (ERA5/CERRA → 1 km) | ✅ entraînement Lightning |
 | B | Tête DEM sur prévision Prithvi | ✅ câblée (forward réel) |
 | B | Pipeline statistique (lapse-rate + QDM) | ✅ |
@@ -214,7 +214,7 @@ indépendants du choix de chemin (A ou B).
 ## 6. Deux chemins produits — recommandation
 
 > **Décision (parking Prithvi).** Le chemin **B est le chemin produit**. Le chemin
-> A (Prithvi) est **parké — recherche, hors chemin critique** ([issue #1](https://github.com/maurinl26/downscaling/issues/1),
+> A (Prithvi) est **parké — recherche, hors chemin critique** ([issue #1](https://github.com/maurinl26/karpos-downscaling/issues/1),
 > label `parked`). Raison : Prithvi prévoit au pas global ~50 km, plus grossier que
 > CERRA ; il n'apporte pas de finesse et la descente ×50 exigerait l'archi Granite
 > pour un gain nul. Le code (backbone + entrée MERRA-2) reste isolé et réactivable.
