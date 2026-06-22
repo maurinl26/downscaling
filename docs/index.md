@@ -4,7 +4,7 @@
 parametric agricultural insurance.**
 
 `karpos-downscaling` is an open-source Python package
-([Apache 2.0](https://github.com/maurinl26/downscaling/blob/main/LICENSE))
+([Apache 2.0](https://github.com/maurinl26/karpos-downscaling/blob/main/LICENSE))
 that downscales atmospheric reanalyses (ERA5, CERRA) to kilometer-scale
 resolution. It supports three families of methods behind a single
 configuration:
@@ -23,10 +23,10 @@ fruit orchards and hillside vineyards.
 
 ## Quick links
 
-- [GitHub repository](https://github.com/maurinl26/downscaling)
-- [Issue tracker](https://github.com/maurinl26/downscaling/issues)
-- [Contributing guidelines](https://github.com/maurinl26/downscaling/blob/main/CONTRIBUTING.md)
-- [Code of conduct](https://github.com/maurinl26/downscaling/blob/main/CODE_OF_CONDUCT.md)
+- [GitHub repository](https://github.com/maurinl26/karpos-downscaling)
+- [Issue tracker](https://github.com/maurinl26/karpos-downscaling/issues)
+- [Contributing guidelines](https://github.com/maurinl26/karpos-downscaling/blob/main/CONTRIBUTING.md)
+- [Code of conduct](https://github.com/maurinl26/karpos-downscaling/blob/main/CODE_OF_CONDUCT.md)
 
 ## Documentation
 

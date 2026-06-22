@@ -62,7 +62,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ### 2. Clone the repository
 
 ```bash
-git clone git@github.com:maurinl26/downscaling.git
+git clone git@github.com:maurinl26/karpos-downscaling.git
 cd downscaling
 ```
 
@@ -288,8 +288,8 @@ the metadata in `CITATION.cff` (forthcoming for the JOSS paper).
 ## Contact
 
 - **Project maintainer**: Loïc Maurin, [loic.maurin@karpos.pro](mailto:loic.maurin@karpos.pro)
-- **Issues and feature requests**: [GitHub issue tracker](https://github.com/maurinl26/downscaling/issues)
-- **Pull requests**: [GitHub PRs](https://github.com/maurinl26/downscaling/pulls)
+- **Issues and feature requests**: [GitHub issue tracker](https://github.com/maurinl26/karpos-downscaling/issues)
+- **Pull requests**: [GitHub PRs](https://github.com/maurinl26/karpos-downscaling/pulls)
 
 For discussion of methodology, results, or research collaborations, you are
 welcome to reach out by email.

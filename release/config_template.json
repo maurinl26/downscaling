@@ -33,7 +33,7 @@
   "release": {
     "version": "v1.0.0",
     "date": "2026-06-21",
-    "code_repo": "https://github.com/maurinl26/downscaling",
+    "code_repo": "https://github.com/maurinl26/karpos-downscaling",
     "license_weights": "CC-BY-4.0",
     "license_code": "Apache-2.0",
     "zenodo_doi": "10.5281/zenodo.20783563"

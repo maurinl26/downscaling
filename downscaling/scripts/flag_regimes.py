@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Classify each frost-flo night into a synoptic regime (rule-based on ERA5).
 
-C5.2 (issue maurinl26/downscaling#TBD). Sortie : un CSV par année avec un label
+C5.2 (issue maurinl26/karpos-downscaling#TBD). Sortie : un CSV par année avec un label
 de régime par nuit + les features synoptiques. Le label est ensuite consommé
 par `analyze_recalibrated_statistical.py --regimes-csv` pour stratifier POD/FAR.
 

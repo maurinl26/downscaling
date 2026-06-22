@@ -8,7 +8,7 @@
 
 ## Suite — backlog prioritaire
 
-- 🟠 **[#1](https://github.com/maurinl26/downscaling/issues/1) — Intégrer le vrai
+- 🟠 **[#1](https://github.com/maurinl26/karpos-downscaling/issues/1) — Intégrer le vrai
   modèle Prithvi WxC.** ✅ Backbone réel câblé + testé. ✅ **Pipeline d'entrée
   MERRA-2** (délègue à `Merra2Dataset` + `preproc` officiels via
   `merra2_input.py` ; testé bout-en-bout : échantillon brut → preproc → forward

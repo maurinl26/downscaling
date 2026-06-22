@@ -225,7 +225,7 @@ run-dl-inference \
 > (Approche 2 + calibration). Prithvi WxC est un prévisionniste **global ~50 km**,
 > plus grossier que CERRA (5,5 km) : il n'apporte pas de valeur sur la descente
 > d'échelle. Le code (backbone réel + entrée MERRA-2) reste isolé derrière l'extra
-> `prithvi`, réactivable pour de la recherche (cf. [issue #1](https://github.com/maurinl26/downscaling/issues/1),
+> `prithvi`, réactivable pour de la recherche (cf. [issue #1](https://github.com/maurinl26/karpos-downscaling/issues/1),
 > `docs/architecture.md` §6). **Pas de réinvestissement à court terme.**
 
 [Prithvi WxC](https://huggingface.co/Prithvi-WxC) (NASA/IBM, 2,3 B params) sert de

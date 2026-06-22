@@ -318,7 +318,7 @@ def main() -> int:
     # 2. Statistical pipeline (lapse-rate only ; QDM via joblib pré-calibré).
     # NB: l'ancien `pipe.calibrate(ref_ds, ref_ds)` était un placeholder cassé
     # (calibrait QDM sur elle-même, no-op). Remplacé par chargement joblib
-    # produit par `calibrate_qdm.py` (C4.1, issue maurinl26/downscaling#32).
+    # produit par `calibrate_qdm.py` (C4.1, issue maurinl26/karpos-downscaling#32).
     pipe = StatisticalDownscalingPipeline(
         dem_path=args.dem,
         obs_ref_path=None,

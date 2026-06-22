@@ -16,7 +16,7 @@ dewpoint depression).
 | **R4b Cloudy calm mild** | ≤ 3 | > 0.50 | ≤ 1020 hPa | Mild cloudy nights, frost limited |
 
 The classification is implemented in
-[`scripts/flag_regimes.py`](https://github.com/maurinl26/downscaling/blob/main/scripts/flag_regimes.py)
+[`scripts/flag_regimes.py`](https://github.com/maurinl26/karpos-downscaling/blob/main/scripts/flag_regimes.py)
 and consumed by `analyze_recalibrated_statistical.py` via the `--regimes-csv`
 option, which produces stratified POD/FAR/CSI/RMSE/bias metrics per regime.
 

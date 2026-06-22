@@ -62,7 +62,7 @@ We follow **coordinated disclosure**. We will:
 
 1. Confirm the vulnerability and develop a fix in a private branch
 2. Coordinate a disclosure date with the reporter
-3. Publish a [GitHub Security Advisory](https://github.com/maurinl26/downscaling/security/advisories)
+3. Publish a [GitHub Security Advisory](https://github.com/maurinl26/karpos-downscaling/security/advisories)
    with the fix released as a patch version
 4. Credit the reporter in the advisory (if they consent)
 
