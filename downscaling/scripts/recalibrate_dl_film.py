@@ -267,11 +267,22 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
     # (~167×118). On regridde x_met vers la résolution DEM par bilinéaire pour
     # que les deux channels partagent la même grille, indispensable au U-Net.
     import torch.nn.functional as F
-    dem_arr = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
-    H_fine, W_fine = dem_arr.shape
-    x_dem = torch.from_numpy(dem_arr).unsqueeze(0)  # (1, H, W)
-    log.info("Provider grids: DEM (%d, %d) | CERRA t2m yearly %s",
-             H_fine, W_fine, tuple(ds_cerra[t_var].shape))
+    # Stack all DEM vars (elevation, slope, aspect, curvature, svf, ...) en (C_dem, H, W).
+    # Chaque canal est z-scoré pour stabiliser l'entraînement (la curvature
+    # ~1e-3 sinon écrase tout si on garde l'élévation brute en mètres).
+    dem_vars = list(ds_dem.data_vars)
+    dem_channels = []
+    for v in dem_vars:
+        arr = ds_dem[v].values.astype(np.float32)
+        mean, std = float(np.nanmean(arr)), float(np.nanstd(arr))
+        if std < 1e-9:
+            std = 1.0
+        dem_channels.append(((arr - mean) / std).astype(np.float32))
+    dem_arr = np.stack(dem_channels, axis=0)   # (C_dem, H, W)
+    H_fine, W_fine = dem_arr.shape[1:]
+    x_dem = torch.from_numpy(dem_arr)          # (C_dem, H, W)
+    log.info("Provider grids: DEM (%d ch: %s) (%d, %d) | CERRA t2m yearly %s",
+             len(dem_vars), dem_vars, H_fine, W_fine, tuple(ds_cerra[t_var].shape))
 
     def provider(d: str) -> tuple[torch.Tensor, torch.Tensor]:
         slab = ds_cerra[t_var].sel(time=d, method="nearest")
@@ -354,7 +365,10 @@ def main() -> int:
 
     lat_grid = ds_dem["lat"].values if "lat" in ds_dem else ds_dem["latitude"].values
     lon_grid = ds_dem["lon"].values if "lon" in ds_dem else ds_dem["longitude"].values
-    dem_2d = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
+    # elevation_grid sert juste à calculer dz station↔maille (lookup, pas le model input).
+    elev_var = "elevation" if "elevation" in ds_dem.data_vars else next(iter(ds_dem.data_vars))
+    dem_2d = ds_dem[elev_var].values.astype(np.float32)
+    dem_in_ch = len(list(ds_dem.data_vars))
 
     # ---- FiLM conditioning vars (régime + ERA5 + saisonnalité) --------------
     cond_vars = {v.strip() for v in args.cond_vars.split(",") if v.strip()}
@@ -392,11 +406,12 @@ def main() -> int:
 
     # ---- Model + LightningModule --------------------------------------------
     model = build_model(
-        "unet", met_in_ch=1, dem_in_ch=1,
+        "unet", met_in_ch=1, dem_in_ch=dem_in_ch,
         base_ch=args.base_ch, n_levels=args.n_levels, use_film=True,
         cond_dim=cond_dim,
     )
-    log.info("U-Net: base_ch=%d, n_levels=%d, cond_dim=%d", args.base_ch, args.n_levels, cond_dim)
+    log.info("U-Net: base_ch=%d, n_levels=%d, dem_in_ch=%d, cond_dim=%d",
+             args.base_ch, args.n_levels, dem_in_ch, cond_dim)
     lit = UNetSparseCalibrationModule(
         model=model,
         target_channel=0,
