@@ -93,8 +93,55 @@ class _NightSample:
     obs_dz: torch.Tensor
 
 
+_REGIME_LABELS = ["R1", "R2", "R3", "R4a", "R4b"]   # ordre canonique (R0 = unknown, ignoré)
+_ERA5_FEATURES = ["wind_med", "tcc_med", "mslp_med", "dewpoint_dep_med"]
+
+
+def _build_cond_table(regimes_csv: str | Path, cond_vars: set[str]) -> tuple[dict[str, np.ndarray], int]:
+    """Construit ``{date_iso: cond_vec}`` à partir de ``regimes_<year>.csv``.
+
+    ``cond_vars`` sous-ensemble de {'regime', 'era5', 'season'}.
+    Retourne la table indexée par 'YYYY-MM-DD' et la dimension du vecteur.
+    """
+    cond_vars = set(cond_vars)
+    df = pd.read_csv(regimes_csv)
+    # Date column tolerant
+    date_col = next((c for c in ("date", "night_date", "valid_date") if c in df.columns), df.columns[0])
+    table: dict[str, np.ndarray] = {}
+    # Normalisation ERA5 (z-score sur l'ensemble du fichier — stable cross-année)
+    era5_means = {f: df[f].mean() for f in _ERA5_FEATURES if f in df.columns}
+    era5_stds = {f: df[f].std() if df[f].std() > 1e-6 else 1.0 for f in _ERA5_FEATURES if f in df.columns}
+    for _, row in df.iterrows():
+        parts: list[float] = []
+        if "regime" in cond_vars:
+            reg = str(row.get("regime", "R0"))
+            parts.extend([1.0 if reg == lbl else 0.0 for lbl in _REGIME_LABELS])
+        if "era5" in cond_vars:
+            for f in _ERA5_FEATURES:
+                if f in df.columns:
+                    val = (row[f] - era5_means[f]) / era5_stds[f] if pd.notna(row[f]) else 0.0
+                    parts.append(float(val))
+        if "season" in cond_vars:
+            try:
+                dt = pd.to_datetime(row[date_col])
+                doy = dt.dayofyear
+                parts.append(float(np.sin(2 * np.pi * doy / 365.25)))
+                parts.append(float(np.cos(2 * np.pi * doy / 365.25)))
+            except Exception:
+                parts.extend([0.0, 0.0])
+        d_iso = pd.to_datetime(row[date_col]).strftime("%Y-%m-%d")
+        table[d_iso] = np.array(parts, dtype=np.float32)
+    cond_dim = len(next(iter(table.values()))) if table else 0
+    return table, cond_dim
+
+
 class BulkSencropDataset(Dataset):
-    """Sample = 1 nuit. Lit Sencrop depuis le bulk root (URI s3:// possible)."""
+    """Sample = 1 nuit. Lit Sencrop depuis le bulk root (URI s3:// possible).
+
+    Si ``cond_table`` est fourni (cf. ``_build_cond_table``), chaque sample
+    expose un ``cond_vec`` (régime + ERA5 + saisonnalité) consommé par
+    ``DownscalingUNet`` via FiLM.
+    """
 
     def __init__(
         self,
@@ -106,6 +153,7 @@ class BulkSencropDataset(Dataset):
         elevation_grid: np.ndarray | None = None,
         min_stations: int = 5,
         lapse_rate: float = -6.5e-3,
+        cond_table: dict[str, np.ndarray] | None = None,
     ) -> None:
         self.coarse_provider = coarse_provider
         self.sencrop_root = sencrop_root
@@ -114,6 +162,7 @@ class BulkSencropDataset(Dataset):
         self.elevation_grid = elevation_grid
         self.min_stations = min_stations
         self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
+        self.cond_table = cond_table
 
         # Pre-filter to dates where the bulk has enough stations.
         kept = []
@@ -126,6 +175,10 @@ class BulkSencropDataset(Dataset):
                 continue
         self.dates = kept
         log.info("Dataset: %d/%d nights kept", len(kept), len(dates))
+        if cond_table is not None:
+            missing = [d for d in kept if d not in cond_table]
+            if missing:
+                log.warning("cond_table missing for %d/%d nights — will use zero vector", len(missing), len(kept))
 
     def __len__(self) -> int:
         return len(self.dates)
@@ -137,7 +190,7 @@ class BulkSencropDataset(Dataset):
         tmin, row, col, dz = night_station_targets(
             obs_qc, self.lat_grid, self.lon_grid, self.elevation_grid
         )
-        return {
+        sample = {
             "x_met": x_met,
             "x_dem": x_dem,
             "obs_tmin": torch.as_tensor(tmin, dtype=torch.float32),
@@ -146,6 +199,13 @@ class BulkSencropDataset(Dataset):
             "obs_dz": torch.as_tensor(dz, dtype=torch.float32),
             "date": d,
         }
+        if self.cond_table is not None:
+            cv = self.cond_table.get(d)
+            if cv is None:
+                # fallback : zero vector with the right dim
+                cv = np.zeros(len(next(iter(self.cond_table.values()))), dtype=np.float32)
+            sample["cond_vec"] = torch.as_tensor(cv, dtype=torch.float32)
+        return sample
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +324,12 @@ def main() -> int:
                         "observations. q<0.5 penalizes under-prediction of cold (missed frost) "
                         "more than over-prediction. Recommended for frost detection: q=0.1 "
                         "(misses cost ×9 false alarms). Issue #5.")
+    p.add_argument("--cond-vars", type=str, default="",
+                   help="Comma-separated FiLM conditioning vars: regime, era5, season. "
+                        "Empty = DEM-only (baseline). Requires --regimes-csv. Issue #5 item 4.")
+    p.add_argument("--regimes-csv", type=str, default=None,
+                   help="Path to regimes_all.csv (output of flag_regimes.py). "
+                        "Required when --cond-vars is non-empty.")
     p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("--smoke-test", action="store_true",
@@ -290,6 +356,18 @@ def main() -> int:
     lon_grid = ds_dem["lon"].values if "lon" in ds_dem else ds_dem["longitude"].values
     dem_2d = ds_dem[next(iter(ds_dem.data_vars))].values.astype(np.float32)
 
+    # ---- FiLM conditioning vars (régime + ERA5 + saisonnalité) --------------
+    cond_vars = {v.strip() for v in args.cond_vars.split(",") if v.strip()}
+    cond_table = None
+    cond_dim = 0
+    if cond_vars:
+        if not args.regimes_csv:
+            raise ValueError("--cond-vars requires --regimes-csv")
+        cond_table, cond_dim = _build_cond_table(args.regimes_csv, cond_vars)
+        log.info("FiLM conditioning : vars=%s, dim=%d", sorted(cond_vars), cond_dim)
+    else:
+        log.info("FiLM conditioning : DEM-only (baseline)")
+
     # ---- Dataset + DataModule -----------------------------------------------
     dataset = BulkSencropDataset(
         dates=dates,
@@ -299,6 +377,7 @@ def main() -> int:
         lon_grid=lon_grid,
         elevation_grid=dem_2d,
         min_stations=5,
+        cond_table=cond_table,
     )
     if len(dataset) == 0:
         log.error("No valid nights found — aborting")
@@ -315,8 +394,9 @@ def main() -> int:
     model = build_model(
         "unet", met_in_ch=1, dem_in_ch=1,
         base_ch=args.base_ch, n_levels=args.n_levels, use_film=True,
+        cond_dim=cond_dim,
     )
-    log.info("U-Net: base_ch=%d, n_levels=%d", args.base_ch, args.n_levels)
+    log.info("U-Net: base_ch=%d, n_levels=%d, cond_dim=%d", args.base_ch, args.n_levels, cond_dim)
     lit = UNetSparseCalibrationModule(
         model=model,
         target_channel=0,
@@ -412,6 +492,11 @@ def main() -> int:
                 "x_met": x_met.unsqueeze(0).to(inference_device),
                 "x_dem": x_dem.unsqueeze(0).to(inference_device),
             }
+            if cond_table is not None:
+                cv = cond_table.get(d)
+                if cv is None:
+                    cv = np.zeros(cond_dim, dtype=np.float32)
+                batch["cond_vec"] = torch.as_tensor(cv, dtype=torch.float32).unsqueeze(0).to(inference_device)
             pred = lit._predict_target(batch).squeeze().cpu().numpy()
             slab = xr.DataArray(
                 pred, dims=("latitude", "longitude"),
@@ -439,6 +524,8 @@ def main() -> int:
         "loss": "pinball" if args.loss_quantile is not None else "rmse",
         "loss_quantile": args.loss_quantile,
         "early_stopping_patience": args.early_stopping_patience,
+        "cond_vars": sorted(cond_vars) if cond_vars else [],
+        "cond_dim": cond_dim,
         "n_nights": len(dataset),
         "wandb_run_url": wandb_run_url,
     }

@@ -33,7 +33,7 @@ KELVIN = 273.15
 
 def unet_sparse_collate(samples: list[dict]) -> dict:
     """Collate batch=1 : empile les entrées denses, liste les obs sparse."""
-    return {
+    out = {
         "x_met": torch.stack([s["x_met"] for s in samples]),
         "x_dem": torch.stack([s["x_dem"] for s in samples]),
         "obs_tmin": [s["obs_tmin"] for s in samples],
@@ -42,6 +42,10 @@ def unet_sparse_collate(samples: list[dict]) -> dict:
         "obs_dz": [s.get("obs_dz") for s in samples],
         "date": [s["date"] for s in samples],
     }
+    # FiLM conditioning scalaire (régime + ERA5 + saisonnalité), optionnel
+    if samples and samples[0].get("cond_vec") is not None:
+        out["cond_vec"] = torch.stack([s["cond_vec"] for s in samples])
+    return out
 
 
 class UNetSparseCalibrationModule(pl.LightningModule):
@@ -97,14 +101,23 @@ class UNetSparseCalibrationModule(pl.LightningModule):
     def _predict_target(self, batch) -> torch.Tensor:
         """Champ cible 1 km ``(1, 1, H, W)`` — descente horaire + réduction si ``hourly``."""
         c = self.target_channel
+        cond_vec = batch.get("cond_vec")  # (B, cond_dim) ou None
         if self.hourly:
             # x_met : (1, T, C, H, W) → descente d'échelle heure par heure.
             xm = batch["x_met"][0]                              # (T, C, H, W)
             xd = batch["x_dem"].expand(xm.shape[0], -1, -1, -1)  # (T, C_dem, H, W)
-            series = self.model(xm, xd)[:, c]                   # (T, H, W)
+            if cond_vec is not None:
+                # broadcast (B=1, cond_dim) → (T, cond_dim) pour chaque step
+                cv = cond_vec.expand(xm.shape[0], -1) if cond_vec.dim() == 2 else cond_vec
+                series = self.model(xm, xd, cv)[:, c]
+            else:
+                series = self.model(xm, xd)[:, c]               # (T, H, W)
             pred = self._reduce_time(series)[None, None]        # (1, 1, H, W)
         else:
-            pred = self(batch["x_met"], batch["x_dem"])[:, c:c + 1]  # (1, 1, H, W)
+            if cond_vec is not None:
+                pred = self.model(batch["x_met"], batch["x_dem"], cond_vec)[:, c:c + 1]
+            else:
+                pred = self(batch["x_met"], batch["x_dem"])[:, c:c + 1]  # (1, 1, H, W)
         # La sortie du U-Net est en espace NORMALISÉ (z-score des stats d'entraînement).
         # Dénormaliser → °C (les cibles d'entraînement sont en °C). À défaut de stats,
         # repli historique : soustraction Kelvin (suppose une sortie physique en K).

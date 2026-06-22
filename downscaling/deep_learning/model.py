@@ -86,8 +86,10 @@ class FiLMLayer(nn.Module):
     """
     Feature-wise Linear Modulation.
 
-    Génère les paramètres de modulation (γ, β) depuis les features DEM,
-    puis applique y = γ · x + β aux features météo.
+    Génère les paramètres de modulation (γ, β) depuis les features DEM
+    (poolées spatialement) **et** un vecteur scalaire optionnel ``cond_vec``
+    (régime synoptique, features ERA5, saisonnalité…). Le vecteur est
+    concaténé au vecteur DEM avant le MLP qui produit (γ, β).
 
     Parameters
     ----------
@@ -95,26 +97,48 @@ class FiLMLayer(nn.Module):
         Nombre de canaux DEM en entrée.
     met_ch:
         Nombre de canaux météo à moduler (= out_ch du bloc encoder correspondant).
+    cond_dim:
+        Taille du vecteur scalaire de conditioning optionnel. 0 → pas de
+        cond_vec attendu (comportement historique).
     """
 
-    def __init__(self, dem_ch: int, met_ch: int):
+    def __init__(self, dem_ch: int, met_ch: int, cond_dim: int = 0):
         super().__init__()
         hidden = max(met_ch, 32)
-        self.fc = nn.Sequential(
+        self.cond_dim = cond_dim
+        self.pool = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),   # pooling spatial → vecteur
             nn.Flatten(),
-            nn.Linear(dem_ch, hidden),
+        )
+        self.mlp = nn.Sequential(
+            nn.Linear(dem_ch + cond_dim, hidden),
             nn.ReLU(inplace=True),
             nn.Linear(hidden, 2 * met_ch),  # [γ, β] concaténés
         )
         # Init : γ=1, β=0 (identité)
-        nn.init.zeros_(self.fc[-1].weight)
-        nn.init.constant_(self.fc[-1].bias[:met_ch], 1.0)   # γ
-        nn.init.zeros_(self.fc[-1].bias[met_ch:])            # β
+        nn.init.zeros_(self.mlp[-1].weight)
+        nn.init.constant_(self.mlp[-1].bias[:met_ch], 1.0)   # γ
+        nn.init.zeros_(self.mlp[-1].bias[met_ch:])            # β
 
-    def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x_met: torch.Tensor,
+        x_dem: torch.Tensor,
+        cond_vec: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         B, C, H, W = x_met.shape
-        params = self.fc(x_dem)           # (B, 2C)
+        dem_pooled = self.pool(x_dem)     # (B, dem_ch)
+        if self.cond_dim > 0:
+            if cond_vec is None:
+                raise ValueError(f"FiLMLayer initialised with cond_dim={self.cond_dim} but no cond_vec passed")
+            if cond_vec.dim() == 1:
+                cond_vec = cond_vec.unsqueeze(0)  # (cond_dim,) → (1, cond_dim)
+            if cond_vec.shape[-1] != self.cond_dim:
+                raise ValueError(f"cond_vec last dim {cond_vec.shape[-1]} != expected {self.cond_dim}")
+            features = torch.cat([dem_pooled, cond_vec.to(dem_pooled)], dim=-1)
+        else:
+            features = dem_pooled
+        params = self.mlp(features)           # (B, 2C)
         gamma = params[:, :C].view(B, C, 1, 1)
         beta = params[:, C:].view(B, C, 1, 1)
         return gamma * x_met + beta
@@ -209,10 +233,12 @@ class DownscalingUNet(nn.Module):
         base_ch: int = 64,
         n_levels: int = 4,
         use_film: bool = True,
+        cond_dim: int = 0,
     ):
         super().__init__()
         self.n_levels = n_levels
         self.use_film = use_film
+        self.cond_dim = cond_dim
         met_out_ch = met_out_ch or met_in_ch
 
         # ---- Encodeur DEM ------------------------------------------------
@@ -239,7 +265,7 @@ class DownscalingUNet(nn.Module):
         if use_film:
             dem_channels = [base_ch // 2 * (2 ** i) for i in range(n_levels)]
             self.film_layers = nn.ModuleList([
-                FiLMLayer(dem_ch, met_ch)
+                FiLMLayer(dem_ch, met_ch, cond_dim=cond_dim)
                 for dem_ch, met_ch in zip(dem_channels, self.enc_channels, strict=False)
             ])
 
@@ -260,7 +286,12 @@ class DownscalingUNet(nn.Module):
         # ---- Tête de sortie -----------------------------------------------
         self.head = nn.Conv2d(base_ch, met_out_ch, 1)
 
-    def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x_met: torch.Tensor,
+        x_dem: torch.Tensor,
+        cond_vec: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Parameters
         ----------
@@ -268,6 +299,10 @@ class DownscalingUNet(nn.Module):
             Champs météo basse résolution (B, C_met, H, W).
         x_dem:
             Attributs MNT haute résolution (B, C_dem, H, W).
+        cond_vec:
+            Vecteur scalaire de conditioning optionnel (B, cond_dim) ou
+            (cond_dim,). Concaténé au vecteur DEM poolé avant le MLP FiLM.
+            Requis si le modèle a été construit avec cond_dim > 0.
 
         Returns
         -------
@@ -282,7 +317,7 @@ class DownscalingUNet(nn.Module):
         for i, (enc, dem_f) in enumerate(zip(self.met_encoders, dem_feats, strict=False)):
             x = enc(x)
             if self.use_film:
-                x = self.film_layers[i](x, dem_f)
+                x = self.film_layers[i](x, dem_f, cond_vec=cond_vec)
             enc_feats.append(x)
             if i < self.n_levels - 1:
                 x = self.met_pools[i](x)
@@ -346,6 +381,7 @@ def build_model(
     base_ch: int = 64,
     n_levels: int = 4,
     use_film: bool = True,
+    cond_dim: int = 0,
 ) -> nn.Module:
     """Construct a downscaling model with the requested architecture.
 
@@ -393,6 +429,7 @@ def build_model(
             base_ch=base_ch,
             n_levels=n_levels,
             use_film=use_film,
+            cond_dim=cond_dim,
         )
     elif architecture == "srcnn":
         model = LightSRCNN(met_in_ch=met_in_ch, dem_in_ch=dem_in_ch)
