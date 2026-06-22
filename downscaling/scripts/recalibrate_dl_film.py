@@ -94,13 +94,22 @@ class _NightSample:
 
 
 _REGIME_LABELS = ["R1", "R2", "R3", "R4a", "R4b"]   # ordre canonique (R0 = unknown, ignoré)
-_ERA5_FEATURES = ["wind_med", "tcc_med", "mslp_med", "dewpoint_dep_med"]
+# Synoptique large (vent / nuages / pression / température)
+_ERA5_FEATURES = ["wind_med", "tcc_med", "mslp_med", "t2m_med"]
+# Hygrométrie (déficit Td, point de rosée, RH, extrêmes)
+_HYGRO_FEATURES = ["dewpoint_dep_med", "d2m_med", "rh_med", "dewpoint_dep_min", "rh_min"]
 
 
 def _build_cond_table(regimes_csv: str | Path, cond_vars: set[str]) -> tuple[dict[str, np.ndarray], int]:
     """Construit ``{date_iso: cond_vec}`` à partir de ``regimes_<year>.csv``.
 
-    ``cond_vars`` sous-ensemble de {'regime', 'era5', 'season'}.
+    ``cond_vars`` sous-ensemble de {'regime', 'era5', 'hygro', 'season'}.
+
+    - 'regime' : one-hot 5 dim (R1, R2, R3, R4a, R4b) — R0 = zéros
+    - 'era5'   : 4 features synoptiques (wind, tcc, mslp, t2m médianes) z-scorées
+    - 'hygro'  : 5 features hygrométrie (dewpoint dep med/min, d2m med, rh med/min) z-scorées
+    - 'season' : sin/cos day-of-year
+
     Retourne la table indexée par 'YYYY-MM-DD' et la dimension du vecteur.
     """
     cond_vars = set(cond_vars)
@@ -108,9 +117,10 @@ def _build_cond_table(regimes_csv: str | Path, cond_vars: set[str]) -> tuple[dic
     # Date column tolerant
     date_col = next((c for c in ("date", "night_date", "valid_date") if c in df.columns), df.columns[0])
     table: dict[str, np.ndarray] = {}
-    # Normalisation ERA5 (z-score sur l'ensemble du fichier — stable cross-année)
-    era5_means = {f: df[f].mean() for f in _ERA5_FEATURES if f in df.columns}
-    era5_stds = {f: df[f].std() if df[f].std() > 1e-6 else 1.0 for f in _ERA5_FEATURES if f in df.columns}
+    # Normalisation continues (z-score sur l'ensemble du fichier — stable cross-année)
+    continuous = (_ERA5_FEATURES if "era5" in cond_vars else []) + (_HYGRO_FEATURES if "hygro" in cond_vars else [])
+    means = {f: df[f].mean() for f in continuous if f in df.columns}
+    stds = {f: df[f].std() if df[f].std() > 1e-6 else 1.0 for f in continuous if f in df.columns}
     for _, row in df.iterrows():
         parts: list[float] = []
         if "regime" in cond_vars:
@@ -119,7 +129,12 @@ def _build_cond_table(regimes_csv: str | Path, cond_vars: set[str]) -> tuple[dic
         if "era5" in cond_vars:
             for f in _ERA5_FEATURES:
                 if f in df.columns:
-                    val = (row[f] - era5_means[f]) / era5_stds[f] if pd.notna(row[f]) else 0.0
+                    val = (row[f] - means[f]) / stds[f] if pd.notna(row[f]) else 0.0
+                    parts.append(float(val))
+        if "hygro" in cond_vars:
+            for f in _HYGRO_FEATURES:
+                if f in df.columns:
+                    val = (row[f] - means[f]) / stds[f] if pd.notna(row[f]) else 0.0
                     parts.append(float(val))
         if "season" in cond_vars:
             try:
@@ -336,7 +351,7 @@ def main() -> int:
                         "more than over-prediction. Recommended for frost detection: q=0.1 "
                         "(misses cost ×9 false alarms). Issue #5.")
     p.add_argument("--cond-vars", type=str, default="",
-                   help="Comma-separated FiLM conditioning vars: regime, era5, season. "
+                   help="Comma-separated FiLM conditioning vars: regime, era5, hygro, season. "
                         "Empty = DEM-only (baseline). Requires --regimes-csv. Issue #5 item 4.")
     p.add_argument("--regimes-csv", type=str, default=None,
                    help="Path to regimes_all.csv (output of flag_regimes.py). "

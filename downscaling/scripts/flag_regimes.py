@@ -114,6 +114,14 @@ def _night_features(
     d2m = sub["d2m"].values
     dewpoint_dep = t2m - d2m  # K (proxy clear-sky)
 
+    # Humidité relative depuis t2m et d2m (formule Magnus, valide -45..+60 °C).
+    # e_s(T) = 6.112 * exp(17.62 * T_c / (243.12 + T_c)) en hPa
+    t2m_c = t2m - 273.15
+    d2m_c = d2m - 273.15
+    es_t = 6.112 * np.exp(17.62 * t2m_c / (243.12 + t2m_c))
+    es_td = 6.112 * np.exp(17.62 * d2m_c / (243.12 + d2m_c))
+    rh = np.clip(es_td / np.where(es_t > 0, es_t, np.nan), 0.0, 1.0)
+
     features = {
         "wind_med": float(np.nanmedian(wind)),
         "wind_dir_med": _circular_median_dir(wind_dir),
@@ -121,6 +129,11 @@ def _night_features(
         "mslp_med": float(np.nanmedian(msl)),
         "dewpoint_dep_med": float(np.nanmedian(dewpoint_dep)),
         "t2m_med": float(np.nanmedian(t2m)),
+        # Hygrométrie enrichie (issue #5 — variables FiLM hygro)
+        "d2m_med": float(np.nanmedian(d2m)),                              # Td (K) — borne inf gel
+        "rh_med": float(np.nanmedian(rh)),                                 # humidité relative (0-1)
+        "dewpoint_dep_min": float(np.nanmin(dewpoint_dep)),               # plus sec moment de la nuit
+        "rh_min": float(np.nanmin(rh)),                                    # plus sec moment de la nuit
     }
 
     # Proxy inversion : T850 - T2m, médiane sur la nuit
