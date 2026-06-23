@@ -341,6 +341,109 @@ class DownscalingUNet(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Wrapper multi-quantile (CQR — karpos-downscaling#65)
+# ---------------------------------------------------------------------------
+
+class MultiQuantileUNet(nn.Module):
+    """U-Net FiLM avec sortie multi-quantile pour Conformalized Quantile Regression.
+
+    Encapsule un ``DownscalingUNet`` (backbone partagé) et remplace la
+    tête de sortie 1x1 par K têtes parallèles, une par niveau de quantile
+    (typiquement tau=0.05, tau=0.50, tau=0.95). C'est le wrapper utilisé
+    par la pipeline CQR (Romano, Patterson, Candès 2019) implémentée
+    dans ``downscaling.validation.conformal``.
+
+    Choix design (minimal pour le scaffolding) :
+    - **3 têtes parallèles** plutôt que single-head + quantile embedding :
+      training plus simple, pas de bug de cross-coupling, coût négligeable
+      (K * Conv1x1 sur ``base_ch`` canaux).
+    - **Pas de monotonicity layer** : on accepte le risque de quantile
+      crossing pendant le scaffolding ; le post-tri (par pixel) sera
+      ajouté au moment du training si nécessaire (Chernozhukov,
+      Fernandez-Val, Galichon 2010).
+    - **Backbone réutilisé** : ``self.backbone`` est un
+      ``DownscalingUNet`` complet, dont on remplace seulement la tête
+      finale par ``nn.Identity()`` pour récupérer les features décodées
+      à ``base_ch`` canaux et y brancher les K têtes.
+
+    Parameters
+    ----------
+    quantiles : sequence of float
+        Niveaux de quantile à prédire. Tous dans ``(0, 1)``, triés en
+        ordre croissant.
+    met_in_ch, dem_in_ch, base_ch, n_levels, use_film, cond_dim, met_out_ch:
+        Voir ``DownscalingUNet``. ``met_out_ch`` est le nombre de
+        canaux météo produits *par tête* (typiquement 1 = Tmin).
+
+    Forward
+    -------
+    Renvoie ``dict[float, torch.Tensor]`` : un tenseur ``(B, met_out_ch,
+    H, W)`` par niveau de quantile. Branché tel quel sur
+    ``downscaling.validation.conformal.multi_quantile_loss``.
+    """
+
+    def __init__(
+        self,
+        quantiles: tuple[float, ...] = (0.05, 0.50, 0.95),
+        met_in_ch: int = 5,
+        met_out_ch: int = 1,
+        dem_in_ch: int = 4,
+        base_ch: int = 64,
+        n_levels: int = 4,
+        use_film: bool = True,
+        cond_dim: int = 0,
+    ):
+        super().__init__()
+        if not quantiles:
+            raise ValueError("quantiles must be non-empty")
+        if any(not (0.0 < q < 1.0) for q in quantiles):
+            raise ValueError(f"all quantiles must lie in (0, 1), got {quantiles}")
+        if list(quantiles) != sorted(quantiles):
+            raise ValueError(f"quantiles must be sorted ascending, got {quantiles}")
+        self.quantiles = tuple(quantiles)
+
+        # Backbone : on construit un U-Net standard puis on désactive sa
+        # head finale (Conv1x1 base_ch -> met_out_ch) pour la remplacer
+        # par K têtes parallèles. On garde la même Conv1x1 par tête pour
+        # rester iso-paramètres par sortie.
+        self.backbone = DownscalingUNet(
+            met_in_ch=met_in_ch,
+            met_out_ch=base_ch,  # placeholder, écrasé juste après
+            dem_in_ch=dem_in_ch,
+            base_ch=base_ch,
+            n_levels=n_levels,
+            use_film=use_film,
+            cond_dim=cond_dim,
+        )
+        # On veut les features pré-head ; on remplace la head par identité
+        # puis on lit ``base_ch`` canaux à la sortie.
+        self.backbone.head = nn.Identity()
+
+        self.heads = nn.ModuleDict({
+            self._key(q): nn.Conv2d(base_ch, met_out_ch, 1)
+            for q in self.quantiles
+        })
+
+    @staticmethod
+    def _key(q: float) -> str:
+        # ModuleDict keys must be str et ne peuvent pas contenir de '.'
+        # (PyTorch refuse). On encode tau=0.05 → "q050" (3 décimales x1000).
+        return f"q{int(round(q * 1000)):03d}"
+
+    def forward(
+        self,
+        x_met: torch.Tensor,
+        x_dem: torch.Tensor,
+        cond_vec: torch.Tensor | None = None,
+    ) -> dict[float, torch.Tensor]:
+        feats = self.backbone(x_met, x_dem, cond_vec=cond_vec)  # (B, base_ch, H, W)
+        return {q: self.heads[self._key(q)](feats) for q in self.quantiles}
+
+    def count_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+# ---------------------------------------------------------------------------
 # Variante légère : SRCNN conditionné (pour test rapide)
 # ---------------------------------------------------------------------------
 
