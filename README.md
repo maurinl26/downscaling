@@ -133,7 +133,6 @@ Installés par `uv sync` / `pip install` (cf. `[project.scripts]`) :
 | `run-dl-train` | Entraînement U-Net FiLM (Lightning) |
 | `run-dl-inference` | Inférence U-Net sur nouvelles données |
 | `run-calibration` | Calibration sparse U-Net sur capteurs (CERRA → 1 km → Sencrop) |
-| `run-campaign` | Campagne multi-saisons (stat + détection) |
 | `fetch-pretrained` | Pré-télécharge les poids Prithvi WxC → `modelstore/` |
 | `launch-dl-job` | Lance un pod GPU RunPod |
 | `run-on-mac` | Inférence / QC locale Apple MPS |
@@ -270,7 +269,7 @@ Le loader cherche `modelstore/` d'abord, puis retombe sur HuggingFace.
 uv sync                      # pipeline statistique (CPU) seul
 uv sync --extra dl           # + deep learning (torch, lightning)
 uv sync --extra prithvi      # + Prithvi WxC (huggingface_hub, safetensors)
-uv sync --extra all          # tout (stat + dl + prithvi + pmap)
+uv sync --extra all          # tout (stat + dl + prithvi + docs)
 ```
 
 L'environnement est **verrouillé** (`uv.lock`) : `uv sync` est reproductible.

@@ -76,7 +76,6 @@ scientific stages:
 | `statistical` | `scikit-learn`, `elevation`, `dask` | Lapse-rate + QDM + RBF Sencrop pipeline |
 | `dl` | `torch`, `pytorch-lightning`, `wandb` | U-Net FiLM deep-learning pipeline |
 | `prithvi` | `prithviwxc` | NASA/IBM foundation model fine-tuning |
-| `pmap` | `pmap` | LES dynamical model integration |
 | `viz` | `matplotlib`, `cartopy`, `jupyter` | Plotting and notebooks |
 | `regrid` | `xesmf` | Conservative regridding |
 | `all` | everything above | Full development setup |

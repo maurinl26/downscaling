@@ -36,13 +36,13 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 | Dimension | État | Détail |
 |---|---|---|
 | Layout package | ✅ bon | `downscaling/` installable, sous-modules clairs, 0 notebook, 34 `.py` |
-| Build/deps | ✅ bon | Build piloté par uv (`uv build`, backend `setuptools`, `[tool.uv] package`) ; extras propres (`statistical`/`dl`/`prithvi`/`pmap`) ; 6 console_scripts résolus |
+| Build/deps | ✅ bon | Build piloté par uv (`uv build`, backend `setuptools`, `[tool.uv] package`) ; extras propres (`statistical`/`dl`/`prithvi`) ; console_scripts résolus |
 | Configuration | 🔴 manque | `argparse` dans **10** fichiers + **1 YAML monolithique** (`config/drome_ardeche.yml`). Pas de Hydra/OmegaConf. Ajouter une région = copier tout le fichier |
 | Boucle d'entraînement | 🔴 manque | Boucle torch **manuelle** (`deep_learning/train.py` : SpectralLoss, warmup+cosine, early stopping, best-ckpt, tensorboard — tout réinventé). Pas de Lightning |
 | Tests | 🔴 **absent** | **Aucun** dossier `tests/`, 0 test. Produit propriétaire sans filet |
 | Tracking | ✅ présent | MLflow (`MLFLOW_TRACKING_URI`) câblé dans les jobs |
 | Infra compute | ✅ mûr | RunPod via Terraform (`.github/workflows/deploy-runpod-infra.yml`), `launch_dl_job.py`, split Mac/MPS (`run_on_mac.py`) vs cloud |
-| Modèles | 🟡 hétérogène | U-Net FiLM maison (`nn.Module`, portable Lightning) + Prithvi WxC (foundation NASA/IBM, checkpoints à charger) + PMAP-LES (JAX, hors-stack) |
+| Modèles | 🟡 hétérogène | U-Net FiLM maison (`nn.Module`, portable Lightning) + Prithvi WxC (foundation NASA/IBM, checkpoints à charger) |
 
 ---
 
@@ -77,8 +77,9 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 - **Pipeline statistique** (lapse-rate + QDM, `statistical/`) : pas un réseau de
   neurones → **pas de Lightning**. Hydra pour la config oui, mais la logique reste
   numpy/scipy/sklearn. Ne pas tordre en `LightningModule`.
-- **PMAP-LES** (JAX + GT4Py + PHYEX, extra `pmap`) : stack totalement distincte.
-  L'infra torch/Lightning ne s'y applique pas. Garder isolé derrière son extra.
+- **PMAP-LES** (JAX + GT4Py + PHYEX) : ancienne intégration retirée du repo
+  (cf. PR cleanup). L'infra torch/Lightning ne s'y appliquait pas de toute
+  façon. Si réactivation un jour, repartir d'une stack séparée.
 - **Indices d'assurance** (`shared/indices.py` : `spring_frost_index`,
   `frost_hours`, `growing_degree_days`, `heatwave_index`…) : logique métier xarray,
   pure et bien isolée. **Ne pas mélanger** à l'infra ML — juste la couvrir de tests
@@ -104,8 +105,7 @@ Caveats importants — tout ne se transpose pas (cf. §« Ne s'applique pas »).
 > `quantile_mapping.py`, ajout de `_mod_ppf`) découvert en écrivant les tests.
 
 ### Phase 1 — uv + packaging ✅ terminée
-- [x] Figer `uv.lock` (généré par `uv sync`). URL git `pmap` corrigée en forme
-      `ssh://` (la forme SCP `git@github.com:` n'est pas parsée par uv).
+- [x] Figer `uv.lock` (généré par `uv sync`).
 - [x] Build piloté par uv : `uv build --wheel` produit
       `downscaling-*.whl` (build-backend `setuptools`, `[tool.uv] package = true`),
       extras conservés. Les 6 `console_scripts` sont bien embarqués dans le wheel.

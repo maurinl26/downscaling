@@ -41,7 +41,6 @@ scientific pipelines and use cases:
 | `statistical` | `scikit-learn`, `elevation`, `dask` | Lapse-rate + QDM + RBF Sencrop pipeline. **Required for the statistical downscaling**. |
 | `dl` | `torch`, `pytorch-lightning`, `wandb` | Deep-learning pipeline (U-Net + FiLM conditioning). |
 | `prithvi` | `prithviwxc` | NASA/IBM Prithvi WxC foundation model fine-tuning. |
-| `pmap` | `pmap` (git source) | PMAP-LES dynamical model integration (advanced). |
 | `viz` | `matplotlib`, `cartopy`, `jupyter` | Plotting, notebooks. |
 | `regrid` | `xesmf` | Conservative regridding to non-rectilinear grids. |
 | `docs` | `sphinx`, `myst-parser`, `sphinx-rtd-theme`, `sphinxcontrib-bibtex`, `sphinx-autodoc-typehints` | Build this documentation locally. |

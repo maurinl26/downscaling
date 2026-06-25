@@ -32,7 +32,7 @@ jobs:
           enable-cache: true
 
       # Pipeline statistique (sklearn) + groupe dev (pytest). Pas d'extra dl /
-      # prithvi / pmap : la suite Phase 0 ne dépend pas de torch ni de JAX.
+      # prithvi : la suite Phase 0 ne dépend pas de torch ni du foundation model.
       - name: Sync dependencies
         run: uv sync --extra statistical
 
