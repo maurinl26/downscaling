@@ -32,23 +32,24 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constantes Netatmo (Coney et al. 2022, lab experiments)
 # ---------------------------------------------------------------------------
-TAU_SECONDS = 762.0          # Constante de temps capteur (τ = 12.7 min)
-SENSOR_ACCURACY_K = 0.3      # Précision intrinsèque ±0.3°C
-LAPSE_RATE_DEFAULT = -6.5e-3 # K/m (gradient atmosphérique standard)
+TAU_SECONDS = 762.0  # Constante de temps capteur (τ = 12.7 min)
+SENSOR_ACCURACY_K = 0.3  # Précision intrinsèque ±0.3°C
+LAPSE_RATE_DEFAULT = -6.5e-3  # K/m (gradient atmosphérique standard)
 
 # Plages climatologiques nocturnes Drôme/Ardèche (oct–mai)
-T_MIN_PLAUSIBLE_C = -20.0    # °C — gel extrême (record Drôme : -18°C)
-T_MAX_PLAUSIBLE_C = 25.0     # °C — nuit la plus chaude du printems
+T_MIN_PLAUSIBLE_C = -20.0  # °C — gel extrême (record Drôme : -18°C)
+T_MAX_PLAUSIBLE_C = 25.0  # °C — nuit la plus chaude du printems
 
 # Buddy check
-BUDDY_RADIUS_M = 15_000      # 15 km de rayon de recherche
-MIN_BUDDIES = 3              # Nombre minimum de voisins requis
+BUDDY_RADIUS_M = 15_000  # 15 km de rayon de recherche
+MIN_BUDDIES = 3  # Nombre minimum de voisins requis
 BUDDY_SIGMA_THRESHOLD = 4.0  # Seuil en sigma pour rejet (conservateur la nuit)
 
 
 # ---------------------------------------------------------------------------
 # Structure de données
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class NetatmoObs:
@@ -63,11 +64,12 @@ class NetatmoObs:
         times:       Index temporel (heures)
         qc_flags:    Masque booléen (True = valide), shape (n_stations, n_hours)
     """
-    station_id: np.ndarray           # (n,)
-    lat: np.ndarray                  # (n,)
-    lon: np.ndarray                  # (n,)
-    elevation_m: np.ndarray          # (n,)
-    t_raw: np.ndarray                # (n, t) en °C
+
+    station_id: np.ndarray  # (n,)
+    lat: np.ndarray  # (n,)
+    lon: np.ndarray  # (n,)
+    elevation_m: np.ndarray  # (n,)
+    t_raw: np.ndarray  # (n, t) en °C
     times: pd.DatetimeIndex
     qc_flags: np.ndarray = field(init=False)
 
@@ -94,6 +96,7 @@ class NetatmoObs:
 # Pipeline QC
 # ---------------------------------------------------------------------------
 
+
 class NetatmoNocturnalQC:
     """
     Contrôle qualité Netatmo optimisé pour les nuits de gel.
@@ -108,7 +111,7 @@ class NetatmoNocturnalQC:
     def __init__(
         self,
         lapse_rate: float = LAPSE_RATE_DEFAULT,
-        reference_elevation_m: float = 200.0,   # Altitude de référence Drôme
+        reference_elevation_m: float = 200.0,  # Altitude de référence Drôme
         buddy_radius_m: float = BUDDY_RADIUS_M,
         buddy_sigma: float = BUDDY_SIGMA_THRESHOLD,
         correct_tau: bool = True,
@@ -218,10 +221,12 @@ class NetatmoNocturnalQC:
         lat_rad = np.radians(np.mean(obs.lat))
         cos_lat = np.cos(lat_rad)
 
-        xy = np.column_stack([
-            obs.lon * cos_lat * 111_320,  # m
-            obs.lat * 111_320,
-        ])
+        xy = np.column_stack(
+            [
+                obs.lon * cos_lat * 111_320,  # m
+                obs.lat * 111_320,
+            ]
+        )
         tree = cKDTree(xy)
 
         for t_idx in range(t_normalized.shape[1]):
@@ -257,6 +262,7 @@ class NetatmoNocturnalQC:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def tmin_nocturnal(obs: NetatmoObs) -> pd.Series:
     """
     Calcule Tmin nocturne par station à partir des observations QC'd.
@@ -287,8 +293,10 @@ def load_netatmo_parquet(
 
     if bbox:
         df = df[
-            (df["lat"] >= bbox["lat_min"]) & (df["lat"] <= bbox["lat_max"]) &
-            (df["lon"] >= bbox["lon_min"]) & (df["lon"] <= bbox["lon_max"])
+            (df["lat"] >= bbox["lat_min"])
+            & (df["lat"] <= bbox["lat_max"])
+            & (df["lon"] >= bbox["lon_min"])
+            & (df["lon"] <= bbox["lon_max"])
         ]
 
     if df.empty:

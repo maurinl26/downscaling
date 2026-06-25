@@ -41,24 +41,30 @@ def create_dummy_dem(domain_cfg, out_path="dummy_dem.nc"):
         dims=["y", "x"],
         coords={
             "lat": (["y", "x"], np.repeat(lats[:, None], nx, axis=1)),
-            "lon": (["y", "x"], np.repeat(lons[None, :], ny, axis=0))
+            "lon": (["y", "x"], np.repeat(lons[None, :], ny, axis=0)),
         },
         name="elevation",
-        attrs={"units": "m", "long_name": "elevation", "source": "dummy"}
+        attrs={"units": "m", "long_name": "elevation", "source": "dummy"},
     )
     da.to_netcdf(out_path)
     return out_path
 
+
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--override", nargs="*", default=[],
-                   help="Overrides Hydra (ex: statistical.quantile_mapping.enabled=false)")
+    p.add_argument(
+        "--override",
+        nargs="*",
+        default=[],
+        help="Overrides Hydra (ex: statistical.quantile_mapping.enabled=false)",
+    )
     p.add_argument("--era5land-dir", default="../data/raw/era5land/2m_temperature/")
     p.add_argument("--dem", default=None, help="Path to DEM file. If None, uses dummy_dem.nc")
     p.add_argument("--out-dir", default="../output/era5land_downscaled/")
     p.add_argument("--compute-indices", action="store_true", default=True)
     p.add_argument("-v", "--verbose", action="store_true", default=True)
     return p.parse_args()
+
 
 def main():
     args = parse_args()
@@ -77,14 +83,16 @@ def main():
 
     dem_path = args.dem
     if not dem_path or not Path(dem_path).exists():
-        log.warning("DEM file not found or not provided. Generating a dummy DEM at dummy_dem.nc. LAPSE RATE CORRECTION WILL BE ZEROED.")
+        log.warning(
+            "DEM file not found or not provided. Generating a dummy DEM at dummy_dem.nc. LAPSE RATE CORRECTION WILL BE ZEROED."
+        )
         dem_path = create_dummy_dem(cfg.get("domain", {}), "dummy_dem.nc")
 
     pipeline = StatisticalDownscalingPipeline(
         dem_path=dem_path,
         obs_ref_path=None,
         lapse_rate=gamma,
-        use_qdm=False, # QDM requires reference data, typically we don't have it for ERA5-Land
+        use_qdm=False,  # QDM requires reference data, typically we don't have it for ERA5-Land
     )
 
     out_dir = Path(args.out_dir)
@@ -117,7 +125,7 @@ def main():
 
         ds_out = pipeline.run(
             source=ds_source,
-            variables=["t2m"], # Only temperature for frost
+            variables=["t2m"],  # Only temperature for frost
         )
 
         out_path = out_dir / f"stat_downscaled_era5land_{file_path.stem}.nc"
@@ -131,7 +139,7 @@ def main():
             ds_idx = compute_all_indices(
                 ds_out,
                 unit_tp=idx_cfg.get("unit_tp", "m"),
-                freq="MS", # Monthly computation since file is monthly
+                freq="MS",  # Monthly computation since file is monthly
             )
             idx_path = out_dir / f"frost_indices_era5land_{file_path.stem}.nc"
             # We are interested in frost
@@ -140,6 +148,7 @@ def main():
 
         # Break after processing the first file for rapid testing
         break
+
 
 if __name__ == "__main__":
     main()

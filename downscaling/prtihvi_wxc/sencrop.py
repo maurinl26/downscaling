@@ -66,9 +66,9 @@ PART_GLOB = "part-*.csv"
 
 # Colonnes time-series attendues dans le bulk
 TIMESERIES_COLUMNS = (
-    "station_id",          # join key → stations_integrated.csv:bucket_id
-    "timestamp",           # ISO8601 UTC
-    "temperature",         # °C
+    "station_id",  # join key → stations_integrated.csv:bucket_id
+    "timestamp",  # ISO8601 UTC
+    "temperature",  # °C
     "temperature_source",  # {'station', 'grid'}
     "humidity",
     "humidity_source",
@@ -78,7 +78,7 @@ TIMESERIES_COLUMNS = (
 STATION_COLUMNS = (
     "device_id",
     "serial",
-    "bucket_id",           # join key
+    "bucket_id",  # join key
     "city",
     "latitude",
     "longitude",
@@ -151,9 +151,7 @@ def load_stations_catalog(
     df = pd.read_csv(_join(root, STATIONS_FILE))
     missing = set(STATION_COLUMNS) - set(df.columns)
     if missing:
-        raise ValueError(
-            f"stations_integrated.csv missing expected columns: {sorted(missing)}"
-        )
+        raise ValueError(f"stations_integrated.csv missing expected columns: {sorted(missing)}")
     if bbox is not None:
         df = df[
             (df["latitude"] >= bbox["lat_min"])
@@ -170,14 +168,10 @@ def _year_partition(root: str | Path, year: int) -> str:
     pattern = _join(year_dir, PART_GLOB)
     parts = _glob(pattern)
     if not parts:
-        raise FileNotFoundError(
-            f"No Spark partition under {year_dir} (expected {PART_GLOB})"
-        )
+        raise FileNotFoundError(f"No Spark partition under {year_dir} (expected {PART_GLOB})")
     if len(parts) > 1:
         names = [p.rsplit("/", 1)[-1] for p in parts]
-        raise RuntimeError(
-            f"Expected one partition under {year_dir}, found {len(parts)}: {names}"
-        )
+        raise RuntimeError(f"Expected one partition under {year_dir}, found {len(parts)}: {names}")
     return parts[0]
 
 
@@ -200,9 +194,7 @@ def load_timeseries(
     years = list(years)
     bad = [y for y in years if y not in AVAILABLE_YEARS]
     if bad:
-        raise ValueError(
-            f"Years {bad} not in available bulk partitions {AVAILABLE_YEARS}"
-        )
+        raise ValueError(f"Years {bad} not in available bulk partitions {AVAILABLE_YEARS}")
 
     frames: list[pd.DataFrame] = []
     for y in years:
@@ -254,23 +246,23 @@ def _build_normalized_df_from_bulk(
         return _BULK_YEAR_CACHE[cache_key]
     stations = load_stations_catalog(root, bbox=bbox)
     bucket_ids = stations["bucket_id"].tolist()
-    ts = load_timeseries(
-        years=[year], root=root, station_only=True, bucket_ids=bucket_ids
-    )
+    ts = load_timeseries(years=[year], root=root, station_only=True, bucket_ids=bucket_ids)
     joined = ts.merge(
         stations[["bucket_id", "latitude", "longitude", "altitude_m"]],
-        left_on="station_id", right_on="bucket_id", how="left",
+        left_on="station_id",
+        right_on="bucket_id",
+        how="left",
     )
     # `dataframe_to_station_obs` parse `timestamp` lui-même (tz-naive)
-    joined["timestamp"] = (
-        pd.to_datetime(joined["timestamp"], utc=True).dt.tz_convert(None)
-    )
-    out = joined.rename(columns={
-        "latitude": "lat",
-        "longitude": "lon",
-        "altitude_m": "elevation_m",
-        "temperature": "t_celsius",
-    })[["station_id", "lat", "lon", "elevation_m", "timestamp", "t_celsius"]]
+    joined["timestamp"] = pd.to_datetime(joined["timestamp"], utc=True).dt.tz_convert(None)
+    out = joined.rename(
+        columns={
+            "latitude": "lat",
+            "longitude": "lon",
+            "altitude_m": "elevation_m",
+            "temperature": "t_celsius",
+        }
+    )[["station_id", "lat", "lon", "elevation_m", "timestamp", "t_celsius"]]
     _BULK_YEAR_CACHE[cache_key] = out
     return out
 
@@ -284,11 +276,7 @@ def _build_normalized_df_from_file(
 ) -> pd.DataFrame:
     """Lit un CSV/Parquet single-file et renomme via ``SENCROP_COLUMNS``."""
     mapping = {**SENCROP_COLUMNS, **(columns or {})}
-    df = (
-        pd.read_parquet(path)
-        if path.suffix in (".parquet", ".pq")
-        else pd.read_csv(path)
-    )
+    df = pd.read_parquet(path) if path.suffix in (".parquet", ".pq") else pd.read_csv(path)
     return df.rename(columns={src: dst for dst, src in mapping.items()})
 
 

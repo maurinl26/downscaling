@@ -16,6 +16,7 @@ from downscaling.scripts import fetch_pretrained as fp
 # fetch_pretrained : plan / manifeste
 # ---------------------------------------------------------------------------
 
+
 def test_manifest_keys_unique_and_known():
     keys = [a.key for a in fp.MANIFEST]
     assert keys == sorted(set(keys), key=keys.index)  # pas de doublon
@@ -62,6 +63,7 @@ def test_fetch_one_calls_snapshot(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 # loader : résolution modelstore d'abord, HF en repli
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_artifact_prefers_modelstore(monkeypatch, tmp_path):
     loader = pytest.importorskip("downscaling.prtihvi_wxc.loader")

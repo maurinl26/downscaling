@@ -61,6 +61,7 @@ if TYPE_CHECKING:  # pragma: no cover — imports types pour mypy uniquement
 # Pinball loss (Koenker & Bassett 1978)
 # ---------------------------------------------------------------------------
 
+
 def pinball_loss(
     predictions: torch.Tensor,
     targets: torch.Tensor,
@@ -159,6 +160,7 @@ def multi_quantile_loss(
 # Split Conformalized Quantile Regression (Romano, Patterson, Candès 2019)
 # ---------------------------------------------------------------------------
 
+
 def _finite_sample_quantile(scores: np.ndarray, alpha: float) -> float:
     """Quantile empirique corrigé finite-sample (Vovk & Shafer 2005).
 
@@ -218,8 +220,7 @@ def split_cqr_calibrate(
     y_calib = np.asarray(y_calib).reshape(-1)
     if not (q_low.shape == q_high.shape == y_calib.shape):
         raise ValueError(
-            f"shape mismatch: q_low={q_low.shape}, q_high={q_high.shape}, "
-            f"y_calib={y_calib.shape}"
+            f"shape mismatch: q_low={q_low.shape}, q_high={q_high.shape}, y_calib={y_calib.shape}"
         )
     scores = np.maximum(q_low - y_calib, y_calib - q_high)
     return _finite_sample_quantile(scores, alpha)
@@ -259,6 +260,7 @@ def split_cqr_predict(
 # ---------------------------------------------------------------------------
 # Mondrian CQR (Boström 2020) — couverture par strate
 # ---------------------------------------------------------------------------
+
 
 def mondrian_cqr_calibrate(
     q_low: np.ndarray,
@@ -357,8 +359,7 @@ def mondrian_cqr_predict(
     strata = np.asarray(strata).reshape(-1)
     if not (q_low.shape == q_high.shape == strata.shape):
         raise ValueError(
-            f"shape mismatch: q_low={q_low.shape}, q_high={q_high.shape}, "
-            f"strata={strata.shape}"
+            f"shape mismatch: q_low={q_low.shape}, q_high={q_high.shape}, strata={strata.shape}"
         )
     lower = np.empty_like(q_low, dtype=float)
     upper = np.empty_like(q_high, dtype=float)
@@ -366,8 +367,7 @@ def mondrian_cqr_predict(
         key = int(label)
         if key not in q_hats:
             raise KeyError(
-                f"stratum {key} not present in calibration q_hats "
-                f"(keys={sorted(q_hats)})"
+                f"stratum {key} not present in calibration q_hats (keys={sorted(q_hats)})"
             )
         q_hat = q_hats[key]
         lower[i] = q_low[i] - q_hat
@@ -378,6 +378,7 @@ def mondrian_cqr_predict(
 # ---------------------------------------------------------------------------
 # Diagnostic : coverage gap empirique
 # ---------------------------------------------------------------------------
+
 
 def coverage_gap(
     predictions_pi: tuple[np.ndarray, np.ndarray],
@@ -411,8 +412,7 @@ def coverage_gap(
     y_true = np.asarray(y_true).reshape(-1)
     if not (lower.shape == upper.shape == y_true.shape):
         raise ValueError(
-            f"shape mismatch: lower={lower.shape}, upper={upper.shape}, "
-            f"y_true={y_true.shape}"
+            f"shape mismatch: lower={lower.shape}, upper={upper.shape}, y_true={y_true.shape}"
         )
     covered = (y_true >= lower) & (y_true <= upper)
     empirical = float(covered.mean())

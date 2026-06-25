@@ -33,6 +33,7 @@ Usage
 Output : un fichier `era5_synoptic_<year>.nc` par année (~30-50 MB).
 Skips existing files.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,7 +84,9 @@ def _download(client, year: int, months: list[str], out: Path) -> Path:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Download ERA5 synoptic variables for regime classification")
+    p = argparse.ArgumentParser(
+        description="Download ERA5 synoptic variables for regime classification"
+    )
     p.add_argument("--years", type=int, nargs="+", required=True)
     p.add_argument("--months", type=str, nargs="+", default=["02", "03", "04", "05"])
     p.add_argument("--out", type=Path, required=True)

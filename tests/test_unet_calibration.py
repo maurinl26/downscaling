@@ -34,15 +34,17 @@ class _RandomUNetSparseDataset(Dataset):
         gen = torch.Generator().manual_seed(0)
         self.items = []
         for _ in range(n):
-            self.items.append({
-                "x_met": torch.randn(MET_CH, SIZE, SIZE, generator=gen),
-                "x_dem": torch.randn(DEM_CH, SIZE, SIZE, generator=gen),
-                "obs_tmin": torch.randn(N_OBS, generator=gen),
-                "obs_row": torch.randint(0, SIZE, (N_OBS,), generator=gen),
-                "obs_col": torch.randint(0, SIZE, (N_OBS,), generator=gen),
-                "obs_dz": torch.randn(N_OBS, generator=gen) * 100.0,  # m
-                "date": "2021-04-27",
-            })
+            self.items.append(
+                {
+                    "x_met": torch.randn(MET_CH, SIZE, SIZE, generator=gen),
+                    "x_dem": torch.randn(DEM_CH, SIZE, SIZE, generator=gen),
+                    "obs_tmin": torch.randn(N_OBS, generator=gen),
+                    "obs_row": torch.randint(0, SIZE, (N_OBS,), generator=gen),
+                    "obs_col": torch.randint(0, SIZE, (N_OBS,), generator=gen),
+                    "obs_dz": torch.randn(N_OBS, generator=gen) * 100.0,  # m
+                    "date": "2021-04-27",
+                }
+            )
 
     def __len__(self):
         return len(self.items)
@@ -60,8 +62,11 @@ def test_fast_dev_run_calibration():
     lit = UNetSparseCalibrationModule(_toy_unet(), target_channel=0, lr=1e-3, max_epochs=2)
     dm = UNetSparseDataModule(_RandomUNetSparseDataset(), num_workers=0)
     trainer = pl.Trainer(
-        fast_dev_run=True, accelerator="cpu", logger=False,
-        enable_checkpointing=False, enable_progress_bar=False,
+        fast_dev_run=True,
+        accelerator="cpu",
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
     )
     trainer.fit(lit, datamodule=dm)
     assert "val/rmse" in trainer.callback_metrics
@@ -101,6 +106,7 @@ def test_elevation_aware_toggle_changes_loss():
 # Descente horaire puis min (Tmin correct)
 # ---------------------------------------------------------------------------
 
+
 class _IdentityMet(torch.nn.Module):
     """Modèle jouet : renvoie x_met (canal cible = champ par heure)."""
 
@@ -112,16 +118,20 @@ def test_hourly_descent_then_min_selects_minimum():
     """Descente heure par heure puis réduction min → Tmin par maille."""
     T, C, H, W = 3, 2, 2, 2
     lit = UNetSparseCalibrationModule(
-        _IdentityMet(), target_channel=0, hourly=True, reduce="min",
-        kelvin_to_celsius=False, elevation_aware=False,
+        _IdentityMet(),
+        target_channel=0,
+        hourly=True,
+        reduce="min",
+        kelvin_to_celsius=False,
+        elevation_aware=False,
     )
     # Canal cible par heure : 5 °C, 3 °C, 7 °C → min attendu = 3 °C.
     xm = torch.zeros(T, C, H, W)
     xm[0, 0], xm[1, 0], xm[2, 0] = 5.0, 3.0, 7.0
     batch = {
-        "x_met": xm.unsqueeze(0),                 # (1, T, C, H, W)
+        "x_met": xm.unsqueeze(0),  # (1, T, C, H, W)
         "x_dem": torch.zeros(1, 4, H, W),
-        "obs_tmin": [torch.tensor([3.0])],         # = min des heures
+        "obs_tmin": [torch.tensor([3.0])],  # = min des heures
         "obs_row": [torch.tensor([0])],
         "obs_col": [torch.tensor([0])],
         "obs_dz": [None],
@@ -130,7 +140,7 @@ def test_hourly_descent_then_min_selects_minimum():
     _, at_min = lit._shared_step(batch)
     assert at_min["loss_obs"] == pytest.approx(0.0, abs=1e-6)
 
-    batch["obs_tmin"] = [torch.tensor([5.0])]      # 5 ≠ min(=3) → erreur 2
+    batch["obs_tmin"] = [torch.tensor([5.0])]  # 5 ≠ min(=3) → erreur 2
     _, off_min = lit._shared_step(batch)
     assert off_min["loss_obs"] == pytest.approx(2.0, abs=1e-6)
 
@@ -142,15 +152,17 @@ class _RandomHourlyDataset(Dataset):
         gen = torch.Generator().manual_seed(1)
         self.items = []
         for _ in range(n):
-            self.items.append({
-                "x_met": torch.randn(T, MET_CH, SIZE, SIZE, generator=gen),
-                "x_dem": torch.randn(DEM_CH, SIZE, SIZE, generator=gen),
-                "obs_tmin": torch.randn(N_OBS, generator=gen),
-                "obs_row": torch.randint(0, SIZE, (N_OBS,), generator=gen),
-                "obs_col": torch.randint(0, SIZE, (N_OBS,), generator=gen),
-                "obs_dz": torch.randn(N_OBS, generator=gen) * 100.0,
-                "date": "2021-04-27",
-            })
+            self.items.append(
+                {
+                    "x_met": torch.randn(T, MET_CH, SIZE, SIZE, generator=gen),
+                    "x_dem": torch.randn(DEM_CH, SIZE, SIZE, generator=gen),
+                    "obs_tmin": torch.randn(N_OBS, generator=gen),
+                    "obs_row": torch.randint(0, SIZE, (N_OBS,), generator=gen),
+                    "obs_col": torch.randint(0, SIZE, (N_OBS,), generator=gen),
+                    "obs_dz": torch.randn(N_OBS, generator=gen) * 100.0,
+                    "date": "2021-04-27",
+                }
+            )
 
     def __len__(self):
         return len(self.items)
@@ -163,8 +175,11 @@ def test_fast_dev_run_hourly():
     lit = UNetSparseCalibrationModule(_toy_unet(), hourly=True, reduce="min", lr=1e-3, max_epochs=2)
     dm = UNetSparseDataModule(_RandomHourlyDataset(), num_workers=0)
     trainer = pl.Trainer(
-        fast_dev_run=True, accelerator="cpu", logger=False,
-        enable_checkpointing=False, enable_progress_bar=False,
+        fast_dev_run=True,
+        accelerator="cpu",
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
     )
     trainer.fit(lit, datamodule=dm)
     assert torch.isfinite(trainer.callback_metrics["val/rmse"])

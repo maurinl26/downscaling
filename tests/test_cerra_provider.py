@@ -29,15 +29,19 @@ def _write_cerra(path):
     """CERRA jouet : champs horaires sur la nuit 20h → 07h, grille fine."""
     times = pd.date_range(f"{DATE} 20:00", "2021-04-28 07:00", freq="h")
     gen = np.random.default_rng(0)
-    data = {v: (("time", "y", "x"), gen.normal(280, 3, (len(times), H, W)).astype("float32"))
-            for v in MET_VARS}
+    data = {
+        v: (("time", "y", "x"), gen.normal(280, 3, (len(times), H, W)).astype("float32"))
+        for v in MET_VARS
+    }
     xr.Dataset(data, coords={"time": times, "y": np.arange(H), "x": np.arange(W)}).to_netcdf(path)
 
 
 def _write_dem(path):
     gen = np.random.default_rng(1)
-    dem = {v: (("y", "x"), gen.normal(0, 1, (H, W)).astype("float32"))
-           for v in ("elevation", "slope", "aspect", "curvature")}
+    dem = {
+        v: (("y", "x"), gen.normal(0, 1, (H, W)).astype("float32"))
+        for v in ("elevation", "slope", "aspect", "curvature")
+    }
     xr.Dataset(dem, coords={"y": np.arange(H), "x": np.arange(W)}).to_netcdf(path)
 
 
@@ -61,7 +65,7 @@ def test_provider_hourly_returns_time_stack(tmp_path):
     prov = _make_provider(tmp_path, hourly=True)
     x_met, x_dem = prov(DATE)
     assert x_met.ndim == 4
-    assert x_met.shape[0] == 12          # nuit 20h → 07h incluse = 12 heures
+    assert x_met.shape[0] == 12  # nuit 20h → 07h incluse = 12 heures
     assert x_met.shape[1:] == (len(MET_VARS), H, W)
     assert x_dem.shape == (4, H, W)
 
@@ -99,7 +103,12 @@ def test_plugs_into_unet_station_dataset(provider, tmp_path):
     lat_grid = np.linspace(44.6, 44.7, H)
     lon_grid = np.linspace(4.9, 5.0, W)
     ds = UNetStationDataset(
-        [DATE], provider, obs_dir, lat_grid, lon_grid, min_stations=1,
+        [DATE],
+        provider,
+        obs_dir,
+        lat_grid,
+        lon_grid,
+        min_stations=1,
     )
     assert len(ds) == 1
     sample = ds[0]
@@ -112,21 +121,27 @@ def test_plugs_into_unet_station_dataset(provider, tmp_path):
 # Robustesse aux vraies données CERRA
 # ---------------------------------------------------------------------------
 
+
 def _write_named_cerra(path, var_names, coords="yx", ny=H, nx=W):
     """CERRA jouet avec noms de variables / coordonnées paramétrables."""
     times = pd.date_range(f"{DATE} 20:00", "2021-04-28 07:00", freq="h")
     gen = np.random.default_rng(2)
-    if coords == "cf":           # latitude/longitude/valid_time (style Copernicus)
+    if coords == "cf":  # latitude/longitude/valid_time (style Copernicus)
         dims = ("valid_time", "latitude", "longitude")
-        cc = {"valid_time": times, "latitude": np.linspace(44, 45, ny),
-              "longitude": np.linspace(4, 5, nx)}
+        cc = {
+            "valid_time": times,
+            "latitude": np.linspace(44, 45, ny),
+            "longitude": np.linspace(4, 5, nx),
+        }
     elif coords == "latlon":
         dims = ("time", "lat", "lon")
         cc = {"time": times, "lat": np.linspace(44, 45, ny), "lon": np.linspace(4, 5, nx)}
     else:
         dims = ("time", "y", "x")
         cc = {"time": times, "y": np.arange(ny), "x": np.arange(nx)}
-    data = {v: (dims, gen.normal(280, 3, (len(times), ny, nx)).astype("float32")) for v in var_names}
+    data = {
+        v: (dims, gen.normal(280, 3, (len(times), ny, nx)).astype("float32")) for v in var_names
+    }
     xr.Dataset(data, coords=cc).to_netcdf(path)
 
 
@@ -137,8 +152,11 @@ def test_var_map_renames_cerra_names(tmp_path):
     _write_named_cerra(cerra / f"cerra_{DATE}.nc", ["2t", "10u", "10v"])
     _write_dem(tmp_path / "dem.nc")
     prov = CERRACoarseProvider(
-        cerra, tmp_path / "dem.nc", met_vars=["t2m", "u10", "v10"],
-        var_map={"t2m": "2t", "u10": "10u", "v10": "10v"}, hourly=False,
+        cerra,
+        tmp_path / "dem.nc",
+        met_vars=["t2m", "u10", "v10"],
+        var_map={"t2m": "2t", "u10": "10u", "v10": "10v"},
+        hourly=False,
     )
     assert prov.inspect(DATE)["met_missing"] == []
     x_met, _ = prov(DATE)
@@ -177,10 +195,13 @@ def test_inspect_reports_grid_and_vars(provider):
 
 def _write_dem_latlon(path):
     gen = np.random.default_rng(1)
-    dem = {v: (("lat", "lon"), gen.normal(0, 1, (H, W)).astype("float32"))
-           for v in ("elevation", "slope", "aspect", "curvature")}
-    xr.Dataset(dem, coords={"lat": np.linspace(44, 45, H),
-                            "lon": np.linspace(4, 5, W)}).to_netcdf(path)
+    dem = {
+        v: (("lat", "lon"), gen.normal(0, 1, (H, W)).astype("float32"))
+        for v in ("elevation", "slope", "aspect", "curvature")
+    }
+    xr.Dataset(dem, coords={"lat": np.linspace(44, 45, H), "lon": np.linspace(4, 5, W)}).to_netcdf(
+        path
+    )
 
 
 def test_regrid_to_dem_grid(tmp_path):
@@ -190,8 +211,12 @@ def test_regrid_to_dem_grid(tmp_path):
     _write_named_cerra(cerra / f"cerra_{DATE}.nc", MET_VARS, coords="latlon", ny=4, nx=5)
     _write_dem_latlon(tmp_path / "dem.nc")
     prov = CERRACoarseProvider(
-        cerra, tmp_path / "dem.nc", met_vars=MET_VARS, regrid=True, hourly=True,
+        cerra,
+        tmp_path / "dem.nc",
+        met_vars=MET_VARS,
+        regrid=True,
+        hourly=True,
     )
     x_met, x_dem = prov(DATE)
-    assert x_met.shape == (12, len(MET_VARS), H, W)   # rééchantillonné sur le MNT
+    assert x_met.shape == (12, len(MET_VARS), H, W)  # rééchantillonné sur le MNT
     assert x_dem.shape == (4, H, W)

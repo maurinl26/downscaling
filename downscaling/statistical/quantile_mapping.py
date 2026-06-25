@@ -122,9 +122,7 @@ class EmpiricalQuantileMapping:
                 idx = modeled.time.dt.month == m
             block = modeled.sel(time=idx)
             tf = self._transfer[m]
-            corrected = xr.apply_ufunc(
-                tf, block, dask="parallelized", output_dtypes=[float]
-            )
+            corrected = xr.apply_ufunc(tf, block, dask="parallelized", output_dtypes=[float])
             result.loc[{"time": idx}] = corrected.values
 
         result.attrs.update(modeled.attrs)
@@ -175,14 +173,12 @@ class QuantileDeltaMapping:
         self.wet_threshold = wet_threshold
 
         # Fonctions de transfert calibrées
-        self._mod_cdf: dict[int, interp1d] = {}   # F_mod_ref(x)  → quantile
-        self._mod_ppf: dict[int, interp1d] = {}   # F_mod_ref⁻¹(q) → valeur
-        self._obs_ppf: dict[int, interp1d] = {}   # F_obs_ref⁻¹(q) → valeur
+        self._mod_cdf: dict[int, interp1d] = {}  # F_mod_ref(x)  → quantile
+        self._mod_ppf: dict[int, interp1d] = {}  # F_mod_ref⁻¹(q) → valeur
+        self._obs_ppf: dict[int, interp1d] = {}  # F_obs_ref⁻¹(q) → valeur
 
     # ------------------------------------------------------------------
-    def fit(
-        self, modeled_ref: xr.DataArray, observed_ref: xr.DataArray
-    ) -> QuantileDeltaMapping:
+    def fit(self, modeled_ref: xr.DataArray, observed_ref: xr.DataArray) -> QuantileDeltaMapping:
         """
         Calibre les distributions de référence.
 
@@ -220,18 +216,15 @@ class QuantileDeltaMapping:
 
             # CDF modèle : valeur → quantile
             self._mod_cdf[m] = interp1d(
-                mod_q, q01, kind="linear", bounds_error=False,
-                fill_value=(q01[0], q01[-1])
+                mod_q, q01, kind="linear", bounds_error=False, fill_value=(q01[0], q01[-1])
             )
             # PPF modèle : quantile → valeur (nécessaire au terme delta de QDM)
             self._mod_ppf[m] = interp1d(
-                q01, mod_q, kind="linear", bounds_error=False,
-                fill_value=(mod_q[0], mod_q[-1])
+                q01, mod_q, kind="linear", bounds_error=False, fill_value=(mod_q[0], mod_q[-1])
             )
             # PPF observations : quantile → valeur
             self._obs_ppf[m] = interp1d(
-                q01, obs_q, kind="linear", bounds_error=False,
-                fill_value=(obs_q[0], obs_q[-1])
+                q01, obs_q, kind="linear", bounds_error=False, fill_value=(obs_q[0], obs_q[-1])
             )
         return self
 
@@ -263,9 +256,9 @@ class QuantileDeltaMapping:
             idx = slice(None) if m == 0 else (modeled_future.time.dt.month == m)
             block = modeled_future.sel(time=idx).values  # numpy
 
-            tau = self._mod_cdf[m](block)           # quantile du futur dans la CDF modèle de réf
-            x_ref = self._obs_ppf[m](tau)           # valeur bias-corrigée (PPF observations)
-            x_mod = self._mod_ppf[m](tau)           # valeur modèle de réf au même quantile
+            tau = self._mod_cdf[m](block)  # quantile du futur dans la CDF modèle de réf
+            x_ref = self._obs_ppf[m](tau)  # valeur bias-corrigée (PPF observations)
+            x_mod = self._mod_ppf[m](tau)  # valeur modèle de réf au même quantile
 
             if self.kind == "delta":
                 # Anomalie additive du futur p/r au modèle de réf, préservée (Cannon 2015).
@@ -287,6 +280,7 @@ class QuantileDeltaMapping:
 # ---------------------------------------------------------------------------
 # BCSD — Bias Correction & Spatial Disaggregation (version simplifiée)
 # ---------------------------------------------------------------------------
+
 
 def bcsd_temperature(
     t_coarse: xr.DataArray,

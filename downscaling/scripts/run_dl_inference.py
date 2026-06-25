@@ -40,8 +40,12 @@ from downscaling.shared.indices import compute_all_indices
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--override", nargs="*", default=[],
-                   help="Overrides Hydra (ex: dl.patch_size=128 indices.unit_tp=mm)")
+    p.add_argument(
+        "--override",
+        nargs="*",
+        default=[],
+        help="Overrides Hydra (ex: dl.patch_size=128 indices.unit_tp=mm)",
+    )
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--era5-sl", required=True)
     p.add_argument("--dem-attrs", required=True)

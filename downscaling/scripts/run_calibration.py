@@ -47,6 +47,7 @@ def grids_from_dem(dem: xr.Dataset) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     Tolérant aux noms de coordonnées (``lat``/``latitude``) et aux grilles 1D ou
     2D (curvilignes → on prend une ligne/colonne représentative).
     """
+
     def _axis(names, axis):
         for n in names:
             if n in dem.coords or n in dem.variables:
@@ -69,8 +70,9 @@ def _load_unet_weights(model: torch.nn.Module, checkpoint: str | Path) -> None:
     """Charge les poids U-Net depuis un checkpoint Lightning (.ckpt) ou torch (.pt)."""
     state = torch.load(checkpoint, map_location="cpu")
     if "state_dict" in state:  # checkpoint Lightning : préfixe `model.`
-        sd = {k[len("model."):]: v for k, v in state["state_dict"].items()
-              if k.startswith("model.")}
+        sd = {
+            k[len("model.") :]: v for k, v in state["state_dict"].items() if k.startswith("model.")
+        }
     elif "model_state_dict" in state:  # ancien format manuel
         sd = state["model_state_dict"]
     else:
@@ -102,9 +104,12 @@ def main(cfg: DictConfig) -> None:
 
     # Entrées CERRA par nuit + grilles depuis le MNT.
     provider = CERRACoarseProvider(
-        cal.cerra_fine_dir, cfg.data.dem_attrs,
-        met_vars=list(dl.met_vars), stats_file=cal.stats_file,
-        reduce=cal.reduce, hourly=cal.hourly,
+        cal.cerra_fine_dir,
+        cfg.data.dem_attrs,
+        met_vars=list(dl.met_vars),
+        stats_file=cal.stats_file,
+        reduce=cal.reduce,
+        hourly=cal.hourly,
         file_template=cal.get("file_template_cerra", "cerra_{date}.nc"),
         var_map=OmegaConf.to_container(cal.get("var_map", {})) or {},
         regrid=cal.get("regrid", False),
@@ -127,9 +132,15 @@ def main(cfg: DictConfig) -> None:
     )
 
     dataset = UNetStationDataset(
-        provider.dates(), provider, cal.sencrop_dir, lat_grid, lon_grid,
-        file_template=cal.file_template, elevation_grid=elevation_grid,
-        min_stations=cal.min_stations, lapse_rate=cal.lapse_rate,
+        provider.dates(),
+        provider,
+        cal.sencrop_dir,
+        lat_grid,
+        lon_grid,
+        file_template=cal.file_template,
+        elevation_grid=elevation_grid,
+        min_stations=cal.min_stations,
+        lapse_rate=cal.lapse_rate,
     )
     log.info("Nuits de calibration disponibles : %d", len(dataset))
 
@@ -138,14 +149,22 @@ def main(cfg: DictConfig) -> None:
     t2m_stats = provider.stats.get("t2m")
     denorm = tuple(t2m_stats) if t2m_stats is not None else None
     lit = UNetSparseCalibrationModule(
-        model, target_channel=cal.target_channel, lr=cal.lr, max_epochs=cal.epochs,
-        denorm=denorm, kelvin_to_celsius=(denorm is None),
-        lapse_rate=cal.lapse_rate, elevation_aware=cal.elevation_aware,
-        hourly=cal.hourly, reduce=cal.reduce,
+        model,
+        target_channel=cal.target_channel,
+        lr=cal.lr,
+        max_epochs=cal.epochs,
+        denorm=denorm,
+        kelvin_to_celsius=(denorm is None),
+        lapse_rate=cal.lapse_rate,
+        elevation_aware=cal.elevation_aware,
+        hourly=cal.hourly,
+        reduce=cal.reduce,
     )
     datamodule = UNetSparseDataModule(dataset, num_workers=cfg.cluster.get("num_workers", 0))
     trainer = build_trainer(
-        cfg.cluster, max_epochs=cal.epochs, patience=cal.patience,
+        cfg.cluster,
+        max_epochs=cal.epochs,
+        patience=cal.patience,
         checkpoint_dir=Path(cal.out).parent,
     )
     trainer.fit(lit, datamodule=datamodule)

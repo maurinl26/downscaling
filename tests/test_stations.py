@@ -46,14 +46,16 @@ def _sencrop_csv(tmp_path):
     }.items():
         for h in (21, 23, 2, 5):  # heures nocturnes
             ts = night + pd.Timedelta(hours=h if h >= 20 else 24 + h)
-            rows.append({
-                SENCROP_COLUMNS["station_id"]: sid,
-                SENCROP_COLUMNS["lat"]: lat,
-                SENCROP_COLUMNS["lon"]: lon,
-                SENCROP_COLUMNS["elevation_m"]: alt,
-                SENCROP_COLUMNS["timestamp"]: ts,
-                SENCROP_COLUMNS["t_celsius"]: t + 0.1 * h,  # variation horaire
-            })
+            rows.append(
+                {
+                    SENCROP_COLUMNS["station_id"]: sid,
+                    SENCROP_COLUMNS["lat"]: lat,
+                    SENCROP_COLUMNS["lon"]: lon,
+                    SENCROP_COLUMNS["elevation_m"]: alt,
+                    SENCROP_COLUMNS["timestamp"]: ts,
+                    SENCROP_COLUMNS["t_celsius"]: t + 0.1 * h,  # variation horaire
+                }
+            )
     path = tmp_path / "sencrop_2021-04-27.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return path

@@ -48,6 +48,7 @@ log = logging.getLogger(__name__)
 # Fonctions de perte
 # ---------------------------------------------------------------------------
 
+
 class SpectralLoss(nn.Module):
     """
     Pénalise les erreurs dans le domaine fréquentiel (FFT 2D).
@@ -116,6 +117,7 @@ class DownscalingLoss(nn.Module):
 # Scheduler cosine avec warmup
 # ---------------------------------------------------------------------------
 
+
 def cosine_with_warmup(optimizer, warmup_epochs: int, total_epochs: int):
     def lr_lambda(epoch):
         if epoch < warmup_epochs:
@@ -130,12 +132,13 @@ def cosine_with_warmup(optimizer, warmup_epochs: int, total_epochs: int):
 # Métriques de validation
 # ---------------------------------------------------------------------------
 
+
 def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
     """RMSE, MAE et biais par canal."""
     diff = pred - target
-    rmse = (diff ** 2).mean(dim=(0, 2, 3)).sqrt()   # (C,)
-    mae = diff.abs().mean(dim=(0, 2, 3))             # (C,)
-    bias = diff.mean(dim=(0, 2, 3))                  # (C,)
+    rmse = (diff**2).mean(dim=(0, 2, 3)).sqrt()  # (C,)
+    mae = diff.abs().mean(dim=(0, 2, 3))  # (C,)
+    bias = diff.mean(dim=(0, 2, 3))  # (C,)
     return {
         "rmse": rmse.mean().item(),
         "mae": mae.mean().item(),
@@ -146,6 +149,7 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float
 # ---------------------------------------------------------------------------
 # Trainer Lightning (callbacks + logger pilotés par la config cluster)
 # ---------------------------------------------------------------------------
+
 
 def _build_logger(checkpoint_dir: Path):
     """Logger d'expérience, par ordre de préférence :
@@ -183,8 +187,9 @@ def _build_logger(checkpoint_dir: Path):
     return CSVLogger(save_dir=str(checkpoint_dir), name="logs")
 
 
-def build_trainer(cluster: dict, *, max_epochs: int, patience: int,
-                  checkpoint_dir: str | Path) -> pl.Trainer:
+def build_trainer(
+    cluster: dict, *, max_epochs: int, patience: int, checkpoint_dir: str | Path
+) -> pl.Trainer:
     """Construit le ``pl.Trainer`` : accelerator/precision viennent de ``cluster=``."""
     from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -192,8 +197,11 @@ def build_trainer(cluster: dict, *, max_epochs: int, patience: int,
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     callbacks = [
         ModelCheckpoint(
-            dirpath=str(checkpoint_dir), filename="best_model",
-            monitor="val/rmse", mode="min", save_top_k=1,
+            dirpath=str(checkpoint_dir),
+            filename="best_model",
+            monitor="val/rmse",
+            mode="min",
+            save_top_k=1,
         ),
         EarlyStopping(monitor="val/rmse", mode="min", patience=patience),
     ]
@@ -213,10 +221,15 @@ def build_trainer(cluster: dict, *, max_epochs: int, patience: int,
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Entraînement du U-Net de descente d'échelle")
-    p.add_argument("--override", nargs="*", default=[],
-                   help="Overrides Hydra (ex: dl.base_ch=32 dl.n_levels=3)")
+    p.add_argument(
+        "--override",
+        nargs="*",
+        default=[],
+        help="Overrides Hydra (ex: dl.base_ch=32 dl.n_levels=3)",
+    )
     p.add_argument("--data-dir", required=True)
     p.add_argument("--checkpoint-dir", default="checkpoints/")
     p.add_argument("--epochs", type=int, default=100)
@@ -304,8 +317,9 @@ def main():
     trainer.fit(lit, datamodule=datamodule)
 
     best = trainer.checkpoint_callback.best_model_score
-    log.info("Entraînement terminé. Meilleur val/rmse : %s",
-             f"{best:.4f}" if best is not None else "n/a")
+    log.info(
+        "Entraînement terminé. Meilleur val/rmse : %s", f"{best:.4f}" if best is not None else "n/a"
+    )
 
 
 if __name__ == "__main__":

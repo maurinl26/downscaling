@@ -47,6 +47,7 @@ Caveats
 - W&B is only logged if not `--wandb-disabled` AND the `WANDB_API_KEY`
   env var is set on the host.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -93,14 +94,16 @@ class _NightSample:
     obs_dz: torch.Tensor
 
 
-_REGIME_LABELS = ["R1", "R2", "R3", "R4a", "R4b"]   # ordre canonique (R0 = unknown, ignoré)
+_REGIME_LABELS = ["R1", "R2", "R3", "R4a", "R4b"]  # ordre canonique (R0 = unknown, ignoré)
 # Synoptique large (vent / nuages / pression / température)
 _ERA5_FEATURES = ["wind_med", "tcc_med", "mslp_med", "t2m_med"]
 # Hygrométrie (déficit Td, point de rosée, RH, extrêmes)
 _HYGRO_FEATURES = ["dewpoint_dep_med", "d2m_med", "rh_med", "dewpoint_dep_min", "rh_min"]
 
 
-def _build_cond_table(regimes_csv: str | Path, cond_vars: set[str]) -> tuple[dict[str, np.ndarray], int]:
+def _build_cond_table(
+    regimes_csv: str | Path, cond_vars: set[str]
+) -> tuple[dict[str, np.ndarray], int]:
     """Construit ``{date_iso: cond_vec}`` à partir de ``regimes_<year>.csv``.
 
     ``cond_vars`` sous-ensemble de {'regime', 'era5', 'hygro', 'season'}.
@@ -115,10 +118,14 @@ def _build_cond_table(regimes_csv: str | Path, cond_vars: set[str]) -> tuple[dic
     cond_vars = set(cond_vars)
     df = pd.read_csv(regimes_csv)
     # Date column tolerant
-    date_col = next((c for c in ("date", "night_date", "valid_date") if c in df.columns), df.columns[0])
+    date_col = next(
+        (c for c in ("date", "night_date", "valid_date") if c in df.columns), df.columns[0]
+    )
     table: dict[str, np.ndarray] = {}
     # Normalisation continues (z-score sur l'ensemble du fichier — stable cross-année)
-    continuous = (_ERA5_FEATURES if "era5" in cond_vars else []) + (_HYGRO_FEATURES if "hygro" in cond_vars else [])
+    continuous = (_ERA5_FEATURES if "era5" in cond_vars else []) + (
+        _HYGRO_FEATURES if "hygro" in cond_vars else []
+    )
     means = {f: df[f].mean() for f in continuous if f in df.columns}
     stds = {f: df[f].std() if df[f].std() > 1e-6 else 1.0 for f in continuous if f in df.columns}
     for _, row in df.iterrows():
@@ -161,7 +168,7 @@ class BulkSencropDataset(Dataset):
     def __init__(
         self,
         dates: list[str],
-        coarse_provider,           # callable date -> (x_met, x_dem)
+        coarse_provider,  # callable date -> (x_met, x_dem)
         sencrop_root: str | Path,
         lat_grid: np.ndarray,
         lon_grid: np.ndarray,
@@ -193,7 +200,11 @@ class BulkSencropDataset(Dataset):
         if cond_table is not None:
             missing = [d for d in kept if d not in cond_table]
             if missing:
-                log.warning("cond_table missing for %d/%d nights — will use zero vector", len(missing), len(kept))
+                log.warning(
+                    "cond_table missing for %d/%d nights — will use zero vector",
+                    len(missing),
+                    len(kept),
+                )
 
     def __len__(self) -> int:
         return len(self.dates)
@@ -282,6 +293,7 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
     # (~167×118). On regridde x_met vers la résolution DEM par bilinéaire pour
     # que les deux channels partagent la même grille, indispensable au U-Net.
     import torch.nn.functional as F
+
     # Stack all DEM vars (elevation, slope, aspect, curvature, svf, ...) en (C_dem, H, W).
     # Chaque canal est z-scoré pour stabiliser l'entraînement (la curvature
     # ~1e-3 sinon écrase tout si on garde l'élévation brute en mètres).
@@ -293,11 +305,17 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
         if std < 1e-9:
             std = 1.0
         dem_channels.append(((arr - mean) / std).astype(np.float32))
-    dem_arr = np.stack(dem_channels, axis=0)   # (C_dem, H, W)
+    dem_arr = np.stack(dem_channels, axis=0)  # (C_dem, H, W)
     H_fine, W_fine = dem_arr.shape[1:]
-    x_dem = torch.from_numpy(dem_arr)          # (C_dem, H, W)
-    log.info("Provider grids: DEM (%d ch: %s) (%d, %d) | CERRA t2m yearly %s",
-             len(dem_vars), dem_vars, H_fine, W_fine, tuple(ds_cerra[t_var].shape))
+    x_dem = torch.from_numpy(dem_arr)  # (C_dem, H, W)
+    log.info(
+        "Provider grids: DEM (%d ch: %s) (%d, %d) | CERRA t2m yearly %s",
+        len(dem_vars),
+        dem_vars,
+        H_fine,
+        W_fine,
+        tuple(ds_cerra[t_var].shape),
+    )
 
     def provider(d: str) -> tuple[torch.Tensor, torch.Tensor]:
         slab = ds_cerra[t_var].sel(time=d, method="nearest")
@@ -328,38 +346,74 @@ def main() -> int:
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--dem", type=Path, required=True)
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
-    p.add_argument("--out", type=str, required=True,
-                   help="Output target: local dir OR s3:// / scw:// URL "
-                        "(zarr + sidecar metadata.json written there). "
-                        "Lightning checkpoints stay local (--checkpoint-dir).")
-    p.add_argument("--checkpoint-dir", type=str, default=None,
-                   help="Local dir for Lightning ModelCheckpoint. "
-                        "Default: <out> if local, else ./checkpoints/<year>.")
+    p.add_argument(
+        "--out",
+        type=str,
+        required=True,
+        help="Output target: local dir OR s3:// / scw:// URL "
+        "(zarr + sidecar metadata.json written there). "
+        "Lightning checkpoints stay local (--checkpoint-dir).",
+    )
+    p.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default=None,
+        help="Local dir for Lightning ModelCheckpoint. "
+        "Default: <out> if local, else ./checkpoints/<year>.",
+    )
     p.add_argument("--epochs", type=int, default=30)
-    p.add_argument("--device", default="auto",
-                   choices=("auto", "cuda", "mps", "cpu"),
-                   help="Accelerator. 'auto' = MPS si Apple Silicon, sinon CUDA, sinon CPU.")
-    p.add_argument("--base-ch", type=int, default=32,
-                   help="U-Net base channels (capacity). Issue #28: 64 ≈ 4.6M params.")
-    p.add_argument("--n-levels", type=int, default=3,
-                   help="U-Net depth. Issue #28: 4 augmente receptive field.")
-    p.add_argument("--early-stopping-patience", type=int, default=0,
-                   help="If >0, EarlyStopping on val/rmse with this patience (issue #28).")
-    p.add_argument("--loss-quantile", type=float, default=None,
-                   help="If set in (0,1), use pinball/quantile loss instead of RMSE on station "
-                        "observations. q<0.5 penalizes under-prediction of cold (missed frost) "
-                        "more than over-prediction. Recommended for frost detection: q=0.1 "
-                        "(misses cost ×9 false alarms). Issue #5.")
-    p.add_argument("--cond-vars", type=str, default="",
-                   help="Comma-separated FiLM conditioning vars: regime, era5, hygro, season. "
-                        "Empty = DEM-only (baseline). Requires --regimes-csv. Issue #5 item 4.")
-    p.add_argument("--regimes-csv", type=str, default=None,
-                   help="Path to regimes_all.csv (output of flag_regimes.py). "
-                        "Required when --cond-vars is non-empty.")
+    p.add_argument(
+        "--device",
+        default="auto",
+        choices=("auto", "cuda", "mps", "cpu"),
+        help="Accelerator. 'auto' = MPS si Apple Silicon, sinon CUDA, sinon CPU.",
+    )
+    p.add_argument(
+        "--base-ch",
+        type=int,
+        default=32,
+        help="U-Net base channels (capacity). Issue #28: 64 ≈ 4.6M params.",
+    )
+    p.add_argument(
+        "--n-levels",
+        type=int,
+        default=3,
+        help="U-Net depth. Issue #28: 4 augmente receptive field.",
+    )
+    p.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=0,
+        help="If >0, EarlyStopping on val/rmse with this patience (issue #28).",
+    )
+    p.add_argument(
+        "--loss-quantile",
+        type=float,
+        default=None,
+        help="If set in (0,1), use pinball/quantile loss instead of RMSE on station "
+        "observations. q<0.5 penalizes under-prediction of cold (missed frost) "
+        "more than over-prediction. Recommended for frost detection: q=0.1 "
+        "(misses cost ×9 false alarms). Issue #5.",
+    )
+    p.add_argument(
+        "--cond-vars",
+        type=str,
+        default="",
+        help="Comma-separated FiLM conditioning vars: regime, era5, hygro, season. "
+        "Empty = DEM-only (baseline). Requires --regimes-csv. Issue #5 item 4.",
+    )
+    p.add_argument(
+        "--regimes-csv",
+        type=str,
+        default=None,
+        help="Path to regimes_all.csv (output of flag_regimes.py). "
+        "Required when --cond-vars is non-empty.",
+    )
     p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
-    p.add_argument("--smoke-test", action="store_true",
-                   help="run 1 epoch on a tiny subset (CPU OK)")
+    p.add_argument(
+        "--smoke-test", action="store_true", help="run 1 epoch on a tiny subset (CPU OK)"
+    )
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -421,12 +475,21 @@ def main() -> int:
 
     # ---- Model + LightningModule --------------------------------------------
     model = build_model(
-        "unet", met_in_ch=1, dem_in_ch=dem_in_ch,
-        base_ch=args.base_ch, n_levels=args.n_levels, use_film=True,
+        "unet",
+        met_in_ch=1,
+        dem_in_ch=dem_in_ch,
+        base_ch=args.base_ch,
+        n_levels=args.n_levels,
+        use_film=True,
         cond_dim=cond_dim,
     )
-    log.info("U-Net: base_ch=%d, n_levels=%d, dem_in_ch=%d, cond_dim=%d",
-             args.base_ch, args.n_levels, dem_in_ch, cond_dim)
+    log.info(
+        "U-Net: base_ch=%d, n_levels=%d, dem_in_ch=%d, cond_dim=%d",
+        args.base_ch,
+        args.n_levels,
+        dem_in_ch,
+        cond_dim,
+    )
     lit = UNetSparseCalibrationModule(
         model=model,
         target_channel=0,
@@ -450,15 +513,22 @@ def main() -> int:
 
     callbacks = [
         ModelCheckpoint(
-            dirpath=str(ckpt_dir), filename=f"{args.year}-best",
-            monitor="val/rmse", mode="min", save_top_k=1,
+            dirpath=str(ckpt_dir),
+            filename=f"{args.year}-best",
+            monitor="val/rmse",
+            mode="min",
+            save_top_k=1,
         )
     ]
     if args.early_stopping_patience > 0:
-        callbacks.append(EarlyStopping(
-            monitor="val/rmse", mode="min",
-            patience=args.early_stopping_patience, min_delta=1e-3,
-        ))
+        callbacks.append(
+            EarlyStopping(
+                monitor="val/rmse",
+                mode="min",
+                patience=args.early_stopping_patience,
+                min_delta=1e-3,
+            )
+        )
         log.info("EarlyStopping enabled: patience=%d", args.early_stopping_patience)
 
     logger = False
@@ -466,6 +536,7 @@ def main() -> int:
     if not args.wandb_disabled and os.environ.get("WANDB_API_KEY"):
         try:
             from lightning.pytorch.loggers import WandbLogger
+
             wandb_logger = WandbLogger(
                 project=args.wandb_project,
                 name=f"recalibrate_dl_film_{args.year}",
@@ -526,10 +597,13 @@ def main() -> int:
                 cv = cond_table.get(d)
                 if cv is None:
                     cv = np.zeros(cond_dim, dtype=np.float32)
-                batch["cond_vec"] = torch.as_tensor(cv, dtype=torch.float32).unsqueeze(0).to(inference_device)
+                batch["cond_vec"] = (
+                    torch.as_tensor(cv, dtype=torch.float32).unsqueeze(0).to(inference_device)
+                )
             pred = lit._predict_target(batch).squeeze().cpu().numpy()
             slab = xr.DataArray(
-                pred, dims=("latitude", "longitude"),
+                pred,
+                dims=("latitude", "longitude"),
                 coords={"latitude": lat_grid, "longitude": lon_grid},
             ).expand_dims(time=[pd.Timestamp(d)])
             out_grids.append(slab)
@@ -559,7 +633,9 @@ def main() -> int:
         "n_nights": len(dataset),
         "wandb_run_url": wandb_run_url,
     }
-    metadata_path = write_sidecar(args.out, args.year, ".metadata.json", json.dumps(metadata, indent=2))
+    metadata_path = write_sidecar(
+        args.out, args.year, ".metadata.json", json.dumps(metadata, indent=2)
+    )
     log.info("Done. Metadata: %s", metadata_path)
     return 0
 

@@ -32,7 +32,7 @@ def is_remote(path: Union[str, Path]) -> bool:
 def _normalize_s3_url(url: str) -> str:
     """Normalize ``scw://`` to ``s3://`` (we use the S3 protocol everywhere)."""
     if url.startswith("scw://"):
-        return "s3://" + url[len("scw://"):]
+        return "s3://" + url[len("scw://") :]
     return url
 
 
@@ -60,7 +60,7 @@ def make_zarr_store(out: Union[str, Path], year: int) -> Any:
     out_s = str(out)
     if is_remote(out_s):
         url = _normalize_s3_url(out_s).rstrip("/")
-        key = f"{url[len('s3://'):]}/{year}.zarr"
+        key = f"{url[len('s3://') :]}/{year}.zarr"
         return _fs().get_mapper(key)
     out_path = Path(out_s)
     out_path.mkdir(parents=True, exist_ok=True)

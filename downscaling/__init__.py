@@ -27,4 +27,3 @@ for the full registry of releases).
 from downscaling.hub import load_baronnies_v1, load_from_hub
 
 __all__ = ["load_baronnies_v1", "load_from_hub"]
-

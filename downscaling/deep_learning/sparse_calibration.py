@@ -55,7 +55,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         self,
         model: torch.nn.Module,
         *,
-        target_channel: int = 0,         # indice du canal supervisé (T2m)
+        target_channel: int = 0,  # indice du canal supervisé (T2m)
         lr: float = 1e-4,
         weight_decay: float = 1e-4,
         warmup_epochs: int = 5,
@@ -66,8 +66,8 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         denorm: tuple[float, float] | None = None,  # (µ, σ) t2m : dénormalise la sortie → °C
         lapse_rate: float = -6.5e-3,
         elevation_aware: bool = True,
-        hourly: bool = False,        # descente horaire puis réduction (Tmin correct)
-        reduce: str = "min",         # réduction temporelle des prédictions ('min' = Tmin)
+        hourly: bool = False,  # descente horaire puis réduction (Tmin correct)
+        reduce: str = "min",  # réduction temporelle des prédictions ('min' = Tmin)
     ):
         super().__init__()
         self.model = model
@@ -104,20 +104,20 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         cond_vec = batch.get("cond_vec")  # (B, cond_dim) ou None
         if self.hourly:
             # x_met : (1, T, C, H, W) → descente d'échelle heure par heure.
-            xm = batch["x_met"][0]                              # (T, C, H, W)
+            xm = batch["x_met"][0]  # (T, C, H, W)
             xd = batch["x_dem"].expand(xm.shape[0], -1, -1, -1)  # (T, C_dem, H, W)
             if cond_vec is not None:
                 # broadcast (B=1, cond_dim) → (T, cond_dim) pour chaque step
                 cv = cond_vec.expand(xm.shape[0], -1) if cond_vec.dim() == 2 else cond_vec
                 series = self.model(xm, xd, cv)[:, c]
             else:
-                series = self.model(xm, xd)[:, c]               # (T, H, W)
-            pred = self._reduce_time(series)[None, None]        # (1, 1, H, W)
+                series = self.model(xm, xd)[:, c]  # (T, H, W)
+            pred = self._reduce_time(series)[None, None]  # (1, 1, H, W)
         else:
             if cond_vec is not None:
-                pred = self.model(batch["x_met"], batch["x_dem"], cond_vec)[:, c:c + 1]
+                pred = self.model(batch["x_met"], batch["x_dem"], cond_vec)[:, c : c + 1]
             else:
-                pred = self(batch["x_met"], batch["x_dem"])[:, c:c + 1]  # (1, 1, H, W)
+                pred = self(batch["x_met"], batch["x_dem"])[:, c : c + 1]  # (1, 1, H, W)
         # La sortie du U-Net est en espace NORMALISÉ (z-score des stats d'entraînement).
         # Dénormaliser → °C (les cibles d'entraînement sont en °C). À défaut de stats,
         # repli historique : soustraction Kelvin (suppose une sortie physique en K).
@@ -132,15 +132,21 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         pred = self._predict_target(batch)
         obs_dz = batch.get("obs_dz", [None])[0] if self.elevation_aware else None
         return self.criterion(
-            pred, batch["obs_tmin"][0], batch["obs_row"][0], batch["obs_col"][0],
-            obs_dz=obs_dz, lapse_rate=self.lapse_rate,
+            pred,
+            batch["obs_tmin"][0],
+            batch["obs_row"][0],
+            batch["obs_col"][0],
+            obs_dz=obs_dz,
+            lapse_rate=self.lapse_rate,
         )
 
     def training_step(self, batch, batch_idx):
         loss, parts = self._shared_step(batch)
         self.log("train/loss", loss, prog_bar=True, batch_size=1)
         # Always log RMSE in degrees Celsius for comparability across loss types
-        self.log("train/rmse", parts.get("rmse_obs", parts["loss_obs"]), prog_bar=True, batch_size=1)
+        self.log(
+            "train/rmse", parts.get("rmse_obs", parts["loss_obs"]), prog_bar=True, batch_size=1
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -154,16 +160,22 @@ class UNetSparseCalibrationModule(pl.LightningModule):
             self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
         )
         scheduler = cosine_with_warmup(
-            optimizer, warmup_epochs=self.hparams.warmup_epochs,
+            optimizer,
+            warmup_epochs=self.hparams.warmup_epochs,
             total_epochs=self.hparams.max_epochs,
         )
-        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"}}
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"},
+        }
 
 
 class UNetSparseDataModule(pl.LightningDataModule):
     """Split train/val déterministe + ``DataLoader`` batch=1 (collate sparse)."""
 
-    def __init__(self, dataset: Dataset, *, num_workers: int = 0, val_fraction: float = 0.2, seed: int = 42):
+    def __init__(
+        self, dataset: Dataset, *, num_workers: int = 0, val_fraction: float = 0.2, seed: int = 42
+    ):
         super().__init__()
         self.dataset = dataset
         self.num_workers = num_workers
@@ -176,11 +188,18 @@ class UNetSparseDataModule(pl.LightningDataModule):
         n_val = max(1, int(len(self.dataset) * self.val_fraction))
         n_train = len(self.dataset) - n_val
         generator = torch.Generator().manual_seed(self.seed)
-        self.train_ds, self.val_ds = random_split(self.dataset, [n_train, n_val], generator=generator)
+        self.train_ds, self.val_ds = random_split(
+            self.dataset, [n_train, n_val], generator=generator
+        )
 
     def _loader(self, ds, shuffle):
-        return DataLoader(ds, batch_size=1, shuffle=shuffle, num_workers=self.num_workers,
-                          collate_fn=unet_sparse_collate)
+        return DataLoader(
+            ds,
+            batch_size=1,
+            shuffle=shuffle,
+            num_workers=self.num_workers,
+            collate_fn=unet_sparse_collate,
+        )
 
     def train_dataloader(self):
         return self._loader(self.train_ds, True)

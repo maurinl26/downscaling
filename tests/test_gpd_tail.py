@@ -118,9 +118,7 @@ def test_quantile_gpd_matches_analytic_formula() -> None:
     true_scale = 1.0
     true_shape = 0.20
     u = -2.0
-    residuals = _sample_left_tail_residuals(
-        n=4000, shape=true_shape, scale=true_scale, u=u, seed=3
-    )
+    residuals = _sample_left_tail_residuals(n=4000, shape=true_shape, scale=true_scale, u=u, seed=3)
     fit = fit_gpd_pot(residuals, threshold=u, n_bootstrap=100, random_state=3)
 
     p = 0.01  # probabilité d'excès cible (zone "queue extrême")
@@ -166,9 +164,7 @@ def test_quantile_gpd_rejects_invalid_exceedance_prob() -> None:
 
 @pytest.mark.skipif(not HAS_MPL, reason="matplotlib absent (extra ``viz`` non installé)")
 def test_mean_excess_plot_creates_figure(tmp_path: Path) -> None:
-    residuals = _sample_left_tail_residuals(
-        n=500, shape=0.1, scale=1.0, u=-1.0, seed=21
-    )
+    residuals = _sample_left_tail_residuals(n=500, shape=0.1, scale=1.0, u=-1.0, seed=21)
     out = tmp_path / "mep.png"
     fig = mean_excess_plot(residuals, save_path=out, n_thresholds=30, min_excess=10)
 

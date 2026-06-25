@@ -51,17 +51,13 @@ TASKS = {
     "prithvi-finetune": {
         "gpu": "A100",
         "vram_gb": 40,
-        "cmd": (
-            "uv run python downscaling/downscaling/prtihvi_wxc/finetune.py"
-        ),
+        "cmd": ("uv run python downscaling/downscaling/prtihvi_wxc/finetune.py"),
         "desc": "Prithvi WxC DEMConditionedAdapter fine-tuning (~3h, A100 80GB)",
     },
     "prithvi-inference": {
         "gpu": "L4",
         "vram_gb": 20,
-        "cmd": (
-            "uv run python downscaling/downscaling/scripts/run_dl_inference.py"
-        ),
+        "cmd": ("uv run python downscaling/downscaling/scripts/run_dl_inference.py"),
         "desc": "Prithvi WxC inference campaign (~45min, L4 24GB)",
     },
 }
@@ -87,10 +83,9 @@ def get_pub_key(path: str) -> str:
 def get_volume_id(api_key: str) -> str:
     import runpod
     from runpod.api.graphql import run_graphql_query
+
     runpod.api_key = api_key
-    result = run_graphql_query(
-        "{ myself { networkVolumes { id name size dataCenter { id } } } }"
-    )
+    result = run_graphql_query("{ myself { networkVolumes { id name size dataCenter { id } } } }")
     volumes = result.get("data", {}).get("myself", {}).get("networkVolumes", [])
     for v in volumes:
         if v["name"] == VOLUME_NAME:
@@ -116,12 +111,16 @@ def get_gpu_candidates(rp, display_name: str) -> list[str]:
 
 def list_gpus() -> None:
     import runpod as rp
+
     rp.api_key = get_api_key()
     gpus = rp.get_gpus()
-    gpus_sorted = sorted(gpus, key=lambda g: (
-        -g.get("lowestPrice", {}).get("stockStatus", 0),
-        g.get("memoryInGb", 0),
-    ))
+    gpus_sorted = sorted(
+        gpus,
+        key=lambda g: (
+            -g.get("lowestPrice", {}).get("stockStatus", 0),
+            g.get("memoryInGb", 0),
+        ),
+    )
     print(f"\n{'GPU ID':<45} {'VRAM':>6}  {'$/hr':>6}  Stock")
     print("-" * 75)
     for g in gpus_sorted:
@@ -137,6 +136,7 @@ def list_gpus() -> None:
 
 def list_pods() -> None:
     import runpod as rp
+
     rp.api_key = get_api_key()
     pods = rp.get_pods()
     if not pods:
@@ -150,6 +150,7 @@ def list_pods() -> None:
 
 def status_pod(pod_id: str) -> None:
     import runpod as rp
+
     rp.api_key = get_api_key()
     pod = rp.get_pod(pod_id)
     if not pod:
@@ -167,13 +168,15 @@ def status_pod(pod_id: str) -> None:
 
 def stop_pod(pod_id: str) -> None:
     import runpod as rp
+
     rp.api_key = get_api_key()
     rp.terminate_pod(pod_id)
     print(f"Pod {pod_id} terminated.")
 
 
-def create_pod(task: str, years: str | None, ssh_key_path: str,
-               gpu_override: str | None, dry_run: bool) -> None:
+def create_pod(
+    task: str, years: str | None, ssh_key_path: str, gpu_override: str | None, dry_run: bool
+) -> None:
     import runpod as rp
     import runpod.error as rp_error
 
@@ -256,17 +259,24 @@ def create_pod(task: str, years: str | None, ssh_key_path: str,
 def main() -> None:
     parser = argparse.ArgumentParser(description="Launch DL downscaling pods on RunPod")
     parser.add_argument("--task", choices=VALID_TASKS, help="DL task to run")
-    parser.add_argument("--years", metavar="RANGE",
-                        help="Year range for inference, e.g. 2015-2021 (prithvi-inference only)")
+    parser.add_argument(
+        "--years",
+        metavar="RANGE",
+        help="Year range for inference, e.g. 2015-2021 (prithvi-inference only)",
+    )
     parser.add_argument("--ssh-key", default="~/.ssh/id_ed25519.pub", metavar="PATH")
-    parser.add_argument("--gpu", metavar="NAME",
-                        help="Override GPU family (default: per-task recommendation)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print config without creating a pod")
+    parser.add_argument(
+        "--gpu", metavar="NAME", help="Override GPU family (default: per-task recommendation)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print config without creating a pod"
+    )
     parser.add_argument("--stop", metavar="POD_ID", help="Terminate a pod")
     parser.add_argument("--status", metavar="POD_ID", help="Show pod status and SSH info")
     parser.add_argument("--list", action="store_true", help="List running pods")
-    parser.add_argument("--list-gpus", action="store_true", help="Show available GPU types and cost")
+    parser.add_argument(
+        "--list-gpus", action="store_true", help="Show available GPU types and cost"
+    )
     args = parser.parse_args()
 
     try:

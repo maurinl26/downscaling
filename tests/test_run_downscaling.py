@@ -20,6 +20,7 @@ from downscaling.scripts import run_downscaling as rd
 # Helpers purs
 # ---------------------------------------------------------------------------
 
+
 def test_source_list_normalises_single_and_many():
     assert rd._source_list("a.nc") == ["a.nc"]
     assert rd._source_list(["a.nc", "b.nc"]) == ["a.nc", "b.nc"]
@@ -43,6 +44,7 @@ def test_time_dim_prefers_named_axis_then_falls_back():
 # ---------------------------------------------------------------------------
 # Wiring multi-fichiers de run_statistical
 # ---------------------------------------------------------------------------
+
 
 class _FakePipeline:
     """Pipeline jouet : une sortie 1-pas par source, datée selon l'appel."""

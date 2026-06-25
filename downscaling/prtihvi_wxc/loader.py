@@ -110,6 +110,7 @@ def load_prithvi_backbone(
 # Tête de downscaling conditionnée DEM
 # ---------------------------------------------------------------------------
 
+
 class DEMConditionedAdapter(nn.Module):
     """
     Tête CNN appliquée sur la **prévision** du backbone, conditionnée par le MNT.
@@ -131,7 +132,7 @@ class DEMConditionedAdapter(nn.Module):
         in_channels: int,
         dem_channels: int = 3,
         hidden_channels: int = 128,
-        out_channels: int = 1,    # T2m uniquement
+        out_channels: int = 1,  # T2m uniquement
         scale_factor: int = 6,
     ):
         super().__init__()
@@ -165,6 +166,7 @@ class DEMConditionedAdapter(nn.Module):
 # ---------------------------------------------------------------------------
 # Modèle complet : backbone Prithvi WxC réel + tête DEM
 # ---------------------------------------------------------------------------
+
 
 class PrithviWxCDownscaler(nn.Module):
     """
@@ -212,8 +214,10 @@ class PrithviWxCDownscaler(nn.Module):
         """
         device = resolve_device(device)
         backbone = load_prithvi_backbone(
-            config_name=config_name, data_dir=data_dir,
-            load_weights=load_weights, device=device,
+            config_name=config_name,
+            data_dir=data_dir,
+            load_weights=load_weights,
+            device=device,
         )
         # in_channels de la tête = nb de canaux de la prévision backbone.
         adapter = DEMConditionedAdapter(
@@ -227,9 +231,7 @@ class PrithviWxCDownscaler(nn.Module):
         if checkpoint_path is not None:
             state = torch.load(checkpoint_path, map_location=device)
             adapter_state = {
-                k.replace("adapter.", ""): v
-                for k, v in state.items()
-                if k.startswith("adapter.")
+                k.replace("adapter.", ""): v for k, v in state.items() if k.startswith("adapter.")
             }
             model.adapter.load_state_dict(adapter_state)
 
@@ -249,5 +251,5 @@ class PrithviWxCDownscaler(nn.Module):
         """
         # Backbone gelé → no_grad (mémoire) ; la tête DEM reste entraînable.
         with torch.no_grad():
-            forecast = self.backbone(batch)   # (B, C, lat, lon)
+            forecast = self.backbone(batch)  # (B, C, lat, lon)
         return self.adapter(forecast, dem_hr)

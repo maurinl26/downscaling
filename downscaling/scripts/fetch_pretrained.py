@@ -97,8 +97,10 @@ def fetch_one(artifact: Artifact, root: Path) -> Path:
         from downscaling.prtihvi_wxc.loader import load_prithvi_backbone
 
         load_prithvi_backbone(
-            config_name=artifact.config_name, data_dir=dest,
-            load_weights=True, device="cpu",
+            config_name=artifact.config_name,
+            data_dir=dest,
+            load_weights=True,
+            device="cpu",
         )
         return dest
 
@@ -125,10 +127,16 @@ def _print_plan(artifacts: list[Artifact], root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pré-télécharge les poids Prithvi WxC")
-    parser.add_argument("--only", metavar="KEY",
-                        help=f"Un seul artefact ({', '.join(a.key for a in MANIFEST)})")
-    parser.add_argument("--list", "--dry-run", action="store_true", dest="dry_run",
-                        help="Affiche le plan sans télécharger")
+    parser.add_argument(
+        "--only", metavar="KEY", help=f"Un seul artefact ({', '.join(a.key for a in MANIFEST)})"
+    )
+    parser.add_argument(
+        "--list",
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Affiche le plan sans télécharger",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 

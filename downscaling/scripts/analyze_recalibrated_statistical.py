@@ -32,6 +32,7 @@ Le script utilise les mêmes conventions que `recalibrate_statistical.py` :
 `WANDB_API_KEY` doit être présent dans l'env. `--wandb-disabled` saute
 W&B et imprime le résumé sur stdout / metadata.json à côté de chaque Zarr.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -140,7 +141,11 @@ def _analyze_year(
         start = pd.Timestamp(f"{year}-02-01")
         synth_times = start + pd.to_timedelta(da["time"].values, unit="D")
         da = da.assign_coords(time=synth_times)
-        log.info("Synthesized time coord from int index → %s … %s", synth_times[0], synth_times[-1] if n > 0 else "n/a")
+        log.info(
+            "Synthesized time coord from int index → %s … %s",
+            synth_times[0],
+            synth_times[-1] if n > 0 else "n/a",
+        )
 
     # Stations & timeseries Sencrop dans la bbox
     stations_df = load_stations_catalog(sencrop_root, bbox=bbox)
@@ -148,11 +153,7 @@ def _analyze_year(
     ts = load_timeseries(years=[year], root=sencrop_root, station_only=True, bucket_ids=bucket_ids)
     ts["timestamp"] = pd.to_datetime(ts["timestamp"], utc=True)
     ts["night_date"] = (ts["timestamp"] - pd.Timedelta("9h")).dt.date
-    obs_per_night = (
-        ts.groupby(["night_date", "station_id"])["temperature"]
-        .min()
-        .reset_index()
-    )
+    obs_per_night = ts.groupby(["night_date", "station_id"])["temperature"].min().reset_index()
 
     # Grille lat/lon
     lat_name = "latitude" if "latitude" in da.coords else "lat"
@@ -170,7 +171,7 @@ def _analyze_year(
     per_night_records: list[dict] = []
     all_obs: list[float] = []
     all_pred: list[float] = []
-    all_regimes: list[str] = []   # régime synoptique de la nuit, repeated par pair
+    all_regimes: list[str] = []  # régime synoptique de la nuit, repeated par pair
     regimes = regimes or {}
     for d in da["time"].values:
         d_py = pd.Timestamp(d).date()
@@ -203,17 +204,19 @@ def _analyze_year(
         rec_obs_a = np.array(rec_obs)
         rec_pred_a = np.array(rec_pred)
         residuals = rec_obs_a - rec_pred_a
-        per_night_records.append({
-            "date": str(d_py),
-            "regime": regime_d,
-            "n_stations": len(rec_obs),
-            "tmin_obs_min": float(np.min(rec_obs_a)),
-            "tmin_obs_mean": float(np.mean(rec_obs_a)),
-            "tmin_pred_min": float(np.min(rec_pred_a)),
-            "residual_mean": float(np.mean(residuals)),
-            "residual_rmse": float(np.sqrt(np.mean(residuals ** 2))),
-            "residual_abs_mean": float(np.mean(np.abs(residuals))),
-        })
+        per_night_records.append(
+            {
+                "date": str(d_py),
+                "regime": regime_d,
+                "n_stations": len(rec_obs),
+                "tmin_obs_min": float(np.min(rec_obs_a)),
+                "tmin_obs_mean": float(np.mean(rec_obs_a)),
+                "tmin_pred_min": float(np.min(rec_pred_a)),
+                "residual_mean": float(np.mean(residuals)),
+                "residual_rmse": float(np.sqrt(np.mean(residuals**2))),
+                "residual_abs_mean": float(np.mean(np.abs(residuals))),
+            }
+        )
 
     if not per_night_records:
         return {"year": year, "n_nights": 0, "n_pairs": 0}
@@ -253,7 +256,7 @@ def _analyze_year(
         "n_pairs_station_night": int(len(arr_obs)),
         "n_stations_bbox": int(len(stations_df)),
         "residual_mean_year": float(np.mean(residuals_all)),
-        "residual_rmse_year": float(np.sqrt(np.mean(residuals_all ** 2))),
+        "residual_rmse_year": float(np.sqrt(np.mean(residuals_all**2))),
         "residual_abs_mean_year": float(np.mean(np.abs(residuals_all))),
         "residual_bias_p10": float(np.percentile(residuals_all, 10)),
         "residual_bias_p90": float(np.percentile(residuals_all, 90)),
@@ -270,12 +273,18 @@ def main() -> int:
     p.add_argument("--root", type=Path, required=True, help="Dir avec <year>.zarr")
     p.add_argument("--sencrop", type=str, required=True, help="Sencrop root (local ou s3://)")
     p.add_argument("--threshold-c", type=float, default=-2.2)
-    p.add_argument("--regimes-csv", type=Path, default=None,
-                   help="CSV avec colonnes 'date' et 'regime' (cf. flag_regimes.py). "
-                        "Active la stratification POD/FAR/CSI par régime synoptique (C5.3).")
+    p.add_argument(
+        "--regimes-csv",
+        type=Path,
+        default=None,
+        help="CSV avec colonnes 'date' et 'regime' (cf. flag_regimes.py). "
+        "Active la stratification POD/FAR/CSI par régime synoptique (C5.3).",
+    )
     p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
     p.add_argument("--wandb-disabled", action="store_true")
-    p.add_argument("--years", type=int, nargs="*", default=None, help="Subset, défaut: tous les *.zarr trouvés")
+    p.add_argument(
+        "--years", type=int, nargs="*", default=None, help="Subset, défaut: tous les *.zarr trouvés"
+    )
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -311,8 +320,7 @@ def main() -> int:
 
     regimes = _load_regimes(args.regimes_csv)
     if regimes:
-        log.info("Régimes synoptiques chargés : %d nuits dans %s",
-                 len(regimes), args.regimes_csv)
+        log.info("Régimes synoptiques chargés : %d nuits dans %s", len(regimes), args.regimes_csv)
 
     all_summaries: list[dict] = []
     for z in zarrs:
@@ -333,28 +341,33 @@ def main() -> int:
 
                 # Flat log par année (préfixé)
                 yr = s["year"]
-                wandb.log({
-                    f"year_{yr}/n_nights": s["n_nights"],
-                    f"year_{yr}/n_pairs": s["n_pairs_station_night"],
-                    f"year_{yr}/residual_rmse": s["residual_rmse_year"],
-                    f"year_{yr}/residual_mean": s["residual_mean_year"],
-                    f"year_{yr}/residual_abs_mean": s["residual_abs_mean_year"],
-                    **{
-                        f"year_{yr}/{k}/{m}": v[m]
-                        for k, v in s["contingency"].items()
-                        for m in ("POD", "FAR", "CSI", "bias_score", "TP", "FP", "FN")
-                    },
-                })
+                wandb.log(
+                    {
+                        f"year_{yr}/n_nights": s["n_nights"],
+                        f"year_{yr}/n_pairs": s["n_pairs_station_night"],
+                        f"year_{yr}/residual_rmse": s["residual_rmse_year"],
+                        f"year_{yr}/residual_mean": s["residual_mean_year"],
+                        f"year_{yr}/residual_abs_mean": s["residual_abs_mean_year"],
+                        **{
+                            f"year_{yr}/{k}/{m}": v[m]
+                            for k, v in s["contingency"].items()
+                            for m in ("POD", "FAR", "CSI", "bias_score", "TP", "FP", "FN")
+                        },
+                    }
+                )
             except Exception as exc:
                 log.warning("W&B log year %s failed: %s", s["year"], exc)
 
     # Synthèse multi-années (POD/FAR/CSI agrégés)
-    valid = [s for s in all_summaries if "contingency" in s and s.get("n_pairs_station_night", 0) > 0]
+    valid = [
+        s for s in all_summaries if "contingency" in s and s.get("n_pairs_station_night", 0) > 0
+    ]
     if valid:
         # Moyenne pondérée des résiduels
         weights = np.array([s["n_pairs_station_night"] for s in valid], dtype=float)
-        rmse_w = float(np.sqrt(np.average(
-            [s["residual_rmse_year"] ** 2 for s in valid], weights=weights)))
+        rmse_w = float(
+            np.sqrt(np.average([s["residual_rmse_year"] ** 2 for s in valid], weights=weights))
+        )
         bias_w = float(np.average([s["residual_mean_year"] for s in valid], weights=weights))
         abs_w = float(np.average([s["residual_abs_mean_year"] for s in valid], weights=weights))
         global_summary = {

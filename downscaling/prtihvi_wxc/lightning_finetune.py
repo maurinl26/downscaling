@@ -28,6 +28,7 @@ KELVIN = 273.15
 # Loss sparse + collate (déplacés depuis finetune.py — source unique)
 # ---------------------------------------------------------------------------
 
+
 class SparseSupervisedLoss(nn.Module):
     """Loss de supervision sparse aux stations + régularisation spatiale.
 
@@ -61,13 +62,13 @@ class SparseSupervisedLoss(nn.Module):
 
     def forward(
         self,
-        pred: torch.Tensor,        # (B, 1, H_hr, W_hr)
-        obs_tmin: torch.Tensor,    # (n_obs,) — valeurs aux stations
-        obs_row: torch.Tensor,     # (n_obs,) — indices ligne grille
-        obs_col: torch.Tensor,     # (n_obs,) — indices colonne grille
+        pred: torch.Tensor,  # (B, 1, H_hr, W_hr)
+        obs_tmin: torch.Tensor,  # (n_obs,) — valeurs aux stations
+        obs_row: torch.Tensor,  # (n_obs,) — indices ligne grille
+        obs_col: torch.Tensor,  # (n_obs,) — indices colonne grille
         batch_idx: int = 0,
-        obs_dz: torch.Tensor | None = None,   # (n_obs,) — altitude_station − altitude_maille (m)
-        lapse_rate: float = -6.5e-3,          # K/m (gel nocturne : ≈ −4e-3, cf. config)
+        obs_dz: torch.Tensor | None = None,  # (n_obs,) — altitude_station − altitude_maille (m)
+        lapse_rate: float = -6.5e-3,  # K/m (gel nocturne : ≈ −4e-3, cf. config)
     ) -> tuple[torch.Tensor, dict]:
         # L_obs : supervision aux stations
         pred_at_obs = pred[batch_idx, 0, obs_row, obs_col]
@@ -100,7 +101,7 @@ class SparseSupervisedLoss(nn.Module):
             + pred[:, :, 1:-1, :-2]
             + pred[:, :, 1:-1, 2:]
         )
-        l_smooth = torch.mean(laplacian ** 2)
+        l_smooth = torch.mean(laplacian**2)
 
         loss = self.lambda_obs * l_obs + self.lambda_tv * l_tv + self.lambda_smooth * l_smooth
         return loss, {
@@ -144,6 +145,7 @@ def _warmup_cosine(optimizer, warmup_epochs: int, total_epochs: int):
 # LightningModule + DataModule
 # ---------------------------------------------------------------------------
 
+
 class PrithviFinetuneLitModule(pl.LightningModule):
     """Fine-tune adapter-only d'un modèle ``(era5_t0, era5_t1, dem_hr) → ŷ`` (Kelvin)."""
 
@@ -157,8 +159,8 @@ class PrithviFinetuneLitModule(pl.LightningModule):
         max_epochs: int = 50,
         loss_weights: dict | None = None,
         kelvin_to_celsius: bool = True,
-        lapse_rate: float = -6.5e-3,      # correction d'altitude station/maille (K/m)
-        elevation_aware: bool = True,     # valorise le MNT via obs_dz (si fourni)
+        lapse_rate: float = -6.5e-3,  # correction d'altitude station/maille (K/m)
+        elevation_aware: bool = True,  # valorise le MNT via obs_dz (si fourni)
     ):
         super().__init__()
         self.model = model
@@ -189,8 +191,12 @@ class PrithviFinetuneLitModule(pl.LightningModule):
         # batch_size==1 (obs sparse) → on déballe la première (et unique) nuit.
         obs_dz = batch.get("obs_dz", [None])[0] if self.elevation_aware else None
         return self.criterion(
-            pred, batch["obs_tmin"][0], batch["obs_row"][0], batch["obs_col"][0],
-            obs_dz=obs_dz, lapse_rate=self.lapse_rate,
+            pred,
+            batch["obs_tmin"][0],
+            batch["obs_row"][0],
+            batch["obs_col"][0],
+            obs_dz=obs_dz,
+            lapse_rate=self.lapse_rate,
         )
 
     def training_step(self, batch, batch_idx):

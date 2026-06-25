@@ -47,7 +47,7 @@ DEFAULT_CONFIG = {
     "scale_factor": 6,
     "device": "cuda" if torch.cuda.is_available() else "cpu",
     "frost_threshold_celsius": 0.0,
-    "gdd_threshold": 50,   # Débourrement approximatif amandier/abricotier
+    "gdd_threshold": 50,  # Débourrement approximatif amandier/abricotier
     "output_chunks": {"time": 30, "lat": 128, "lon": 128},
 }
 
@@ -55,6 +55,7 @@ DEFAULT_CONFIG = {
 # ---------------------------------------------------------------------------
 # Boucle d'inférence principale
 # ---------------------------------------------------------------------------
+
 
 class FrostReanalysisRunner:
     """
@@ -139,9 +140,9 @@ class FrostReanalysisRunner:
 
         with torch.no_grad():
             for batch in loader:
-                era5_t0 = batch["era5_t0"].to(self.device)    # (B, C, H, W)
+                era5_t0 = batch["era5_t0"].to(self.device)  # (B, C, H, W)
                 era5_t1 = batch["era5_t1"].to(self.device)
-                dem_hr = batch["dem_hr"].to(self.device)       # (B, 3, H_hr, W_hr)
+                dem_hr = batch["dem_hr"].to(self.device)  # (B, 3, H_hr, W_hr)
                 times: list[pd.Timestamp] = batch["valid_time"]
 
                 # Prédiction T2m haute résolution (B, 1, H_hr, W_hr)
@@ -159,9 +160,7 @@ class FrostReanalysisRunner:
 
         log.info(f"{len(nightly_tmin)} nuits traitées — calcul Tmin et indices...")
 
-        return self._build_output_dataset(
-            nightly_tmin, dataset.dem_hr, dataset.ds, output_zarr
-        )
+        return self._build_output_dataset(nightly_tmin, dataset.dem_hr, dataset.ds, output_zarr)
 
     # ------------------------------------------------------------------
     # Rolling inference pour une nuit complète (méthode Yu et al.)
@@ -205,9 +204,7 @@ class FrostReanalysisRunner:
 
                 # Rolling : t1 devient t0, prédiction upsampled devient t1
                 # On reprojecte la prédiction HR → LR pour le prochain pas
-                pred_lr = _downsample_to_lr(
-                    t2m_pred, target_shape=current_t1.shape[-2:]
-                )
+                pred_lr = _downsample_to_lr(t2m_pred, target_shape=current_t1.shape[-2:])
                 current_t0 = current_t1
                 # Remplacer le canal T2m dans t1 par la prédiction
                 current_t1 = current_t1.clone()
@@ -242,8 +239,8 @@ class FrostReanalysisRunner:
             tmin_arrays.append(tmin)
             frost_flags.append((tmin < threshold_k - 273.15).astype(np.int8))
 
-        tmin_arr = np.stack(tmin_arrays, axis=0)    # (days, H_hr, W_hr)
-        frost_arr = np.stack(frost_flags, axis=0)   # (days, H_hr, W_hr)
+        tmin_arr = np.stack(tmin_arrays, axis=0)  # (days, H_hr, W_hr)
+        frost_arr = np.stack(frost_flags, axis=0)  # (days, H_hr, W_hr)
 
         # Coordonnées haute résolution interpolées depuis ERA5
         lat_lr = ds_lr.get("latitude", ds_lr.get("lat")).values
@@ -311,6 +308,7 @@ class FrostReanalysisRunner:
 # ---------------------------------------------------------------------------
 # Helpers internes
 # ---------------------------------------------------------------------------
+
 
 def _frost_collate_fn(samples):
     """Collate function préservant les timestamps Python."""

@@ -17,6 +17,7 @@ from downscaling.paths import CONFIG_DIR
 # Composition de la config (sans torch)
 # ---------------------------------------------------------------------------
 
+
 def test_calibration_group_composes():
     with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
         cfg = compose(config_name="config")
@@ -33,6 +34,7 @@ def test_calibration_group_composes():
 # ---------------------------------------------------------------------------
 # Helpers (torch requis pour _load_unet_weights)
 # ---------------------------------------------------------------------------
+
 
 def test_grids_from_dem_1d_coords():
     pytest.importorskip("torch")
@@ -73,8 +75,15 @@ def test_load_unet_weights_lightning_and_torch(tmp_path):
 
     # Format Lightning : clés préfixées `model.` + bruit non-modèle ignoré.
     ckpt = tmp_path / "lit.ckpt"
-    torch.save({"state_dict": {**{f"model.{k}": v for k, v in ref.items()},
-                               "criterion.x": torch.zeros(1)}}, ckpt)
+    torch.save(
+        {
+            "state_dict": {
+                **{f"model.{k}": v for k, v in ref.items()},
+                "criterion.x": torch.zeros(1),
+            }
+        },
+        ckpt,
+    )
     _load_unet_weights(model, ckpt)
     for k, v in ref.items():
         assert torch.equal(model.state_dict()[k], v)

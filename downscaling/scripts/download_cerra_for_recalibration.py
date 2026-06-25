@@ -28,6 +28,7 @@ Failure mode
 Hard-exits non-zero if any required env var is missing or empty. Each CDS
 request that fails leaves the file absent (re-running the script will retry).
 """
+
 from __future__ import annotations
 
 import os

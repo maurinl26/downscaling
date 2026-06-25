@@ -41,9 +41,7 @@ RELEASES: Mapping[str, Mapping[str, str]] = {
 def _resolve_release(release: str) -> Mapping[str, str]:
     if release not in RELEASES:
         available = ", ".join(sorted(RELEASES))
-        raise ValueError(
-            f"Unknown release {release!r}. Available releases: {available}."
-        )
+        raise ValueError(f"Unknown release {release!r}. Available releases: {available}.")
     return RELEASES[release]
 
 

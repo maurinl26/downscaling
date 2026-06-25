@@ -91,8 +91,10 @@ def dataframe_to_station_obs(
 
     if bbox:
         df = df[
-            (df["lat"] >= bbox["lat_min"]) & (df["lat"] <= bbox["lat_max"])
-            & (df["lon"] >= bbox["lon_min"]) & (df["lon"] <= bbox["lon_max"])
+            (df["lat"] >= bbox["lat_min"])
+            & (df["lat"] <= bbox["lat_max"])
+            & (df["lon"] >= bbox["lon_min"])
+            & (df["lon"] <= bbox["lon_max"])
         ]
 
     if df.empty:

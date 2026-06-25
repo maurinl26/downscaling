@@ -75,7 +75,7 @@ def compute_svf(
 
     for k in range(n_dirs):
         theta = 2.0 * np.pi * k / n_dirs
-        dy = -np.sin(theta)   # image y axis points south, sin(theta) east-up convention
+        dy = -np.sin(theta)  # image y axis points south, sin(theta) east-up convention
         dx = np.cos(theta)
         max_alpha = np.full_like(elev, -np.inf, dtype=np.float32)
         for r in range(1, max_dist_px + 1):
@@ -100,7 +100,9 @@ def main() -> int:
     p = argparse.ArgumentParser(description="Compute SVF from a DEM and write a new NetCDF")
     p.add_argument("--in", dest="inp", type=Path, required=True, help="Input DEM NetCDF")
     p.add_argument("--out", type=Path, required=True, help="Output NetCDF with svf added")
-    p.add_argument("--elev-var", default="elevation", help="Elevation variable name (default: elevation)")
+    p.add_argument(
+        "--elev-var", default="elevation", help="Elevation variable name (default: elevation)"
+    )
     p.add_argument("--pixel-m", type=float, default=1000.0)
     p.add_argument("--n-dirs", type=int, default=16)
     p.add_argument("--max-dist-px", type=int, default=25)
@@ -113,9 +115,16 @@ def main() -> int:
         raise ValueError(f"Variable '{args.elev_var}' not in {args.inp}. Got: {list(ds.data_vars)}")
 
     elev = ds[args.elev_var].values.astype(np.float32)
-    log.info("Computing SVF on %dx%d grid (%d dirs × %d px max)", *elev.shape, args.n_dirs, args.max_dist_px)
+    log.info(
+        "Computing SVF on %dx%d grid (%d dirs × %d px max)",
+        *elev.shape,
+        args.n_dirs,
+        args.max_dist_px,
+    )
     svf = compute_svf(elev, pixel_m=args.pixel_m, n_dirs=args.n_dirs, max_dist_px=args.max_dist_px)
-    log.info("SVF range: [%.3f, %.3f], mean=%.3f", float(svf.min()), float(svf.max()), float(svf.mean()))
+    log.info(
+        "SVF range: [%.3f, %.3f], mean=%.3f", float(svf.min()), float(svf.max()), float(svf.mean())
+    )
 
     # Preserve all input vars + coords, add svf
     out = ds.copy()
@@ -137,4 +146,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

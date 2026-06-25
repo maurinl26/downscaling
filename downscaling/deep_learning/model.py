@@ -46,6 +46,7 @@ import torch.nn.functional as F
 # Briques de base
 # ---------------------------------------------------------------------------
 
+
 class ConvBnRelu(nn.Module):
     """Conv 3×3 → BN → ReLU (avec padding 'same')."""
 
@@ -82,6 +83,7 @@ class ResBlock(nn.Module):
 # FiLM conditioning
 # ---------------------------------------------------------------------------
 
+
 class FiLMLayer(nn.Module):
     """
     Feature-wise Linear Modulation.
@@ -107,7 +109,7 @@ class FiLMLayer(nn.Module):
         hidden = max(met_ch, 32)
         self.cond_dim = cond_dim
         self.pool = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),   # pooling spatial → vecteur
+            nn.AdaptiveAvgPool2d(1),  # pooling spatial → vecteur
             nn.Flatten(),
         )
         self.mlp = nn.Sequential(
@@ -117,8 +119,8 @@ class FiLMLayer(nn.Module):
         )
         # Init : γ=1, β=0 (identité)
         nn.init.zeros_(self.mlp[-1].weight)
-        nn.init.constant_(self.mlp[-1].bias[:met_ch], 1.0)   # γ
-        nn.init.zeros_(self.mlp[-1].bias[met_ch:])            # β
+        nn.init.constant_(self.mlp[-1].bias[:met_ch], 1.0)  # γ
+        nn.init.zeros_(self.mlp[-1].bias[met_ch:])  # β
 
     def forward(
         self,
@@ -127,18 +129,22 @@ class FiLMLayer(nn.Module):
         cond_vec: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, C, H, W = x_met.shape
-        dem_pooled = self.pool(x_dem)     # (B, dem_ch)
+        dem_pooled = self.pool(x_dem)  # (B, dem_ch)
         if self.cond_dim > 0:
             if cond_vec is None:
-                raise ValueError(f"FiLMLayer initialised with cond_dim={self.cond_dim} but no cond_vec passed")
+                raise ValueError(
+                    f"FiLMLayer initialised with cond_dim={self.cond_dim} but no cond_vec passed"
+                )
             if cond_vec.dim() == 1:
                 cond_vec = cond_vec.unsqueeze(0)  # (cond_dim,) → (1, cond_dim)
             if cond_vec.shape[-1] != self.cond_dim:
-                raise ValueError(f"cond_vec last dim {cond_vec.shape[-1]} != expected {self.cond_dim}")
+                raise ValueError(
+                    f"cond_vec last dim {cond_vec.shape[-1]} != expected {self.cond_dim}"
+                )
             features = torch.cat([dem_pooled, cond_vec.to(dem_pooled)], dim=-1)
         else:
             features = dem_pooled
-        params = self.mlp(features)           # (B, 2C)
+        params = self.mlp(features)  # (B, 2C)
         gamma = params[:, :C].view(B, C, 1, 1)
         beta = params[:, C:].view(B, C, 1, 1)
         return gamma * x_met + beta
@@ -147,6 +153,7 @@ class FiLMLayer(nn.Module):
 # ---------------------------------------------------------------------------
 # Encodeur DEM (poids figés ou entraînables)
 # ---------------------------------------------------------------------------
+
 
 class DEMEncoder(nn.Module):
     """
@@ -172,7 +179,7 @@ class DEMEncoder(nn.Module):
 
         ch_in = in_ch
         for i in range(n_levels):
-            ch_out = base_ch * (2 ** i)
+            ch_out = base_ch * (2**i)
             block = nn.Sequential(
                 ConvBnRelu(ch_in, ch_out),
                 ResBlock(ch_out),
@@ -180,9 +187,7 @@ class DEMEncoder(nn.Module):
             self.encoders.append(block)
             ch_in = ch_out
 
-        self.downsamples = nn.ModuleList(
-            [nn.MaxPool2d(2) for _ in range(n_levels - 1)]
-        )
+        self.downsamples = nn.ModuleList([nn.MaxPool2d(2) for _ in range(n_levels - 1)])
 
     def forward(self, dem: torch.Tensor) -> list[torch.Tensor]:
         """
@@ -204,6 +209,7 @@ class DEMEncoder(nn.Module):
 # ---------------------------------------------------------------------------
 # U-Net météo conditionné FiLM
 # ---------------------------------------------------------------------------
+
 
 class DownscalingUNet(nn.Module):
     """
@@ -250,12 +256,14 @@ class DownscalingUNet(nn.Module):
         ch_in = met_in_ch
         self.enc_channels = []
         for i in range(n_levels):
-            ch_out = base_ch * (2 ** i)
-            self.met_encoders.append(nn.Sequential(
-                ConvBnRelu(ch_in, ch_out),
-                ResBlock(ch_out),
-                ConvBnRelu(ch_out, ch_out),
-            ))
+            ch_out = base_ch * (2**i)
+            self.met_encoders.append(
+                nn.Sequential(
+                    ConvBnRelu(ch_in, ch_out),
+                    ResBlock(ch_out),
+                    ConvBnRelu(ch_out, ch_out),
+                )
+            )
             if i < n_levels - 1:
                 self.met_pools.append(nn.MaxPool2d(2))
             self.enc_channels.append(ch_out)
@@ -263,11 +271,13 @@ class DownscalingUNet(nn.Module):
 
         # ---- FiLM layers -------------------------------------------------
         if use_film:
-            dem_channels = [base_ch // 2 * (2 ** i) for i in range(n_levels)]
-            self.film_layers = nn.ModuleList([
-                FiLMLayer(dem_ch, met_ch, cond_dim=cond_dim)
-                for dem_ch, met_ch in zip(dem_channels, self.enc_channels, strict=False)
-            ])
+            dem_channels = [base_ch // 2 * (2**i) for i in range(n_levels)]
+            self.film_layers = nn.ModuleList(
+                [
+                    FiLMLayer(dem_ch, met_ch, cond_dim=cond_dim)
+                    for dem_ch, met_ch in zip(dem_channels, self.enc_channels, strict=False)
+                ]
+            )
 
         # ---- Décodeur météo (upsampling + skip connections) ---------------
         self.met_decoders = nn.ModuleList()
@@ -278,10 +288,12 @@ class DownscalingUNet(nn.Module):
             self.up_convs.append(
                 nn.ConvTranspose2d(self.enc_channels[i], self.enc_channels[i], 2, stride=2)
             )
-            self.met_decoders.append(nn.Sequential(
-                ConvBnRelu(ch_in_dec, ch_out_dec),
-                ResBlock(ch_out_dec),
-            ))
+            self.met_decoders.append(
+                nn.Sequential(
+                    ConvBnRelu(ch_in_dec, ch_out_dec),
+                    ResBlock(ch_out_dec),
+                )
+            )
 
         # ---- Tête de sortie -----------------------------------------------
         self.head = nn.Conv2d(base_ch, met_out_ch, 1)
@@ -343,6 +355,7 @@ class DownscalingUNet(nn.Module):
 # ---------------------------------------------------------------------------
 # Wrapper multi-quantile (CQR — karpos-downscaling#65)
 # ---------------------------------------------------------------------------
+
 
 class MultiQuantileUNet(nn.Module):
     """U-Net FiLM avec sortie multi-quantile pour Conformalized Quantile Regression.
@@ -419,10 +432,9 @@ class MultiQuantileUNet(nn.Module):
         # puis on lit ``base_ch`` canaux à la sortie.
         self.backbone.head = nn.Identity()
 
-        self.heads = nn.ModuleDict({
-            self._key(q): nn.Conv2d(base_ch, met_out_ch, 1)
-            for q in self.quantiles
-        })
+        self.heads = nn.ModuleDict(
+            {self._key(q): nn.Conv2d(base_ch, met_out_ch, 1) for q in self.quantiles}
+        )
 
     @staticmethod
     def _key(q: float) -> str:
@@ -446,6 +458,7 @@ class MultiQuantileUNet(nn.Module):
 # ---------------------------------------------------------------------------
 # Variante légère : SRCNN conditionné (pour test rapide)
 # ---------------------------------------------------------------------------
+
 
 class LightSRCNN(nn.Module):
     """
@@ -476,6 +489,7 @@ class LightSRCNN(nn.Module):
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def build_model(
     architecture: str = "unet",
