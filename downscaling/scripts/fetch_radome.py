@@ -97,7 +97,7 @@ def _push_s3(local_path: Path, s3_url: str) -> None:
         raise RuntimeError(
             "fsspec required for --s3-prefix, install with `uv pip install fsspec s3fs`"
         ) from exc
-    from downscaling.utils.io import _s3_endpoint, _normalize_s3_url
+    from downscaling.utils.io import _normalize_s3_url, _s3_endpoint
 
     url = _normalize_s3_url(s3_url)
     fs = fsspec.filesystem("s3", client_kwargs={"endpoint_url": _s3_endpoint()})

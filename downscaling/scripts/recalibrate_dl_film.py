@@ -57,7 +57,6 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -259,9 +258,12 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
     ds_dem = xr.open_dataset(dem_path)
 
     # Normalise time coord (CERRA utilise valid_time)
-    if "valid_time" in ds_cerra.dims and "time" not in ds_cerra.dims:
-        ds_cerra = ds_cerra.rename({"valid_time": "time"})
-    elif "valid_time" in ds_cerra.coords and "time" not in ds_cerra.coords:
+    if (
+        "valid_time" in ds_cerra.dims
+        and "time" not in ds_cerra.dims
+        or "valid_time" in ds_cerra.coords
+        and "time" not in ds_cerra.coords
+    ):
         ds_cerra = ds_cerra.rename({"valid_time": "time"})
     if ds_cerra["time"].dtype.kind != "M":
         ref = pd.Timestamp("1900-01-01")

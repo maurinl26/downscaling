@@ -16,13 +16,12 @@ Examples
 from __future__ import annotations
 
 import json
-from typing import Mapping
+from collections.abc import Mapping
 
 import torch
 from huggingface_hub import hf_hub_download
 
 from downscaling.deep_learning.model import build_model
-
 
 KARPOS_HF_ORG = "karpos26"
 

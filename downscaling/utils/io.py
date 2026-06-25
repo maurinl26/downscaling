@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 SCW_DEFAULT_ENDPOINT = "https://s3.fr-par.scw.cloud"
 
 
-def is_remote(path: Union[str, Path]) -> bool:
+def is_remote(path: str | Path) -> bool:
     """True if the path is an ``s3://`` or ``scw://`` URL."""
     s = str(path)
     return s.startswith(("s3://", "scw://"))
@@ -50,7 +50,7 @@ def _fs():
     return fsspec.filesystem("s3", client_kwargs={"endpoint_url": _s3_endpoint()})
 
 
-def make_zarr_store(out: Union[str, Path], year: int) -> Any:
+def make_zarr_store(out: str | Path, year: int) -> Any:
     """Return a target for ``xarray.Dataset.to_zarr`` / ``xr.open_zarr``.
 
     - Local path → ``str`` path to ``<out>/<year>.zarr`` (parent dir created).
@@ -67,7 +67,7 @@ def make_zarr_store(out: Union[str, Path], year: int) -> Any:
     return str(out_path / f"{year}.zarr")
 
 
-def write_sidecar(out: Union[str, Path], year: int, suffix: str, content: str) -> str:
+def write_sidecar(out: str | Path, year: int, suffix: str, content: str) -> str:
     """Write a sidecar text file next to the year zarr.
 
     ``suffix`` should include the dot, e.g. ``.metadata.json``.
@@ -93,7 +93,7 @@ def write_sidecar(out: Union[str, Path], year: int, suffix: str, content: str) -
     return str(target)
 
 
-def describe(out: Union[str, Path], year: int, suffix: str = ".zarr") -> str:
+def describe(out: str | Path, year: int, suffix: str = ".zarr") -> str:
     """Return a human-friendly path string for logging (no IO)."""
     out_s = str(out)
     if is_remote(out_s):

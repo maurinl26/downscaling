@@ -71,9 +71,12 @@ def _git_sha() -> str:
 
 def _nightly_tmin(da: xr.DataArray) -> xr.DataArray:
     """Same convention as recalibrate_statistical: shift -9h, daily min, time = morning date."""
-    if "valid_time" in da.dims and "time" not in da.dims:
-        da = da.rename({"valid_time": "time"})
-    elif "valid_time" in da.coords and "time" not in da.coords:
+    if (
+        "valid_time" in da.dims
+        and "time" not in da.dims
+        or "valid_time" in da.coords
+        and "time" not in da.coords
+    ):
         da = da.rename({"valid_time": "time"})
     if da["time"].dtype.kind != "M":
         ref = pd.Timestamp("1900-01-01")

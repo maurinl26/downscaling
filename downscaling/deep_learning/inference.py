@@ -223,7 +223,7 @@ class DLInferencePipeline:
             x_met, _ = prepare_inference_batch(
                 coarse_ds, dem_ds, self.met_vars, self.stats, time_idx=t, device=str(self.device)
             )
-            if H <= self.tile_size and W <= self.tile_size:
+            if self.tile_size >= H and self.tile_size >= W:
                 with torch.no_grad():
                     pred = self.model(x_met, x_dem).cpu().numpy()
             else:

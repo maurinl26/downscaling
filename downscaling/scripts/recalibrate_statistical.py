@@ -86,9 +86,12 @@ def _nightly_tmin(da: xr.DataArray) -> xr.DataArray:
     Handles CERRA NetCDF which uses `valid_time` instead of `time`.
     """
     # CERRA NetCDF utilise valid_time ; renommer en time.
-    if "valid_time" in da.dims and "time" not in da.dims:
-        da = da.rename({"valid_time": "time"})
-    elif "valid_time" in da.coords and "time" not in da.coords:
+    if (
+        "valid_time" in da.dims
+        and "time" not in da.dims
+        or "valid_time" in da.coords
+        and "time" not in da.coords
+    ):
         da = da.rename({"valid_time": "time"})
     # Si la coord time n'est pas datetime, convertir depuis hours since 1900
     if da["time"].dtype.kind != "M":
@@ -287,6 +290,7 @@ def main() -> int:
     if args.cerra_orog:
         if args.cerra_orog.startswith("s3://"):
             import tempfile
+
             import s3fs
 
             orog_local = Path(tempfile.gettempdir()) / "cerra_orography.nc"
@@ -565,9 +569,10 @@ def main() -> int:
             wandb.log({"summary/" + k: v for k, v in summary.items()})
             # Per-night table (lecture rapide dans W&B)
             if per_night_records:
+                cols = list(per_night_records[0])
                 tbl = wandb.Table(
-                    columns=list(per_night_records[0].keys()),
-                    data=[[r[k] for k in per_night_records[0].keys()] for r in per_night_records],
+                    columns=cols,
+                    data=[[r[k] for k in cols] for r in per_night_records],
                 )
                 wandb.log({"per_night": tbl})
             # Log artefact Zarr metadata (file local OR reference S3)

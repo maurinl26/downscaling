@@ -61,9 +61,12 @@ def _circular_median_dir(directions_deg: np.ndarray) -> float:
 
 def _normalize_era5(ds: xr.Dataset) -> xr.Dataset:
     """Normalize ERA5 NetCDF : valid_time→time, lat/lon naming, time decoding."""
-    if "valid_time" in ds.dims and "time" not in ds.dims:
-        ds = ds.rename({"valid_time": "time"})
-    elif "valid_time" in ds.coords and "time" not in ds.coords:
+    if (
+        "valid_time" in ds.dims
+        and "time" not in ds.dims
+        or "valid_time" in ds.coords
+        and "time" not in ds.coords
+    ):
         ds = ds.rename({"valid_time": "time"})
     if ds["time"].dtype.kind != "M":
         ref = pd.Timestamp("1900-01-01")

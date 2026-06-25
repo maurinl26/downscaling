@@ -45,9 +45,8 @@ la forme single-file est conservée pour les fixtures de tests existantes.
 
 from __future__ import annotations
 
-import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import urlparse
 
 import fsspec
