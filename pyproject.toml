@@ -79,13 +79,6 @@ prithvi = [
     # "terratorch[wxc]>=1.2; python_version>='3.11'",
 ]
 
-# PMAP-LES — modèle LES dynamique (JAX + GT4Py + PHYEX ice3)
-# Source : git@github.com:maurinl26/PMAP-LES-shared.git, branche feature_ice3_physics
-# Résolu via [tool.uv.sources] ci-dessous
-pmap = [
-    "pmap",
-]
-
 # Documentation — Sphinx + myst-parser pour build docs/ et déploiement Read the Docs
 docs = [
     "sphinx>=7.0",
@@ -98,7 +91,7 @@ docs = [
 
 # Toutes les dépendances pour développement complet
 all = [
-    "downscaling[statistical,dl,prithvi,pmap,docs]",
+    "downscaling[statistical,dl,prithvi,docs]",
     "jupyter>=1.0",
     "matplotlib>=3.8",
     "cartopy>=0.22",
@@ -124,7 +117,6 @@ fetch-pretrained     = "downscaling.scripts.fetch_pretrained:main"
 run-dl-train         = "downscaling.scripts.run_dl_train:main"
 run-dl-inference     = "downscaling.scripts.run_dl_inference:main"
 run-calibration      = "downscaling.scripts.run_calibration:main"
-run-campaign         = "downscaling.scripts.run_campaign:main"
 launch-dl-job        = "downscaling.scripts.launch_dl_job:main"
 run-on-mac           = "downscaling.scripts.run_on_mac:main"
 s3-sync              = "downscaling.scripts.s3_sync:main"
@@ -134,11 +126,6 @@ package = true
 
 [tool.uv.sources]
 prithviwxc = { git = "https://github.com/NASA-IMPACT/Prithvi-WxC.git" }
-pmap = { git = "ssh://git@github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
-# Variante HTTPS (si SSH non disponible) :
-# pmap = { git = "https://github.com/maurinl26/PMAP-LES-shared.git", branch = "feature_ice3_physics" }
-# Variante locale (développement simultané des deux repos) :
-# pmap = { path = "../PMAP-LES-shared", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -213,29 +200,15 @@ addopts = "--cov=. --cov-report=term-missing"
 # Pipeline statistique seul :
 #   uv sync
 #
-# + PMAP-LES (dynamique LES, branche feature_ice3_physics) :
-#   uv sync --extra pmap
-#
-# + Tout (stat + DL + Prithvi + PMAP) :
+# + Tout (stat + DL + Prithvi + docs) :
 #   uv sync --extra all
-#
-# Développement simultané downscaling + PMAP-LES (local editable) :
-#   Décommenter la ligne "pmap = { path = ... }" dans [tool.uv.sources]
-#   uv sync --extra pmap
-#
-# Lancement de la campagne après installation :
-#   run-campaign --config runs/campaign/config.yml --source era5land --step all
-#
-# Ou sans installation via uv run (inline script metadata) :
-#   uv run runs/scripts/detect_cold_nights.py --stat-out ... --config ... --out ...
-#   uv run runs/scripts/orchestrate.py --config runs/april2021/config.yml --step all
 #
 # Avec Prithvi WxC :
 #   uv sync --extra prithvi
 #   pip install 'git+https://github.com/NASA-IMPACT/Prithvi-WxC.git'
 #
 # Sur RunPod (image pytorch:2.x-cuda12.x) :
-#   uv sync --extra prithvi --extra pmap --system
+#   uv sync --extra prithvi --system
 #
 # Le modèle Prithvi WxC (~9 GB) est cherché dans modelstore/ puis téléchargé
 # depuis HuggingFace au premier appel à PrithviWxCDownscaler.from_pretrained().

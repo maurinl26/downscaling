@@ -22,3 +22,9 @@ coverage.xml
 # Poids pré-entraînés (Prithvi WxC, Granite) — peuplés par `fetch-pretrained`
 modelstore/
 docs/_build/
+
+# Outputs ML locaux — ne jamais committer (binaires lourds, runs ad-hoc).
+# Découverts au cleanup PMAP : `git add -A` les avait staged accidentellement.
+artifacts/
+checkpoints/
+wandb/
