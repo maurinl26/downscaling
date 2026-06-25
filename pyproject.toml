@@ -112,6 +112,10 @@ dev = [
     "pytest-cov>=4.1",
     "ruff>=0.3",
     "mypy>=1.9",
+    # Filet local avant push (cf. .pre-commit-config.yaml). La CI exécute déjà
+    # ruff check + format --check en bloquant, pre-commit évite juste les
+    # aller-retours rouges sur la PR.
+    "pre-commit>=3.7",
 ]
 
 [project.scripts]
