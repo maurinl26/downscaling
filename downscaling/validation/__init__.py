@@ -5,19 +5,18 @@ des pipelines de descente d'échelle (statistique Lot B et DL FiLM Lot C)
 pour produire des intervalles de prédiction et des bornes de queue
 opposables (audit Atekka).
 
-Cette branche (``feat/cqr-validation``, sous-issue karpos-downscaling#65)
-ne ré-exporte que le module ``conformal``. Le module ``gpd_tail``
-(sous-issue #67, branche ``feat/gpd-tail-validation``) sera ajouté ici
-au merge sur main pour ne pas créer de dépendance croisée entre les
-deux PR.
-
 Modules
 -------
 conformal
     Conformalized Quantile Regression (Romano, Patterson, Candès 2019,
     NeurIPS) avec correction finite-sample (Vovk & Shafer 2005) et
     variante Mondrian conditionnelle (Boström 2020, COPA). Frontline
-    method de l'EPIC karpos-downscaling#64.
+    method de l'EPIC karpos-downscaling#64. Cf. sous-issue #65.
+
+gpd_tail
+    POT (Peaks-Over-Threshold) + GPD (Generalized Pareto Distribution) sur
+    les résidus QDM en queue gauche froide (Coles 2001 chap 4-5). Bornage
+    des extrêmes pour le pricing actuarial. Cf. sous-issue #67.
 
 Voir aussi
 ----------
@@ -35,8 +34,16 @@ from downscaling.validation.conformal import (
     split_cqr_calibrate,
     split_cqr_predict,
 )
+from downscaling.validation.gpd_tail import (
+    GPDFit,
+    fit_gpd_pot,
+    ks_test_gpd,
+    mean_excess_plot,
+    quantile_gpd,
+)
 
 __all__ = [
+    # conformal (issue #65)
     "coverage_gap",
     "mondrian_cqr_calibrate",
     "mondrian_cqr_predict",
@@ -44,4 +51,10 @@ __all__ = [
     "pinball_loss",
     "split_cqr_calibrate",
     "split_cqr_predict",
+    # gpd_tail (issue #67)
+    "GPDFit",
+    "fit_gpd_pot",
+    "ks_test_gpd",
+    "mean_excess_plot",
+    "quantile_gpd",
 ]
