@@ -51,11 +51,12 @@ from downscaling.validation.conformal import (  # noqa: E402
 # Pinball loss (Koenker & Bassett 1978)
 # ---------------------------------------------------------------------------
 
+
 @requires_torch
 def test_pinball_loss_asymmetry():
     """À tau=0.1, sur-prédire coûte 9x plus que sous-prédire (et inversement)."""
     targets = torch.zeros(100)
-    over = torch.full((100,), 1.0)   # pred = target + 1 → r = -1
+    over = torch.full((100,), 1.0)  # pred = target + 1 → r = -1
     under = torch.full((100,), -1.0)  # pred = target - 1 → r = +1
 
     loss_over_q10 = pinball_loss(over, targets, quantile=0.1).item()
@@ -93,9 +94,11 @@ def test_pinball_loss_invalid_quantile():
 def test_multi_quantile_loss_sums_components():
     """multi_quantile_loss = somme des pinball par quantile, pas de pondération."""
     target = torch.zeros(20)
-    preds = {0.05: torch.full((20,), -1.0),
-             0.50: torch.full((20,),  0.0),
-             0.95: torch.full((20,), +1.0)}
+    preds = {
+        0.05: torch.full((20,), -1.0),
+        0.50: torch.full((20,), 0.0),
+        0.95: torch.full((20,), +1.0),
+    }
     expected = (
         pinball_loss(preds[0.05], target, 0.05).item()
         + pinball_loss(preds[0.50], target, 0.50).item()
@@ -128,7 +131,7 @@ def test_multi_quantile_unet_forward_backward():
         met_in_ch=2,
         met_out_ch=1,
         dem_in_ch=2,
-        base_ch=8,     # gardé petit pour la CI
+        base_ch=8,  # gardé petit pour la CI
         n_levels=2,
         use_film=True,
         cond_dim=0,
@@ -146,9 +149,7 @@ def test_multi_quantile_unet_forward_backward():
     loss.backward()
     # Au moins un paramètre du backbone a reçu un gradient non nul.
     grads_nonzero = [
-        p.grad.abs().sum().item() > 0
-        for p in m.backbone.parameters()
-        if p.grad is not None
+        p.grad.abs().sum().item() > 0 for p in m.backbone.parameters() if p.grad is not None
     ]
     assert any(grads_nonzero), "backbone n'a reçu aucun gradient"
 
@@ -156,6 +157,7 @@ def test_multi_quantile_unet_forward_backward():
 # ---------------------------------------------------------------------------
 # Split CQR — couverture marginale (Romano, Patterson, Candès 2019)
 # ---------------------------------------------------------------------------
+
 
 def _synthetic_quantile_predictions(rng, n, sigma=1.0, miscal=0.5):
     """Toy data : y ~ N(0, sigma^2), prédicteur quantile mal calibré.
@@ -211,6 +213,7 @@ def test_coverage_gap_signs():
 # ---------------------------------------------------------------------------
 # Mondrian CQR (Boström 2020) — couverture par strate
 # ---------------------------------------------------------------------------
+
 
 def test_mondrian_cqr_per_stratum_coverage():
     """3 strates Gaussiennes d'écarts-types différents : Mondrian rétablit

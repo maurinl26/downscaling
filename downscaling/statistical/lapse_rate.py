@@ -174,6 +174,7 @@ class MonthlyLapseRate:
 # Correction de la pression de surface (hydrostatique)
 # ---------------------------------------------------------------------------
 
+
 def correct_surface_pressure(
     sp_coarse: xr.DataArray,
     z_coarse: xr.DataArray,
@@ -194,8 +195,8 @@ def correct_surface_pressure(
     t_mean_k:
         Température moyenne de référence (K). Défaut : 288.15 K (ISA).
     """
-    g = 9.80665   # m s⁻²
-    Rd = 287.05   # J kg⁻¹ K⁻¹
+    g = 9.80665  # m s⁻²
+    Rd = 287.05  # J kg⁻¹ K⁻¹
     dz = z_fine - z_coarse
     sp_fine = sp_coarse * np.exp(-g * dz / (Rd * t_mean_k))
     sp_fine.attrs.update(sp_coarse.attrs)

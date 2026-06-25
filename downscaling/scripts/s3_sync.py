@@ -56,7 +56,7 @@ def _client():
 def _split_uri(uri: str) -> tuple[str, str]:
     if not uri.startswith("s3://"):
         sys.exit(f"URI S3 invalide (attendu s3://bucket/prefix) : {uri}")
-    bucket, _, key = uri[len("s3://"):].partition("/")
+    bucket, _, key = uri[len("s3://") :].partition("/")
     return bucket, key
 
 
@@ -76,11 +76,11 @@ def push(local: str, uri: str) -> None:
     n = 0
     for path, rel in _iter_files(local_path):
         if prefix.endswith("/"):
-            key = f"{prefix}{rel}"                       # dossier S3 explicite
+            key = f"{prefix}{rel}"  # dossier S3 explicite
         elif local_path.is_dir():
-            key = f"{prefix}/{rel}"                       # dir local → préfixe
+            key = f"{prefix}/{rel}"  # dir local → préfixe
         else:
-            key = prefix                                 # fichier → clé exacte
+            key = prefix  # fichier → clé exacte
         s3.upload_file(str(path), bucket, key)
         n += 1
         print(f"  ↑ {path}  →  s3://{bucket}/{key}")
@@ -97,7 +97,7 @@ def pull(uri: str, local: str) -> None:
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj["Key"]
-            rel = key[len(prefix):].lstrip("/") if prefix else key
+            rel = key[len(prefix) :].lstrip("/") if prefix else key
             dest = out / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             s3.download_file(bucket, key, str(dest))
@@ -110,9 +110,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Sync local ↔ Scaleway S3")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("push", help="local → S3")
-    p.add_argument("local"); p.add_argument("uri")
+    p.add_argument("local")
+    p.add_argument("uri")
     g = sub.add_parser("pull", help="S3 → local")
-    g.add_argument("uri"); g.add_argument("local")
+    g.add_argument("uri")
+    g.add_argument("local")
     args = ap.parse_args()
     if args.cmd == "push":
         push(args.local, args.uri)

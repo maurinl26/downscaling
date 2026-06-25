@@ -55,8 +55,8 @@ class CERRACoarseProvider:
         night_end: str = "8h",
         reduce: str = "min",
         hourly: bool = True,
-        var_map: dict | None = None,     # {canonique: nom_cerra} si les noms diffèrent
-        regrid: bool = False,            # True si CERRA pas déjà sur la grille fine (MNT)
+        var_map: dict | None = None,  # {canonique: nom_cerra} si les noms diffèrent
+        regrid: bool = False,  # True si CERRA pas déjà sur la grille fine (MNT)
         regrid_method: str = "linear",
     ):
         self.cerra_dir = Path(cerra_dir)
@@ -85,7 +85,7 @@ class CERRACoarseProvider:
         """Dates disponibles, déduites des fichiers présents (``YYYY-MM-DD``)."""
         prefix, suffix = self.file_template.split("{date}")
         return [
-            p.name[len(prefix): len(p.name) - len(suffix)]
+            p.name[len(prefix) : len(p.name) - len(suffix)]
             for p in sorted(self.cerra_dir.glob(f"{prefix}*{suffix}"))
         ]
 
@@ -153,8 +153,8 @@ class CERRACoarseProvider:
             "dims": dict(raw.sizes),
             "has_time": "time" in ds.dims,
             "n_time": int(ds.sizes.get("time", 0)),
-            "field_grid": field_grid,           # (H, W) d'un champ météo
-            "dem_grid": dem_grid,               # (H, W) du MNT
+            "field_grid": field_grid,  # (H, W) d'un champ météo
+            "dem_grid": dem_grid,  # (H, W) du MNT
             # Grilles alignées → regrid inutile ; sinon passer regrid=True.
             "grid_matches_dem": field_grid == dem_grid if field_grid else None,
         }
@@ -176,9 +176,9 @@ class CERRACoarseProvider:
                 x, dem = prepare_inference_batch(
                     ds, self._dem(), self.met_vars, self.stats, time_idx=t, device="cpu"
                 )
-                mets.append(x.squeeze(0))   # (C, H, W)
+                mets.append(x.squeeze(0))  # (C, H, W)
                 x_dem = dem.squeeze(0)
-            return torch.stack(mets, dim=0), x_dem   # (T, C, H, W), (C_dem, H, W)
+            return torch.stack(mets, dim=0), x_dem  # (T, C, H, W), (C_dem, H, W)
 
         if "time" in ds.dims:
             ds = getattr(ds, self.reduce)("time")

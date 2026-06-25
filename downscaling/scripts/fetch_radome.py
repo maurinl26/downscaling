@@ -94,13 +94,19 @@ def _push_s3(local_path: Path, s3_url: str) -> None:
     try:
         import fsspec
     except ImportError as exc:
-        raise RuntimeError("fsspec required for --s3-prefix, install with `uv pip install fsspec s3fs`") from exc
-    from downscaling.utils.io import _s3_endpoint, _normalize_s3_url
+        raise RuntimeError(
+            "fsspec required for --s3-prefix, install with `uv pip install fsspec s3fs`"
+        ) from exc
+    from downscaling.utils.io import _normalize_s3_url, _s3_endpoint
+
     url = _normalize_s3_url(s3_url)
     fs = fsspec.filesystem("s3", client_kwargs={"endpoint_url": _s3_endpoint()})
     target = f"{url.rstrip('/')}/{local_path.name}"
     log.info("  → S3 %s", target)
-    with open(local_path, "rb") as f_in, fsspec.open(target, mode="wb", client_kwargs={"endpoint_url": _s3_endpoint()}) as f_out:
+    with (
+        open(local_path, "rb") as f_in,
+        fsspec.open(target, mode="wb", client_kwargs={"endpoint_url": _s3_endpoint()}) as f_out,
+    ):
         # Stream copy 8 MB chunks
         while True:
             chunk = f_in.read(8 * 1024 * 1024)
@@ -111,16 +117,28 @@ def _push_s3(local_path: Path, s3_url: str) -> None:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Fetch RADOME daily Tmin per dept from data.gouv.fr")
-    p.add_argument("--depts", type=int, nargs="+", required=True,
-                   help="Department codes (e.g. 26 84 5 for Baronnies). "
-                        "Use the numeric code, not zero-padded.")
+    p.add_argument(
+        "--depts",
+        type=int,
+        nargs="+",
+        required=True,
+        help="Department codes (e.g. 26 84 5 for Baronnies). "
+        "Use the numeric code, not zero-padded.",
+    )
     p.add_argument("--out", type=Path, required=True, help="Local output directory")
-    p.add_argument("--include-other-params", action="store_true",
-                   help="Also download Q_<NN>_..._autres-parametres.csv.gz (humidity, pressure, snow...)")
-    p.add_argument("--s3-prefix", type=str, default=None,
-                   help="Optional S3 prefix to mirror downloaded files "
-                        "(e.g. s3://karpos-backtest-data/radome). "
-                        "Requires AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY env.")
+    p.add_argument(
+        "--include-other-params",
+        action="store_true",
+        help="Also download Q_<NN>_..._autres-parametres.csv.gz (humidity, pressure, snow...)",
+    )
+    p.add_argument(
+        "--s3-prefix",
+        type=str,
+        default=None,
+        help="Optional S3 prefix to mirror downloaded files "
+        "(e.g. s3://karpos-backtest-data/radome). "
+        "Requires AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY env.",
+    )
     p.add_argument("--force", action="store_true", help="Re-download even if local file exists")
     args = p.parse_args()
 
@@ -153,8 +171,11 @@ def main() -> int:
                 except Exception as exc:
                     log.warning("  S3 push failed: %s", exc)
 
-    log.info("=== DONE : %d files downloaded, total %.1f MB ===",
-             total_downloaded, total_size / 1024 / 1024)
+    log.info(
+        "=== DONE : %d files downloaded, total %.1f MB ===",
+        total_downloaded,
+        total_size / 1024 / 1024,
+    )
     return 0
 
 

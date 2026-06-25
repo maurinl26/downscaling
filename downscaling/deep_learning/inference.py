@@ -44,6 +44,7 @@ log = logging.getLogger(__name__)
 # Inférence par tuiles avec recombinaison Hann
 # ---------------------------------------------------------------------------
 
+
 def hann_window_2d(size: int) -> np.ndarray:
     """Fenêtre de Hann 2D pour la recombinaison sans artefacts."""
     w1d = np.hanning(size).astype(np.float32)
@@ -107,9 +108,7 @@ def _infer_output_shape(
     model.eval()
     with torch.no_grad():
         x = torch.zeros(1, c_in, tile_size, tile_size, device=device)
-        dem_ch = next(
-            (m for m in model.modules() if hasattr(m, "encoders")), None
-        )
+        dem_ch = next((m for m in model.modules() if hasattr(m, "encoders")), None)
         if dem_ch is not None:
             d_in = dem_ch.encoders[0][0].block[0].in_channels
         else:
@@ -122,6 +121,7 @@ def _infer_output_shape(
 # ---------------------------------------------------------------------------
 # Pipeline d'inférence complet
 # ---------------------------------------------------------------------------
+
 
 class DLInferencePipeline:
     """
@@ -209,8 +209,7 @@ class DLInferencePipeline:
 
         # Prépare le tenseur DEM une seule fois (constant dans le temps)
         _, x_dem = prepare_inference_batch(
-            coarse_ds, dem_ds, self.met_vars, self.stats,
-            time_idx=0, device=str(self.device)
+            coarse_ds, dem_ds, self.met_vars, self.stats, time_idx=0, device=str(self.device)
         )
 
         H = x_dem.shape[-2]
@@ -222,15 +221,16 @@ class DLInferencePipeline:
         log.info(f"Inférence sur {n_times} pas de temps…")
         for t in range(n_times):
             x_met, _ = prepare_inference_batch(
-                coarse_ds, dem_ds, self.met_vars, self.stats,
-                time_idx=t, device=str(self.device)
+                coarse_ds, dem_ds, self.met_vars, self.stats, time_idx=t, device=str(self.device)
             )
-            if H <= self.tile_size and W <= self.tile_size:
+            if self.tile_size >= H and self.tile_size >= W:
                 with torch.no_grad():
                     pred = self.model(x_met, x_dem).cpu().numpy()
             else:
                 pred = tiled_inference(
-                    self.model, x_met, x_dem,
+                    self.model,
+                    x_met,
+                    x_dem,
                     tile_size=self.tile_size,
                     overlap=self.overlap,
                     device=self.device,
@@ -269,7 +269,9 @@ class DLInferencePipeline:
 
         ds_out = xr.Dataset(data_vars)
         ds_out.attrs["downscaling_method"] = "deep_learning (DEM-conditioned U-Net)"
-        ds_out.attrs["model_checkpoint"] = str(self.checkpoint_path if hasattr(self, "checkpoint_path") else "")
+        ds_out.attrs["model_checkpoint"] = str(
+            self.checkpoint_path if hasattr(self, "checkpoint_path") else ""
+        )
         return ds_out
 
 
@@ -277,10 +279,12 @@ class DLInferencePipeline:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Inférence du modèle DL de descente d'échelle")
-    p.add_argument("--override", nargs="*", default=[],
-                   help="Overrides Hydra (ex: dl.patch_size=128)")
+    p.add_argument(
+        "--override", nargs="*", default=[], help="Overrides Hydra (ex: dl.patch_size=128)"
+    )
     p.add_argument("--checkpoint", required=True, help="Fichier checkpoint .pt")
     p.add_argument("--era5-sl", required=True, help="ERA5 single-level NetCDF")
     p.add_argument("--dem-attrs", required=True, help="Attributs MNT NetCDF")

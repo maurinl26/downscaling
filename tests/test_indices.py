@@ -17,6 +17,7 @@ from downscaling.shared import indices as idx
 # Gel
 # ---------------------------------------------------------------------------
 
+
 def test_frost_days_counts_subzero_minima():
     # Tmin (°C) : 3 jours sous 0, 2 jours au-dessus
     tmin = daily_series(c2k([-5.0, -0.1, 2.0, 0.0, -3.0]))
@@ -56,6 +57,7 @@ def test_spring_frost_index_zero_without_budburst():
 # ---------------------------------------------------------------------------
 # Thermique / agronomie
 # ---------------------------------------------------------------------------
+
 
 def test_growing_degree_days_known_values():
     # tmean = (tmax+tmin)/2. base=10, cap=30 → contribution plafonnée à 20.
@@ -107,6 +109,7 @@ def test_heatwave_index_short_run_below_threshold():
 # ---------------------------------------------------------------------------
 # Précipitations
 # ---------------------------------------------------------------------------
+
 
 def test_to_mm_conversion():
     tp_m = daily_series([0.001, 0.0, 0.02], name="tp")  # mètres
@@ -167,6 +170,7 @@ def test_r95p_sums_top_tail():
 # Vent
 # ---------------------------------------------------------------------------
 
+
 def test_wind_speed_from_components_pythagore():
     u = daily_series([3.0, 0.0], name="u")
     v = daily_series([4.0, 5.0], name="v")
@@ -184,6 +188,7 @@ def test_wind_storm_hours():
 # Neige (proxy)
 # ---------------------------------------------------------------------------
 
+
 def test_snowfall_proxy_days():
     tp = daily_series([0.002, 0.002, 0.0], name="tp")  # mm: 2, 2, 0
     t2m = daily_series(c2k([1.0, 5.0, 1.0]), name="t2m")  # °C: 1, 5, 1
@@ -197,6 +202,7 @@ def test_snowfall_proxy_days():
 # ---------------------------------------------------------------------------
 # Batch
 # ---------------------------------------------------------------------------
+
 
 def test_compute_all_indices_produces_expected_variables():
     n = 24 * 10  # 10 jours horaires

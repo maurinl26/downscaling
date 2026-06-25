@@ -61,6 +61,7 @@ PMAP_SCRIPTS = PMAP_REPO / "scripts"
 # Itération sur les saisons
 # ---------------------------------------------------------------------------
 
+
 def iter_seasons(start_year: int, end_year: int, start_month: int, end_month: int):
     """
     Génère (year_start, month_start, year_end, month_end) pour chaque saison.
@@ -90,6 +91,7 @@ def season_months(year_start: int, month_start: int, year_end: int, month_end: i
 # Données source
 # ---------------------------------------------------------------------------
 
+
 def source_file(cfg: dict, source: str, year: int, month: int) -> Path | None:
     """Retourne le chemin du fichier mensuel pour une source donnée."""
     src_cfg = cfg["campaign"]["sources"][source]
@@ -99,8 +101,9 @@ def source_file(cfg: dict, source: str, year: int, month: int) -> Path | None:
     return path if path.exists() else None
 
 
-def collect_season_files(cfg: dict, source: str, year_start: int, month_start: int,
-                         year_end: int, month_end: int) -> list[Path]:
+def collect_season_files(
+    cfg: dict, source: str, year_start: int, month_start: int, year_end: int, month_end: int
+) -> list[Path]:
     """Retourne la liste ordonnée des fichiers mensuels disponibles pour la saison."""
     files = []
     for y, m in season_months(year_start, month_start, year_end, month_end):
@@ -116,8 +119,10 @@ def collect_season_files(cfg: dict, source: str, year_start: int, month_start: i
 # Étape 1 : Descente d'échelle statistique
 # ---------------------------------------------------------------------------
 
-def step_stat_downscaling(cfg: dict, source: str, year_start: int, month_start: int,
-                           year_end: int, month_end: int) -> Path | None:
+
+def step_stat_downscaling(
+    cfg: dict, source: str, year_start: int, month_start: int, year_end: int, month_end: int
+) -> Path | None:
     """Lance la descente d'échelle statistique pour une saison."""
     season_label = f"{year_start}{month_start:02d}_{year_end}{month_end:02d}"
     out_dir = DOWNSCALING_ROOT / cfg["data"]["stat_output_dir"]
@@ -136,10 +141,14 @@ def step_stat_downscaling(cfg: dict, source: str, year_start: int, month_start: 
     # Config via Hydra (configs/) — plus de monolithe --config.
     if "land" in source:
         cmd = [
-            sys.executable, "downscaling/scripts/run_era5land_downscaling.py",
-            "--era5land-dir", str(files[0].parent),
-            "--dem",          cfg["data"]["dem"]["raw"],
-            "--out-dir",      str(out_file.parent),
+            sys.executable,
+            "downscaling/scripts/run_era5land_downscaling.py",
+            "--era5land-dir",
+            str(files[0].parent),
+            "--dem",
+            cfg["data"]["dem"]["raw"],
+            "--out-dir",
+            str(out_file.parent),
         ]
     else:
         # Liste Hydra : tous les mensuels de la saison sont concaténés
@@ -160,6 +169,7 @@ def step_stat_downscaling(cfg: dict, source: str, year_start: int, month_start: 
 # Étape 2 : Détection des nuits de gel
 # ---------------------------------------------------------------------------
 
+
 def step_detect(cfg: dict, stat_output: Path, season_label: str) -> list[dict]:
     """Détecte les nuits critiques depuis la sortie stat."""
     out_dir = DOWNSCALING_ROOT / "runs" / "campaign" / "cold_nights"
@@ -169,9 +179,12 @@ def step_detect(cfg: dict, stat_output: Path, season_label: str) -> list[dict]:
     cmd = [
         sys.executable,
         "runs/scripts/detect_cold_nights.py",
-        "--stat-out", str(stat_output),
-        "--config",   "runs/campaign/config.yml",
-        "--out",      str(out_json),
+        "--stat-out",
+        str(stat_output),
+        "--config",
+        "runs/campaign/config.yml",
+        "--out",
+        str(out_json),
     ]
     _run(cmd, cwd=DOWNSCALING_ROOT, label=f"detect-{season_label}")
 
@@ -187,6 +200,7 @@ def step_detect(cfg: dict, stat_output: Path, season_label: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Étape 3a : Préparation LBC
 # ---------------------------------------------------------------------------
+
 
 def step_prepare_lbc(cfg: dict, night: dict, source: str) -> Path | None:
     """Génère les LBC horaires (13 snapshots 18h–06h) pour une nuit critique."""
@@ -211,23 +225,40 @@ def step_prepare_lbc(cfg: dict, night: dict, source: str) -> Path | None:
     cmd = [
         sys.executable,
         str(PMAP_SCRIPTS / "era5_to_pmap_lbc.py"),
-        "--era5-pl",         str(pl_file),
-        "--era5-sl",         str(sl_file),
-        "--outdir",          str(lbc_dir),
-        "--lat-min",         str(domain["lat_min"]),
-        "--lat-max",         str(domain["lat_max"]),
-        "--lon-min",         str(domain["lon_min"]),
-        "--lon-max",         str(domain["lon_max"]),
-        "--nx",              str(pmap_cfg["nx"]),
-        "--ny",              str(pmap_cfg["ny"]),
-        "--nz",              str(pmap_cfg["nz"]),
-        "--xmax",            str(pmap_cfg["xmax"]),
-        "--ymax",            str(pmap_cfg["ymax"]),
-        "--zmax",            str(pmap_cfg["zmax"]),
-        "--dz-near-surface", str(pmap_cfg["dz_near_surface"]),
-        "--lat-center",      str(domain["lat_center"]),
-        "--start-timestep",  str(cfg["detection"]["nocturnal_window"]["start_h"]),
-        "--nstep",           str(cfg["lbc_prep"]["nstep"]),
+        "--era5-pl",
+        str(pl_file),
+        "--era5-sl",
+        str(sl_file),
+        "--outdir",
+        str(lbc_dir),
+        "--lat-min",
+        str(domain["lat_min"]),
+        "--lat-max",
+        str(domain["lat_max"]),
+        "--lon-min",
+        str(domain["lon_min"]),
+        "--lon-max",
+        str(domain["lon_max"]),
+        "--nx",
+        str(pmap_cfg["nx"]),
+        "--ny",
+        str(pmap_cfg["ny"]),
+        "--nz",
+        str(pmap_cfg["nz"]),
+        "--xmax",
+        str(pmap_cfg["xmax"]),
+        "--ymax",
+        str(pmap_cfg["ymax"]),
+        "--zmax",
+        str(pmap_cfg["zmax"]),
+        "--dz-near-surface",
+        str(pmap_cfg["dz_near_surface"]),
+        "--lat-center",
+        str(domain["lat_center"]),
+        "--start-timestep",
+        str(cfg["detection"]["nocturnal_window"]["start_h"]),
+        "--nstep",
+        str(cfg["lbc_prep"]["nstep"]),
     ]
     _run(cmd, cwd=REPO_ROOT, label=f"lbc-{source}-{d}")
     return lbc_dir
@@ -236,6 +267,7 @@ def step_prepare_lbc(cfg: dict, night: dict, source: str) -> Path | None:
 # ---------------------------------------------------------------------------
 # Étape 3b : Préparation SURFEX
 # ---------------------------------------------------------------------------
+
 
 def step_prepare_surfex(cfg: dict, night: dict, source: str) -> Path | None:
     """Génère FORCING.nc et lance SURFEX offline pour une nuit critique."""
@@ -257,16 +289,26 @@ def step_prepare_surfex(cfg: dict, night: dict, source: str) -> Path | None:
         cmd = [
             sys.executable,
             str(PMAP_SCRIPTS / "era5_to_surfex_forcing.py"),
-            "--era5-sl",    str(sl_file),
-            "--outfile",    str(forcing_out),
-            "--lat-min",    str(domain["lat_min"]),
-            "--lat-max",    str(domain["lat_max"]),
-            "--lon-min",    str(domain["lon_min"]),
-            "--lon-max",    str(domain["lon_max"]),
-            "--nx",         str(pmap_cfg["nx"]),
-            "--ny",         str(pmap_cfg["ny"]),
-            "--lat-center", str(domain["lat_center"]),
-            "--lon-center", str(domain["lon_center"]),
+            "--era5-sl",
+            str(sl_file),
+            "--outfile",
+            str(forcing_out),
+            "--lat-min",
+            str(domain["lat_min"]),
+            "--lat-max",
+            str(domain["lat_max"]),
+            "--lon-min",
+            str(domain["lon_min"]),
+            "--lon-max",
+            str(domain["lon_max"]),
+            "--nx",
+            str(pmap_cfg["nx"]),
+            "--ny",
+            str(pmap_cfg["ny"]),
+            "--lat-center",
+            str(domain["lat_center"]),
+            "--lon-center",
+            str(domain["lon_center"]),
         ]
         _run(cmd, cwd=REPO_ROOT, label=f"surfex-forcing-{d}")
 
@@ -284,8 +326,14 @@ def step_prepare_surfex(cfg: dict, night: dict, source: str) -> Path | None:
         log.warning("  Compiler open-SURFEX et ajouter l'exe au PATH.")
         return None
 
-    nam_file = (REPO_ROOT / "open-SURFEX-V9-1-0" / "MY_RUN" / "NAMELIST" /
-                "drome_ardeche" / "offline_drome_ardeche.nam")
+    nam_file = (
+        REPO_ROOT
+        / "open-SURFEX-V9-1-0"
+        / "MY_RUN"
+        / "NAMELIST"
+        / "drome_ardeche"
+        / "offline_drome_ardeche.nam"
+    )
     if not nam_file.exists():
         log.warning(f"Namelist SURFEX introuvable : {nam_file}")
         return None
@@ -298,8 +346,10 @@ def step_prepare_surfex(cfg: dict, night: dict, source: str) -> Path | None:
 # Étape 3c : Génération config PMAP depuis template
 # ---------------------------------------------------------------------------
 
-def generate_pmap_config(cfg: dict, night: dict, source: str,
-                          lbc_dir: Path, surfex_output: Path) -> Path:
+
+def generate_pmap_config(
+    cfg: dict, night: dict, source: str, lbc_dir: Path, surfex_output: Path
+) -> Path:
     """Instancie le template YAML PMAP pour une nuit donnée."""
     d = night["date"]
     night_date = date.fromisoformat(d)
@@ -314,12 +364,12 @@ def generate_pmap_config(cfg: dict, night: dict, source: str,
     template_text = template_path.read_text()
 
     substitutions = {
-        "night_date":       d,
-        "start_datetime":   f"{d} 18:00:00",
-        "end_datetime":     f"{next_day.isoformat()} 06:00:00",
-        "era5_file":        str(init_file) if init_file else "MISSING",
-        "lbc_directory":    str(lbc_dir),
-        "surfex_output":    str(surfex_output) if surfex_output else "MISSING",
+        "night_date": d,
+        "start_datetime": f"{d} 18:00:00",
+        "end_datetime": f"{next_day.isoformat()} 06:00:00",
+        "era5_file": str(init_file) if init_file else "MISSING",
+        "lbc_directory": str(lbc_dir),
+        "surfex_output": str(surfex_output) if surfex_output else "MISSING",
         "output_directory": str(output_dir) + "/",
     }
     for key, val in substitutions.items():
@@ -338,14 +388,12 @@ def generate_pmap_config(cfg: dict, night: dict, source: str,
 # Étape 3d : Lancement PMAP-LES
 # ---------------------------------------------------------------------------
 
+
 def step_run_pmap(cfg: dict, night: dict, source: str, pmap_config: Path):
     """Lance pmap-les pour une nuit critique."""
     pmap_exe = shutil.which(cfg["pmap"]["executable"])
     if pmap_exe is None:
-        log.error(
-            f"'{cfg['pmap']['executable']}' introuvable.\n"
-            "  → uv sync --extra pmap"
-        )
+        log.error(f"'{cfg['pmap']['executable']}' introuvable.\n  → uv sync --extra pmap")
         return
     d = night["date"]
     log.info(f"Lancement PMAP [{source.upper()}] nuit {d}…")
@@ -355,6 +403,7 @@ def step_run_pmap(cfg: dict, night: dict, source: str, pmap_config: Path):
 # ---------------------------------------------------------------------------
 # Pipeline par nuit critique
 # ---------------------------------------------------------------------------
+
 
 def run_night(cfg: dict, night: dict, source: str, steps: list[str]):
     """Enchaîne LBC → SURFEX → PMAP pour une nuit détectée."""
@@ -382,8 +431,16 @@ def run_night(cfg: dict, night: dict, source: str, steps: list[str]):
 # Pipeline par saison
 # ---------------------------------------------------------------------------
 
-def run_season(cfg: dict, source: str, year_start: int, month_start: int,
-               year_end: int, month_end: int, steps: list[str]) -> list[dict]:
+
+def run_season(
+    cfg: dict,
+    source: str,
+    year_start: int,
+    month_start: int,
+    year_end: int,
+    month_end: int,
+    steps: list[str],
+) -> list[dict]:
     """Exécute le pipeline complet pour une saison (oct N → mai N+1)."""
     season_label = f"{year_start}{month_start:02d}_{year_end}{month_end:02d}"
     log.info(f"══════ Saison {season_label} [{source}] ══════")
@@ -402,8 +459,13 @@ def run_season(cfg: dict, source: str, year_start: int, month_start: int,
             return []
         cold_nights = step_detect(cfg, stat_output, season_label)
     else:
-        out_json = (DOWNSCALING_ROOT / "runs" / "campaign" / "cold_nights" /
-                    f"cold_nights_{season_label}.json")
+        out_json = (
+            DOWNSCALING_ROOT
+            / "runs"
+            / "campaign"
+            / "cold_nights"
+            / f"cold_nights_{season_label}.json"
+        )
         if out_json.exists():
             with open(out_json) as f:
                 data = json.load(f)
@@ -419,6 +481,7 @@ def run_season(cfg: dict, source: str, year_start: int, month_start: int,
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run(cmd: list[str], cwd: Path, label: str):
     log.info(f"[{label}] $ {' '.join(str(c) for c in cmd)}")
     result = subprocess.run(cmd, cwd=str(cwd), capture_output=False)
@@ -430,18 +493,24 @@ def _run(cmd: list[str], cwd: Path, label: str):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser(
         description="Campagne backtesting gel arboricole — ERA5Land/CERRALand 2000–2024"
     )
-    p.add_argument("--config",  default="runs/campaign/config.yml")
-    p.add_argument("--source",  choices=["era5land", "cerraland", "both"], default="era5land")
-    p.add_argument("--season",  type=int, default=None,
-                   help="Limiter à une saison (ex. 2021 pour oct 2021–mai 2022)")
-    p.add_argument("--step",
-                   choices=["stat-downscaling", "detect", "prepare-lbc",
-                             "prepare-surfex", "run-pmap", "all"],
-                   default="all")
+    p.add_argument("--config", default="runs/campaign/config.yml")
+    p.add_argument("--source", choices=["era5land", "cerraland", "both"], default="era5land")
+    p.add_argument(
+        "--season",
+        type=int,
+        default=None,
+        help="Limiter à une saison (ex. 2021 pour oct 2021–mai 2022)",
+    )
+    p.add_argument(
+        "--step",
+        choices=["stat-downscaling", "detect", "prepare-lbc", "prepare-surfex", "run-pmap", "all"],
+        default="all",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args()
 
@@ -458,10 +527,10 @@ def main():
         cfg = yaml.safe_load(f)
 
     campaign = cfg["campaign"]
-    start_year  = args.season or campaign["start_year"]
-    end_year    = (args.season + 1) if args.season else campaign["end_year"]
+    start_year = args.season or campaign["start_year"]
+    end_year = (args.season + 1) if args.season else campaign["end_year"]
     start_month = campaign["start_month"]
-    end_month   = campaign["end_month"]
+    end_month = campaign["end_month"]
 
     sources = ["era5land", "cerraland"] if args.source == "both" else [args.source]
     steps = [args.step]

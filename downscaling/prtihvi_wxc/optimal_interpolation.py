@@ -119,7 +119,7 @@ class OptimalInterpolationCorrection:
 
         lat_obs = obs.lat[valid_mask]
         lon_obs = obs.lon[valid_mask]
-        y_obs = tmin_obs.values[valid_mask]   # (n_obs,)
+        y_obs = tmin_obs.values[valid_mask]  # (n_obs,)
 
         log.info(f"OI : {valid_mask.sum()} observations Netatmo valides")
 
@@ -207,9 +207,7 @@ class OptimalInterpolationCorrection:
 
                 # Limiter le nombre d'obs (les plus proches)
                 if len(near_idx) > self.max_obs:
-                    dists = np.linalg.norm(
-                        xy_obs[near_idx] - xy_batch[local_i], axis=1
-                    )
+                    dists = np.linalg.norm(xy_obs[near_idx] - xy_batch[local_i], axis=1)
                     near_idx = [near_idx[j] for j in np.argsort(dists)[: self.max_obs]]
 
                 near_idx = np.array(near_idx)
@@ -220,9 +218,7 @@ class OptimalInterpolationCorrection:
                 d_go = np.linalg.norm(xy_near - xy_batch[local_i], axis=1)
 
                 # Distance observations ↔ observations
-                d_oo = np.linalg.norm(
-                    xy_near[:, np.newaxis] - xy_near[np.newaxis, :], axis=2
-                )
+                d_oo = np.linalg.norm(xy_near[:, np.newaxis] - xy_near[np.newaxis, :], axis=2)
 
                 # Fonction de corrélation Gaussienne
                 b_go = self.sigma_b**2 * np.exp(-0.5 * (d_go / self.corr_length_m) ** 2)
@@ -279,6 +275,7 @@ class OptimalInterpolationCorrection:
 # ---------------------------------------------------------------------------
 # Calcul de la réduction de basis risk
 # ---------------------------------------------------------------------------
+
 
 def compute_basis_risk_reduction(
     t2m_background: xr.DataArray,

@@ -56,11 +56,12 @@ ERA5_TO_MERRA2 = {
 @dataclass
 class FrostNightSample:
     """Un échantillon = une paire de timestamps pour inférence rolling."""
+
     t0: pd.Timestamp
     t1: pd.Timestamp  # t0 + 3h
-    era5_t0: torch.Tensor   # (C, H_lr, W_lr)
-    era5_t1: torch.Tensor   # (C, H_lr, W_lr)
-    dem_hr: torch.Tensor    # (3, H_hr, W_hr) : élévation, pente, exposition
+    era5_t0: torch.Tensor  # (C, H_lr, W_lr)
+    era5_t1: torch.Tensor  # (C, H_lr, W_lr)
+    dem_hr: torch.Tensor  # (3, H_hr, W_hr) : élévation, pente, exposition
     valid_time: pd.Timestamp
 
 
@@ -205,9 +206,7 @@ class FrostNightDataset(Dataset):
         dem = np.stack([elevation_norm, slope_norm, aspect_norm], axis=0)
         return torch.from_numpy(dem)
 
-    def _load_climatology(
-        self, climatology_path: str | Path | None
-    ) -> dict[str, dict] | None:
+    def _load_climatology(self, climatology_path: str | Path | None) -> dict[str, dict] | None:
         """
         Charge la climatologie MERRA-2 pour normalisation.
         Si non disponible, retourne None (normalisation min-max sera utilisée).
@@ -216,6 +215,7 @@ class FrostNightDataset(Dataset):
             return None
         try:
             import pickle
+
             with open(climatology_path, "rb") as f:
                 return pickle.load(f)
         except Exception:
@@ -256,8 +256,10 @@ class FrostNightDataset(Dataset):
                 # Variable absente : zéro-padding (modèle tolère données partielles)
                 arrays.append(
                     np.zeros(
-                        (snap.dims.get("latitude", snap.dims.get("lat", 1)),
-                         snap.dims.get("longitude", snap.dims.get("lon", 1))),
+                        (
+                            snap.dims.get("latitude", snap.dims.get("lat", 1)),
+                            snap.dims.get("longitude", snap.dims.get("lon", 1)),
+                        ),
                         dtype=np.float32,
                     )
                 )
@@ -304,6 +306,7 @@ class FrostNightDataset(Dataset):
         target = pd.Timestamp(date)
         next_day = target + pd.Timedelta("1D")
         return [
-            i for i, t in enumerate(self.time_pairs)
+            i
+            for i, t in enumerate(self.time_pairs)
             if target <= t < next_day and t.hour in FROST_HOURS_UTC
         ]

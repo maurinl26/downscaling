@@ -32,8 +32,6 @@ import json
 import logging
 import os
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -72,9 +70,7 @@ def _pull_checkpoint(source: str, dest_dir: Path) -> Path:
     access = os.environ.get("SCW_ACCESS_KEY")
     secret = os.environ.get("SCW_SECRET_KEY")
     if not (access and secret):
-        raise SystemExit(
-            "SCW_ACCESS_KEY / SCW_SECRET_KEY missing in environment."
-        )
+        raise SystemExit("SCW_ACCESS_KEY / SCW_SECRET_KEY missing in environment.")
     from botocore.config import Config
 
     s3 = boto3.client(
@@ -180,10 +176,18 @@ def _upload(bundle_dir: Path, hf_repo: str, commit_message: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--checkpoint", required=True, help="Source checkpoint path (local or s3://)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--checkpoint", required=True, help="Source checkpoint path (local or s3://)"
+    )
     parser.add_argument("--release", required=True, help="Release name, e.g. baronnies-v1")
-    parser.add_argument("--hf-repo", required=True, help="Target HF repo id, e.g. karpos/karpos-downscaling-baronnies-v1")
+    parser.add_argument(
+        "--hf-repo",
+        required=True,
+        help="Target HF repo id, e.g. karpos/karpos-downscaling-baronnies-v1",
+    )
     parser.add_argument(
         "--model-card",
         default=os.path.expanduser("~/kDrive/obsidian_vault/karpos-downscaling-hf-model-card.md"),
@@ -199,7 +203,9 @@ def main() -> None:
         default=None,
         help="Output directory for the assembled bundle. Default: artifacts/<release>/",
     )
-    parser.add_argument("--no-upload", action="store_true", help="Build bundle but skip the HF upload step")
+    parser.add_argument(
+        "--no-upload", action="store_true", help="Build bundle but skip the HF upload step"
+    )
     parser.add_argument(
         "--commit-message",
         default=None,

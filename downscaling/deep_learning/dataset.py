@@ -80,8 +80,9 @@ class DownscalingDataset(Dataset):
         stride: int | None = None,
         stats_file: str | Path | None = None,
     ):
-        assert len(coarse_files) == len(fine_files), \
+        assert len(coarse_files) == len(fine_files), (
             "coarse_files et fine_files doivent avoir la même longueur."
+        )
 
         self.coarse_files = [Path(f) for f in coarse_files]
         self.fine_files = [Path(f) for f in fine_files]
@@ -193,8 +194,10 @@ class DownscalingDataset(Dataset):
         self,
         ds: xr.Dataset,
         vars: list[str],
-        i0: int, i1: int | None,
-        j0: int, j1: int | None,
+        i0: int,
+        i1: int | None,
+        j0: int,
+        j1: int | None,
         normalize: bool = True,
     ) -> torch.Tensor:
         channels = []
@@ -248,6 +251,7 @@ class DownscalingDataset(Dataset):
 # ---------------------------------------------------------------------------
 # Fonction utilitaire : prépare un batch en inférence (sans target)
 # ---------------------------------------------------------------------------
+
 
 def prepare_inference_batch(
     coarse_ds: xr.Dataset,

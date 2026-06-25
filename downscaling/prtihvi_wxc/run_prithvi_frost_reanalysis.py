@@ -49,39 +49,45 @@ log = logging.getLogger("run_prithvi_frost")
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="Réanalyse nuits de gel — Prithvi WxC (NASA/IBM)"
-    )
+    p = argparse.ArgumentParser(description="Réanalyse nuits de gel — Prithvi WxC (NASA/IBM)")
     p.add_argument(
-        "--config", required=True,
+        "--config",
+        required=True,
         help="Chemin vers le fichier YAML de configuration",
     )
     p.add_argument(
-        "--checkpoint", default=None,
+        "--checkpoint",
+        default=None,
         help="Chemin vers un checkpoint adapter fine-tuné (optionnel)",
     )
     p.add_argument(
-        "--start", default=None,
+        "--start",
+        default=None,
         help="Date de début (YYYY-MM-DD). Surcharge la config.",
     )
     p.add_argument(
-        "--end", default=None,
+        "--end",
+        default=None,
         help="Date de fin (YYYY-MM-DD). Surcharge la config.",
     )
     p.add_argument(
-        "--out", default=None,
+        "--out",
+        default=None,
         help="Chemin de sortie Zarr. Surcharge la config.",
     )
     p.add_argument(
-        "--single-night", default=None,
+        "--single-night",
+        default=None,
         help="Lancer uniquement sur une nuit (YYYY-MM-DD). Mode debug.",
     )
     p.add_argument(
-        "--no-granite", action="store_true",
+        "--no-granite",
+        action="store_true",
         help="Ne pas essayer IBM Granite (adapter initialisé aléatoirement).",
     )
     p.add_argument(
-        "--device", default=None,
+        "--device",
+        default=None,
         help="Device PyTorch : 'cuda', 'cuda:0', 'cpu'. Surcharge la config.",
     )
     return p.parse_args()
@@ -104,13 +110,13 @@ def main() -> None:
         config["device"] = args.device
 
     start = config.get("period", {}).get("start", "2000-10-01")
-    end   = config.get("period", {}).get("end",   "2024-05-31")
+    end = config.get("period", {}).get("end", "2024-05-31")
     zarr_out = config.get("output", {}).get("zarr_path", "output/frost_prithvi.zarr")
 
     if args.single_night:
         # Mode debug : une seule nuit
         start = args.single_night
-        end   = args.single_night
+        end = args.single_night
 
     log.info(f"Période : {start} → {end}")
     log.info(f"Sortie   : {zarr_out}")
@@ -119,7 +125,7 @@ def main() -> None:
     data_cfg = config.get("data", {})
     dataset = FrostNightDataset(
         era5_path=data_cfg.get("era5_path", "data/era5/era5_drome_ardeche.zarr"),
-        dem_path=data_cfg.get("dem_path",  "data/dem/copdem_drome_ardeche_200m.tif"),
+        dem_path=data_cfg.get("dem_path", "data/dem/copdem_drome_ardeche_200m.tif"),
         start_date=start,
         end_date=end,
         source=data_cfg.get("source", "era5"),
@@ -138,7 +144,7 @@ def main() -> None:
 
     # --- Modèle -----------------------------------------------------------
     runner = FrostReanalysisRunner(config)
-    model  = runner.load_model(
+    model = runner.load_model(
         checkpoint_path=args.checkpoint,
         use_granite=not args.no_granite,
     )
@@ -149,16 +155,13 @@ def main() -> None:
     # --- Résumé -----------------------------------------------------------
     n_frost = int(ds_out["frost_flag"].sum().values)
     n_total = int(ds_out["frost_flag"].size)
-    pct     = 100 * n_frost / n_total if n_total > 0 else 0.0
+    pct = 100 * n_frost / n_total if n_total > 0 else 0.0
 
     log.info("=" * 60)
     log.info("Réanalyse terminée.")
     log.info(f"  Nuits de gel détectées : {n_frost}/{n_total} ({pct:.1f}%)")
     log.info(f"  Zarr écrit : {zarr_out}")
-    log.info(
-        "  Requête DuckDB : "
-        "SELECT time, MIN(T2m_min_night) FROM read_parquet(...)"
-    )
+    log.info("  Requête DuckDB : SELECT time, MIN(T2m_min_night) FROM read_parquet(...)")
     log.info("=" * 60)
 
 

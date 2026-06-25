@@ -24,6 +24,7 @@ _K0 = 273.15  # 0 °C en Kelvin
 # Gel
 # ---------------------------------------------------------------------------
 
+
 def frost_days(
     tmin: xr.DataArray,
     threshold_c: float = 0.0,
@@ -123,6 +124,7 @@ def spring_frost_index(
 # Thermique / agronomie
 # ---------------------------------------------------------------------------
 
+
 def growing_degree_days(
     tmax: xr.DataArray,
     tmin: xr.DataArray,
@@ -211,6 +213,7 @@ def _in_long_run_mask_along_axis0(arr: np.ndarray, min_len: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Précipitations
 # ---------------------------------------------------------------------------
+
 
 def _to_mm(tp: xr.DataArray, unit: str) -> xr.DataArray:
     """Convertit les précipitations en mm si elles sont en m."""
@@ -324,6 +327,7 @@ def r95p(
 # Vent
 # ---------------------------------------------------------------------------
 
+
 def wind_storm_hours(
     wind_speed: xr.DataArray,
     threshold_ms: float = 15.0,
@@ -354,6 +358,7 @@ def wind_speed_from_components(
 # Enneigement (proxy)
 # ---------------------------------------------------------------------------
 
+
 def snowfall_proxy_days(
     tp_daily: xr.DataArray,
     t2m_daily: xr.DataArray,
@@ -376,6 +381,7 @@ def snowfall_proxy_days(
 # ---------------------------------------------------------------------------
 # Calcul en batch de tous les indices
 # ---------------------------------------------------------------------------
+
 
 def compute_all_indices(
     ds: xr.Dataset,

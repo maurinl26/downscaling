@@ -1,0 +1,36 @@
+# Pre-commit hooks — filet de sécurité local avant push.
+#
+# Setup : `uv run pre-commit install` (une fois par clone).
+# Manuel : `uv run pre-commit run --all-files`.
+#
+# La CI (tests.yml) exécute déjà `ruff check` + `ruff format --check` en
+# bloquant. Pre-commit fait la même chose côté local pour éviter d'envoyer
+# une PR qui sera rouge sur les checks triviaux.
+#
+# Scope volontairement restreint au code Python du package + tests + scripts.
+# Pas de cleanup massif sur docs/, paper.md, configs hydra — trop intrusif
+# et propre à d'autres conventions.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.18
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^(downscaling|tests)/
+      - id: ruff-format
+        files: ^(downscaling|tests)/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        # Skip configs Hydra (Defaults List, override syntax avec `_target_`,
+        # `${}` interpolations) qui peuvent confondre le parser standard.
+        exclude: ^(configs/.*\.ya?ml|docs/.*\.ya?ml)$
+      - id: check-json
+      - id: end-of-file-fixer
+        # Scope code + CI + config racine. Pas docs/, pas notebooks/.
+        files: ^(downscaling|tests|scripts|\.github)/.*\.(py|ya?ml|toml|json)$|^(pyproject\.toml|README\.md)$
+      - id: trailing-whitespace
+        files: ^(downscaling|tests|scripts|\.github)/.*\.(py|ya?ml|toml|json|md)$|^(pyproject\.toml|README\.md)$

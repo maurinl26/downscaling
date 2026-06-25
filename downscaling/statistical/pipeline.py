@@ -214,6 +214,7 @@ class StatisticalDownscalingPipeline:
                 return da.rename("orog_source")
         # Si absente : zéro (pas de correction d'altitude source)
         import warnings
+
         warnings.warn("Orographie source absente : on assume z_source=0 m.", stacklevel=2)
         lat = ds.coords.get("latitude", ds.coords.get("lat"))
         lon = ds.coords.get("longitude", ds.coords.get("lon"))

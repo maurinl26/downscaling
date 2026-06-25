@@ -49,6 +49,7 @@ Logs to stdout (and a small `<out>/.run_metadata.json`) :
 Note: this script is **CPU-friendly** (no GPU). For the DL FiLM variant see
 `recalibrate_dl_film.py`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,9 +86,12 @@ def _nightly_tmin(da: xr.DataArray) -> xr.DataArray:
     Handles CERRA NetCDF which uses `valid_time` instead of `time`.
     """
     # CERRA NetCDF utilise valid_time ; renommer en time.
-    if "valid_time" in da.dims and "time" not in da.dims:
-        da = da.rename({"valid_time": "time"})
-    elif "valid_time" in da.coords and "time" not in da.coords:
+    if (
+        "valid_time" in da.dims
+        and "time" not in da.dims
+        or "valid_time" in da.coords
+        and "time" not in da.coords
+    ):
         da = da.rename({"valid_time": "time"})
     # Si la coord time n'est pas datetime, convertir depuis hours since 1900
     if da["time"].dtype.kind != "M":
@@ -198,23 +202,39 @@ def _residual_correction(
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
-    p = argparse.ArgumentParser(description="Statistical recalibration (lapse + QDM) with Sencrop residual")
+    p = argparse.ArgumentParser(
+        description="Statistical recalibration (lapse + QDM) with Sencrop residual"
+    )
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--cerra-atm", type=Path, required=True)
     p.add_argument("--cerra-land", type=Path, required=True, help="kept for symmetry / future")
-    p.add_argument("--cerra-orog", type=str, default=None,
-                   help="CERRA orography NetCDF (time-invariant). Indispensable pour corriger le "
-                        "biais lapse-rate ; sans, fallback z_source=0 m (biais +3-4°C connu). "
-                        "Supporte chemin local OU URL s3://bucket/key (téléchargé vers /tmp).")
+    p.add_argument(
+        "--cerra-orog",
+        type=str,
+        default=None,
+        help="CERRA orography NetCDF (time-invariant). Indispensable pour corriger le "
+        "biais lapse-rate ; sans, fallback z_source=0 m (biais +3-4°C connu). "
+        "Supporte chemin local OU URL s3://bucket/key (téléchargé vers /tmp).",
+    )
     p.add_argument("--dem", type=Path, required=True)
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
-    p.add_argument("--out", type=str, required=True,
-                   help="Output target: local dir OR s3:// / scw:// URL "
-                        "(zarr + sidecar metadata.json written there).")
-    p.add_argument("--obs-ref", type=Path, default=None, help="optional CERRA fine ref for QDM calibration")
-    p.add_argument("--qdm-joblib", type=Path, default=None,
-                   help="Pre-fitted QuantileDeltaMapping joblib (cf. calibrate_qdm.py). "
-                        "Applied after lapse-rate, before RBF Sencrop residual. C4.1.")
+    p.add_argument(
+        "--out",
+        type=str,
+        required=True,
+        help="Output target: local dir OR s3:// / scw:// URL "
+        "(zarr + sidecar metadata.json written there).",
+    )
+    p.add_argument(
+        "--obs-ref", type=Path, default=None, help="optional CERRA fine ref for QDM calibration"
+    )
+    p.add_argument(
+        "--qdm-joblib",
+        type=Path,
+        default=None,
+        help="Pre-fitted QuantileDeltaMapping joblib (cf. calibrate_qdm.py). "
+        "Applied after lapse-rate, before RBF Sencrop residual. C4.1.",
+    )
     p.add_argument("--variable", default="t2m")
     p.add_argument("--sigma-km", type=float, default=7.0)
     p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
@@ -270,6 +290,7 @@ def main() -> int:
     if args.cerra_orog:
         if args.cerra_orog.startswith("s3://"):
             import tempfile
+
             import s3fs
 
             orog_local = Path(tempfile.gettempdir()) / "cerra_orography.nc"
@@ -305,15 +326,25 @@ def main() -> int:
                 if orog_rename:
                     orog_da = orog_da.rename(orog_rename)
                 orog_da = orog_da.rename("orog")
-                log.info("Orographie CERRA chargée depuis %s (var=%s, shape=%s, mean=%.1f m)",
-                         orog_local, orog_name, orog_da.shape, float(np.nanmean(orog_da.values)))
+                log.info(
+                    "Orographie CERRA chargée depuis %s (var=%s, shape=%s, mean=%.1f m)",
+                    orog_local,
+                    orog_name,
+                    orog_da.shape,
+                    float(np.nanmean(orog_da.values)),
+                )
                 break
         if orog_da is None:
-            log.warning("--cerra-orog %s : aucune variable orog connue (cherché : orography, "
-                        "orog, z, surface_geopotential), fallback z_source=0 m", orog_local)
+            log.warning(
+                "--cerra-orog %s : aucune variable orog connue (cherché : orography, "
+                "orog, z, surface_geopotential), fallback z_source=0 m",
+                orog_local,
+            )
     else:
-        log.warning("--cerra-orog absent : fallback z_source=0 m (BUG biais +3-4°C connu, "
-                    "cf. audit à froid juin 2026)")
+        log.warning(
+            "--cerra-orog absent : fallback z_source=0 m (BUG biais +3-4°C connu, "
+            "cf. audit à froid juin 2026)"
+        )
 
     # 2. Statistical pipeline (lapse-rate only ; QDM via joblib pré-calibré).
     # NB: l'ancien `pipe.calibrate(ref_ds, ref_ds)` était un placeholder cassé
@@ -333,8 +364,12 @@ def main() -> int:
             log.error("--qdm-joblib %s introuvable", args.qdm_joblib)
             return 2
         qdm = joblib.load(args.qdm_joblib)
-        log.info("QDM chargée depuis %s (n_quantiles=%d, by_month=%s)",
-                 args.qdm_joblib, qdm.n_quantiles, qdm.by_month)
+        log.info(
+            "QDM chargée depuis %s (n_quantiles=%d, by_month=%s)",
+            args.qdm_joblib,
+            qdm.n_quantiles,
+            qdm.by_month,
+        )
 
     # 3. For each night, run the pipeline + Sencrop residual correction
     stations_df = load_stations_catalog(args.sencrop)
@@ -351,15 +386,13 @@ def main() -> int:
     ]
     bucket_ids = [s.bucket_id for s in stations]
 
-    ts = load_timeseries(years=[args.year], root=args.sencrop, station_only=True, bucket_ids=bucket_ids)
+    ts = load_timeseries(
+        years=[args.year], root=args.sencrop, station_only=True, bucket_ids=bucket_ids
+    )
     # Compute nightly Tmin per station
     ts["timestamp"] = pd.to_datetime(ts["timestamp"], utc=True)
     ts["night_date"] = (ts["timestamp"] - pd.Timedelta("9h")).dt.date
-    obs_per_night = (
-        ts.groupby(["night_date", "station_id"])["temperature"]
-        .min()
-        .reset_index()
-    )
+    obs_per_night = ts.groupby(["night_date", "station_id"])["temperature"].min().reset_index()
 
     # 3.bis Init W&B (no-op si pas de clé / désactivé)
     wandb_run = None
@@ -427,7 +460,9 @@ def main() -> int:
             ]
         )
         if len(kept_stations) >= 5:
-            grid_corr = _residual_correction(grid_fine, kept_stations, obs_tmin, sigma_km=args.sigma_km)
+            grid_corr = _residual_correction(
+                grid_fine, kept_stations, obs_tmin, sigma_km=args.sigma_km
+            )
             n_stations_used.append(len(kept_stations))
         else:
             grid_corr = grid_fine
@@ -437,24 +472,39 @@ def main() -> int:
 
         # Métriques résidus station (in-sample : sur les stations utilisées dans la calibration)
         if kept_stations:
-            lat_grid = grid_corr["latitude"].values if "latitude" in grid_corr.coords else grid_corr["lat"].values
-            lon_grid = grid_corr["longitude"].values if "longitude" in grid_corr.coords else grid_corr["lon"].values
+            lat_grid = (
+                grid_corr["latitude"].values
+                if "latitude" in grid_corr.coords
+                else grid_corr["lat"].values
+            )
+            lon_grid = (
+                grid_corr["longitude"].values
+                if "longitude" in grid_corr.coords
+                else grid_corr["lon"].values
+            )
             g = grid_corr.values
-            preds = np.array([
-                g[int(np.argmin(np.abs(lat_grid - s.lat))), int(np.argmin(np.abs(lon_grid - s.lon)))]
-                for s in kept_stations
-            ])
+            preds = np.array(
+                [
+                    g[
+                        int(np.argmin(np.abs(lat_grid - s.lat))),
+                        int(np.argmin(np.abs(lon_grid - s.lon))),
+                    ]
+                    for s in kept_stations
+                ]
+            )
             residuals = obs_tmin - preds  # signed residuals (obs - prediction)
             tmin_min_obs = float(np.nanmin(obs_tmin))
-            per_night_records.append({
-                "date": str(d_py),
-                "n_stations": len(kept_stations),
-                "tmin_min_obs": tmin_min_obs,
-                "tmin_mean_obs": float(np.nanmean(obs_tmin)),
-                "residual_mean": float(np.nanmean(residuals)),
-                "residual_rmse": float(np.sqrt(np.nanmean(residuals ** 2))),
-                "residual_abs_mean": float(np.nanmean(np.abs(residuals))),
-            })
+            per_night_records.append(
+                {
+                    "date": str(d_py),
+                    "n_stations": len(kept_stations),
+                    "tmin_min_obs": tmin_min_obs,
+                    "tmin_mean_obs": float(np.nanmean(obs_tmin)),
+                    "residual_mean": float(np.nanmean(residuals)),
+                    "residual_rmse": float(np.sqrt(np.nanmean(residuals**2))),
+                    "residual_abs_mean": float(np.nanmean(np.abs(residuals))),
+                }
+            )
 
     if not out_grids:
         log.error("No nightly grids produced, aborting")
@@ -484,7 +534,7 @@ def main() -> int:
             "avg_stations_per_night": float(np.mean(n_stations_arr)),
             "median_stations_per_night": float(np.median(n_stations_arr)),
             "residual_mean_year": float(np.nanmean(residuals_all)),
-            "residual_rmse_year": float(np.sqrt(np.nanmean(rmse_all ** 2))),
+            "residual_rmse_year": float(np.sqrt(np.nanmean(rmse_all**2))),
             "residual_abs_mean_year": float(np.nanmean(abs_all)),
         }
     else:
@@ -507,7 +557,9 @@ def main() -> int:
         "qdm_joblib": str(args.qdm_joblib) if args.qdm_joblib else None,
         **summary,
     }
-    metadata_path = write_sidecar(args.out, args.year, ".metadata.json", json.dumps(metadata, indent=2))
+    metadata_path = write_sidecar(
+        args.out, args.year, ".metadata.json", json.dumps(metadata, indent=2)
+    )
     log.info("Done. Metadata: %s", metadata_path)
 
     if wandb_run is not None:
@@ -517,9 +569,10 @@ def main() -> int:
             wandb.log({"summary/" + k: v for k, v in summary.items()})
             # Per-night table (lecture rapide dans W&B)
             if per_night_records:
+                cols = list(per_night_records[0])
                 tbl = wandb.Table(
-                    columns=list(per_night_records[0].keys()),
-                    data=[[r[k] for k in per_night_records[0].keys()] for r in per_night_records],
+                    columns=cols,
+                    data=[[r[k] for k in cols] for r in per_night_records],
                 )
                 wandb.log({"per_night": tbl})
             # Log artefact Zarr metadata (file local OR reference S3)

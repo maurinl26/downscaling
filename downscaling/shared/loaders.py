@@ -180,6 +180,7 @@ class CERRALoader:
 # DEM loader
 # ---------------------------------------------------------------------------
 
+
 class DEMLoader:
     """
     Chargement du Modèle Numérique de Terrain (MNT).
@@ -274,14 +275,25 @@ class DEMLoader:
 
         return xr.Dataset(
             {
-                "elevation": xr.DataArray(z, dims=dims, coords=coords,
-                                          attrs={"units": "m"}),
-                "slope": xr.DataArray(slope_deg.astype(np.float32), dims=dims, coords=coords,
-                                      attrs={"units": "degrees"}),
-                "aspect": xr.DataArray(aspect_deg.astype(np.float32), dims=dims, coords=coords,
-                                       attrs={"units": "degrees", "convention": "0=N 90=E"}),
-                "curvature": xr.DataArray(curvature_plan.astype(np.float32), dims=dims,
-                                          coords=coords, attrs={"units": "m-1"}),
+                "elevation": xr.DataArray(z, dims=dims, coords=coords, attrs={"units": "m"}),
+                "slope": xr.DataArray(
+                    slope_deg.astype(np.float32),
+                    dims=dims,
+                    coords=coords,
+                    attrs={"units": "degrees"},
+                ),
+                "aspect": xr.DataArray(
+                    aspect_deg.astype(np.float32),
+                    dims=dims,
+                    coords=coords,
+                    attrs={"units": "degrees", "convention": "0=N 90=E"},
+                ),
+                "curvature": xr.DataArray(
+                    curvature_plan.astype(np.float32),
+                    dims=dims,
+                    coords=coords,
+                    attrs={"units": "m-1"},
+                ),
             }
         )
 
@@ -289,6 +301,7 @@ class DEMLoader:
 # ---------------------------------------------------------------------------
 # Helpers de regrillage
 # ---------------------------------------------------------------------------
+
 
 def regrid_to_dem(
     da: xr.DataArray,

@@ -53,12 +53,24 @@ jobs:
       - name: Sync dependencies (dev tools)
         run: uv sync --extra statistical
 
-      # Ruff = garde bloquante (le dépôt doit rester clean).
-      - name: Ruff
+      # Ruff lint = garde bloquante (le dépôt doit rester clean).
+      - name: Ruff check
         run: uv run ruff check downscaling tests
 
-      # mypy = informatif (typage progressif, cf. [tool.mypy]) — non bloquant.
-      - name: mypy (informatif)
+      # Ruff format = bloquant aussi (depuis sprint propreté). Évite les
+      # diff de format à chaque PR + pre-commit ne sert plus à grand-chose
+      # si la CI accepte du code non-formatté.
+      - name: Ruff format (check only)
+        run: uv run ruff format --check downscaling tests
+
+      # mypy bloquant sur le scaffold validation/ (typage propre depuis le
+      # début), informatif partout ailleurs (typage progressif, cf.
+      # [tool.mypy] : check_untyped_defs=false). Stratégie : durcir
+      # module-par-module quand un sous-paquet atteint un typage complet.
+      - name: mypy (bloquant sur downscaling/validation/)
+        run: uv run mypy downscaling/validation
+
+      - name: mypy (informatif partout)
         run: uv run mypy downscaling || true
 
   docs-build:

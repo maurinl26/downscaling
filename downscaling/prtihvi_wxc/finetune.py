@@ -56,6 +56,7 @@ log = logging.getLogger(__name__)
 # Dataset de fine-tuning (ERA5 + DEM + capteurs sparse, source-agnostique)
 # ---------------------------------------------------------------------------
 
+
 class StationFineTuneDataset(Dataset):
     """
     Dataset de fine-tuning sparse — 1 sample = 1 nuit. **Source-agnostique**
@@ -93,7 +94,8 @@ class StationFineTuneDataset(Dataset):
         self.valid_nights = self._build_night_index()
         log.info(
             "Fine-tune dataset : %d nuits avec ≥%d stations QC'd",
-            len(self.valid_nights), min_stations_per_night,
+            len(self.valid_nights),
+            min_stations_per_night,
         )
 
     def _path(self, date_str: str) -> Path:
@@ -135,9 +137,9 @@ class StationFineTuneDataset(Dataset):
         obs_dz = elevation_offset(elev_obs, row_idx, col_idx, self.elevation_grid)
 
         return {
-            "era5_t0": era5_sample.era5_t0,               # (C, H_lr, W_lr)
-            "era5_t1": era5_sample.era5_t1,               # (C, H_lr, W_lr)
-            "dem_hr": era5_sample.dem_hr,                  # (3, H_hr, W_hr)
+            "era5_t0": era5_sample.era5_t0,  # (C, H_lr, W_lr)
+            "era5_t1": era5_sample.era5_t1,  # (C, H_lr, W_lr)
+            "dem_hr": era5_sample.dem_hr,  # (3, H_hr, W_hr)
             "obs_tmin": torch.tensor(tmin_vals, dtype=torch.float32),  # (n_obs,)
             "obs_row": torch.tensor(row_idx, dtype=torch.long),
             "obs_col": torch.tensor(col_idx, dtype=torch.long),
@@ -150,13 +152,25 @@ class NetatmoFineTuneDataset(StationFineTuneDataset):
     """Fine-tuning sur stations **Netatmo** (``netatmo_<date>.parquet``)."""
 
     def __init__(
-        self, era5_dataset, netatmo_dir, lat_grid, lon_grid, *,
-        elevation_grid=None, min_stations_per_night=5, lapse_rate=-6.5e-3,
+        self,
+        era5_dataset,
+        netatmo_dir,
+        lat_grid,
+        lon_grid,
+        *,
+        elevation_grid=None,
+        min_stations_per_night=5,
+        lapse_rate=-6.5e-3,
     ):
         super().__init__(
-            era5_dataset, netatmo_dir, lat_grid, lon_grid,
-            obs_loader=load_netatmo_parquet, file_template="netatmo_{date}.parquet",
-            elevation_grid=elevation_grid, min_stations_per_night=min_stations_per_night,
+            era5_dataset,
+            netatmo_dir,
+            lat_grid,
+            lon_grid,
+            obs_loader=load_netatmo_parquet,
+            file_template="netatmo_{date}.parquet",
+            elevation_grid=elevation_grid,
+            min_stations_per_night=min_stations_per_night,
             lapse_rate=lapse_rate,
         )
 
@@ -170,14 +184,26 @@ class SencropFineTuneDataset(StationFineTuneDataset):
     """
 
     def __init__(
-        self, era5_dataset, sencrop_dir, lat_grid, lon_grid, *,
-        elevation_grid=None, file_template="sencrop_{date}.csv",
-        min_stations_per_night=5, lapse_rate=-6.5e-3,
+        self,
+        era5_dataset,
+        sencrop_dir,
+        lat_grid,
+        lon_grid,
+        *,
+        elevation_grid=None,
+        file_template="sencrop_{date}.csv",
+        min_stations_per_night=5,
+        lapse_rate=-6.5e-3,
     ):
         super().__init__(
-            era5_dataset, sencrop_dir, lat_grid, lon_grid,
-            obs_loader=load_sencrop, file_template=file_template,
-            elevation_grid=elevation_grid, min_stations_per_night=min_stations_per_night,
+            era5_dataset,
+            sencrop_dir,
+            lat_grid,
+            lon_grid,
+            obs_loader=load_sencrop,
+            file_template=file_template,
+            elevation_grid=elevation_grid,
+            min_stations_per_night=min_stations_per_night,
             lapse_rate=lapse_rate,
         )
 
@@ -185,6 +211,7 @@ class SencropFineTuneDataset(StationFineTuneDataset):
 # ---------------------------------------------------------------------------
 # Boucle de fine-tuning
 # ---------------------------------------------------------------------------
+
 
 class PrithviWxCFinetuner:
     """
@@ -204,15 +231,10 @@ class PrithviWxCFinetuner:
         self.device = config.get("device", "cuda")
 
         # Vérifier que seul l'adapter est entraînable
-        n_trainable = sum(
-            p.numel() for p in model.adapter.parameters() if p.requires_grad
-        )
-        n_frozen = sum(
-            p.numel() for p in model.backbone.parameters()
-        )
+        n_trainable = sum(p.numel() for p in model.adapter.parameters() if p.requires_grad)
+        n_frozen = sum(p.numel() for p in model.backbone.parameters())
         log.info(
-            f"Paramètres entraînables (adapter) : {n_trainable:,} | "
-            f"Gelés (backbone) : {n_frozen:,}"
+            f"Paramètres entraînables (adapter) : {n_trainable:,} | Gelés (backbone) : {n_frozen:,}"
         )
 
     def run(
@@ -266,11 +288,15 @@ class PrithviWxCFinetuner:
             gradient_clip_val=1.0,  # seul l'adapter a des gradients (backbone gelé)
             callbacks=[
                 ModelCheckpoint(
-                    dirpath=str(output_dir), filename="best_adapter",
-                    monitor="val/rmse", mode="min", save_top_k=1,
+                    dirpath=str(output_dir),
+                    filename="best_adapter",
+                    monitor="val/rmse",
+                    mode="min",
+                    save_top_k=1,
                 ),
                 EarlyStopping(
-                    monitor="val/rmse", mode="min",
+                    monitor="val/rmse",
+                    mode="min",
                     patience=self.config.get("patience", 10),
                 ),
             ],
@@ -280,6 +306,8 @@ class PrithviWxCFinetuner:
 
         best = trainer.checkpoint_callback.best_model_score
         best = float(best) if best is not None else None
-        log.info("Fine-tuning terminé. Best val/rmse : %s",
-                 f"{best:.3f}°C" if best is not None else "n/a")
+        log.info(
+            "Fine-tuning terminé. Best val/rmse : %s",
+            f"{best:.3f}°C" if best is not None else "n/a",
+        )
         return {"best_val_rmse": best}

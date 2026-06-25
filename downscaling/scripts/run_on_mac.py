@@ -41,6 +41,7 @@ def _get_device():
 
 def smoke_test(device) -> None:
     import torch
+
     x = torch.randn(2, 4, 32, 32, device=device)
     print(f"smoke-test: tensor {x.shape} on {device}  ✓")
 
@@ -80,19 +81,17 @@ def interactive(device) -> None:
 
 
 TASKS = {
-    "smoke-test":       "Quick tensor allocation test on MPS/CPU",
-    "netatmo-qc":       "Netatmo QC re-scoring over full archive",
-    "unet-inference":   "U-Net FiLM inference for a single night (--night YYYY-MM-DD)",
-    "interactive":      "Interactive Python session with MPS device ready",
+    "smoke-test": "Quick tensor allocation test on MPS/CPU",
+    "netatmo-qc": "Netatmo QC re-scoring over full archive",
+    "unet-inference": "U-Net FiLM inference for a single night (--night YYYY-MM-DD)",
+    "interactive": "Interactive Python session with MPS device ready",
 }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="DL downscaling — Apple MPS inference")
-    parser.add_argument("--task", choices=list(TASKS), required=True,
-                        help="Task to run")
-    parser.add_argument("--night", metavar="YYYY-MM-DD",
-                        help="Target night for unet-inference")
+    parser.add_argument("--task", choices=list(TASKS), required=True, help="Task to run")
+    parser.add_argument("--night", metavar="YYYY-MM-DD", help="Target night for unet-inference")
     args = parser.parse_args()
 
     device = _get_device()

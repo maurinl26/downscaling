@@ -47,7 +47,7 @@ def test_drome_ardeche_values():
 def test_cluster_override():
     local = _compose(["cluster=local"])
     cloud = _compose(["cluster=cloud"])
-    assert local.cluster.precision == "32-true"      # MPS-safe
+    assert local.cluster.precision == "32-true"  # MPS-safe
     assert cloud.cluster.accelerator == "gpu"
 
 

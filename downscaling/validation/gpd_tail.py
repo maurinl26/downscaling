@@ -281,11 +281,7 @@ def quantile_gpd(
     # prend min/max. Cohérent tant que les IC bootstrap de scale et shape sont
     # finis, sinon NaN.
     if all(np.isfinite([*fit.ci95_scale, *fit.ci95_shape])):
-        corners = [
-            _z(s, xi)
-            for s in fit.ci95_scale
-            for xi in fit.ci95_shape
-        ]
+        corners = [_z(s, xi) for s in fit.ci95_scale for xi in fit.ci95_shape]
         z_lo, z_hi = min(corners), max(corners)
         ci95_low = -z_hi  # plus z est grand, plus le résidu original est froid (négatif)
         ci95_high = -z_lo
@@ -437,9 +433,7 @@ def ks_test_gpd(
     """
     excesses = _excesses(residuals, threshold)
     if excesses.size < 10:
-        raise ValueError(
-            f"Trop peu d'excès pour KS (n={excesses.size} < 10)."
-        )
+        raise ValueError(f"Trop peu d'excès pour KS (n={excesses.size} < 10).")
     cdf = lambda x: stats.genpareto.cdf(x, fit.shape, loc=0.0, scale=fit.scale)  # noqa: E731
     result = stats.kstest(excesses, cdf)
     return float(result.statistic), float(result.pvalue)

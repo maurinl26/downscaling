@@ -30,6 +30,7 @@ Usage
       --bbox-lat 44.0 45.5 --bbox-lon 4.0 5.5 \
       --out /tmp/karpos_synoptic/regimes
 """
+
 from __future__ import annotations
 
 import argparse
@@ -60,9 +61,12 @@ def _circular_median_dir(directions_deg: np.ndarray) -> float:
 
 def _normalize_era5(ds: xr.Dataset) -> xr.Dataset:
     """Normalize ERA5 NetCDF : valid_time→time, lat/lon naming, time decoding."""
-    if "valid_time" in ds.dims and "time" not in ds.dims:
-        ds = ds.rename({"valid_time": "time"})
-    elif "valid_time" in ds.coords and "time" not in ds.coords:
+    if (
+        "valid_time" in ds.dims
+        and "time" not in ds.dims
+        or "valid_time" in ds.coords
+        and "time" not in ds.coords
+    ):
         ds = ds.rename({"valid_time": "time"})
     if ds["time"].dtype.kind != "M":
         ref = pd.Timestamp("1900-01-01")
@@ -80,8 +84,8 @@ def _normalize_era5(ds: xr.Dataset) -> xr.Dataset:
 
 def _night_window(ds: xr.Dataset, d: date) -> xr.Dataset:
     """Select ERA5 timesteps for the night of date `d` : 18h UTC (d-1) → 09h UTC (d)."""
-    start = pd.Timestamp(d) - pd.Timedelta("6h")   # 18h day before
-    end = pd.Timestamp(d) + pd.Timedelta("9h")     # 09h current day
+    start = pd.Timestamp(d) - pd.Timedelta("6h")  # 18h day before
+    end = pd.Timestamp(d) + pd.Timedelta("9h")  # 09h current day
     return ds.sel(time=slice(start, end))
 
 
@@ -106,7 +110,7 @@ def _night_features(
     u10 = sub["u10"].values
     v10 = sub["v10"].values
     wind = np.sqrt(u10**2 + v10**2)
-    wind_dir = (np.rad2deg(np.arctan2(u10, v10)) % 360.0)  # 0=N, 90=E
+    wind_dir = np.rad2deg(np.arctan2(u10, v10)) % 360.0  # 0=N, 90=E
 
     tcc = sub["tcc"].values  # 0-1
     msl = sub["msl"].values / 100.0  # Pa → hPa
@@ -130,10 +134,10 @@ def _night_features(
         "dewpoint_dep_med": float(np.nanmedian(dewpoint_dep)),
         "t2m_med": float(np.nanmedian(t2m)),
         # Hygrométrie enrichie (issue #5 — variables FiLM hygro)
-        "d2m_med": float(np.nanmedian(d2m)),                              # Td (K) — borne inf gel
-        "rh_med": float(np.nanmedian(rh)),                                 # humidité relative (0-1)
-        "dewpoint_dep_min": float(np.nanmin(dewpoint_dep)),               # plus sec moment de la nuit
-        "rh_min": float(np.nanmin(rh)),                                    # plus sec moment de la nuit
+        "d2m_med": float(np.nanmedian(d2m)),  # Td (K) — borne inf gel
+        "rh_med": float(np.nanmedian(rh)),  # humidité relative (0-1)
+        "dewpoint_dep_min": float(np.nanmin(dewpoint_dep)),  # plus sec moment de la nuit
+        "rh_min": float(np.nanmin(rh)),  # plus sec moment de la nuit
     }
 
     # Proxy inversion : T850 - T2m, médiane sur la nuit
@@ -203,7 +207,7 @@ def _classify(f: dict[str, float]) -> str:
     # les 4 gels ratés R4 ont MSLP ∈ [1017, 1031] hPa.
     if f["mslp_med"] >= 1020.0:
         return "R4a"  # cold pool anticyclonique (gel humide candidat)
-    return "R4b"      # couvert doux sans anticyclone fort
+    return "R4b"  # couvert doux sans anticyclone fort
 
 
 def _dates_for_year(ds: xr.Dataset, year: int, months: tuple[int, ...]) -> list[date]:
@@ -216,17 +220,35 @@ def _dates_for_year(ds: xr.Dataset, year: int, months: tuple[int, ...]) -> list[
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Classify frost-flo nights into synoptic regimes")
-    p.add_argument("--era5-dir", type=Path, required=True,
-                   help="Directory containing era5_synoptic_<year>.nc files")
+    p.add_argument(
+        "--era5-dir",
+        type=Path,
+        required=True,
+        help="Directory containing era5_synoptic_<year>.nc files",
+    )
     p.add_argument("--years", type=int, nargs="+", required=True)
-    p.add_argument("--months", type=int, nargs="+", default=[2, 3, 4, 5],
-                   help="Months of interest (default: 02 03 04 05 = flo abricot)")
-    p.add_argument("--bbox-lat", type=float, nargs=2, default=[44.0, 45.5],
-                   help="Latitude bounds (min max), default Drôme = 44.0 45.5")
-    p.add_argument("--bbox-lon", type=float, nargs=2, default=[4.0, 5.5],
-                   help="Longitude bounds (min max), default Drôme = 4.0 5.5")
-    p.add_argument("--out", type=Path, required=True,
-                   help="Output directory (one CSV per year)")
+    p.add_argument(
+        "--months",
+        type=int,
+        nargs="+",
+        default=[2, 3, 4, 5],
+        help="Months of interest (default: 02 03 04 05 = flo abricot)",
+    )
+    p.add_argument(
+        "--bbox-lat",
+        type=float,
+        nargs=2,
+        default=[44.0, 45.5],
+        help="Latitude bounds (min max), default Drôme = 44.0 45.5",
+    )
+    p.add_argument(
+        "--bbox-lon",
+        type=float,
+        nargs=2,
+        default=[4.0, 5.5],
+        help="Longitude bounds (min max), default Drôme = 4.0 5.5",
+    )
+    p.add_argument("--out", type=Path, required=True, help="Output directory (one CSV per year)")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
@@ -265,10 +287,13 @@ def main() -> int:
 
         rows: list[dict] = []
         regime_counts: dict[str, int] = {
-            "R0": 0, "R1": 0, "R2": 0, "R3": 0,
-            "R4": 0,    # fallback si T850 absent
-            "R4a": 0,   # cold pool sous inversion + nuage bas (gel humide)
-            "R4b": 0,   # couvert doux sans inversion
+            "R0": 0,
+            "R1": 0,
+            "R2": 0,
+            "R3": 0,
+            "R4": 0,  # fallback si T850 absent
+            "R4a": 0,  # cold pool sous inversion + nuage bas (gel humide)
+            "R4b": 0,  # couvert doux sans inversion
         }
         for d in dates:
             ds_night = _night_window(ds, d)

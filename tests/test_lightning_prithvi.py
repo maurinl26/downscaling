@@ -129,10 +129,12 @@ def test_elevation_aware_loss_corrects_altitude():
 
 def test_checkpoint_keeps_only_adapter():
     lit = _module()
-    ckpt = {"state_dict": {
-        "model.adapter.0.weight": torch.zeros(1),
-        "model.adapter.0.bias": torch.zeros(1),
-        "model.backbone.weight": torch.zeros(1),
-    }}
+    ckpt = {
+        "state_dict": {
+            "model.adapter.0.weight": torch.zeros(1),
+            "model.adapter.0.bias": torch.zeros(1),
+            "model.backbone.weight": torch.zeros(1),
+        }
+    }
     lit.on_save_checkpoint(ckpt)
     assert set(ckpt["state_dict"]) == {"model.adapter.0.weight", "model.adapter.0.bias"}

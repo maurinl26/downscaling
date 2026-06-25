@@ -18,6 +18,7 @@ Usage
       --months 02 03 04 05 \
       --out /tmp/karpos_synoptic
 """
+
 from __future__ import annotations
 
 import argparse

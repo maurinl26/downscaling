@@ -143,8 +143,10 @@ def load_radome(
     df = df.dropna(subset=["TN"])
     if bbox:
         df = df[
-            (df["LAT"] >= bbox["lat_min"]) & (df["LAT"] <= bbox["lat_max"])
-            & (df["LON"] >= bbox["lon_min"]) & (df["LON"] <= bbox["lon_max"])
+            (df["LAT"] >= bbox["lat_min"])
+            & (df["LAT"] <= bbox["lat_max"])
+            & (df["LON"] >= bbox["lon_min"])
+            & (df["LON"] <= bbox["lon_max"])
         ]
     if df.empty:
         raise ValueError(f"No RADOME station in bbox for {date}")
@@ -164,14 +166,16 @@ def load_radome(
         # Fallback : 06h UTC, milieu typique du Tmin nocturne en hiver
         return pd.Timestamp(date) + pd.Timedelta("6h")
 
-    df_norm = pd.DataFrame({
-        "station_id": "RADOME-" + df["NUM_POSTE"].astype(str),
-        "lat": df["LAT"].values,
-        "lon": df["LON"].values,
-        "elevation_m": df["ALTI"].values,
-        "timestamp": df.apply(_build_ts, axis=1),
-        "t_celsius": df["TN"].values.astype(np.float32),
-    })
+    df_norm = pd.DataFrame(
+        {
+            "station_id": "RADOME-" + df["NUM_POSTE"].astype(str),
+            "lat": df["LAT"].values,
+            "lon": df["LON"].values,
+            "elevation_m": df["ALTI"].values,
+            "timestamp": df.apply(_build_ts, axis=1),
+            "t_celsius": df["TN"].values.astype(np.float32),
+        }
+    )
 
     # Réutilise la même conversion que Sencrop (pivote stations × timestamps).
     # Comme on a 1 timestamp par station, le pivot retourne 1 colonne.
