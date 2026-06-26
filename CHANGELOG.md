@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Forthcoming.
 
+## [1.0.0] — 2026-06-22
+
+Baronnies v1 — first public reference release of the calibrated U-Net.
+
+### Added
+
+- **Reference U-Net checkpoint** : residual U-Net with FiLM-conditioned terrain
+  modulation (FiLM·DEM), 19,053,030 parameters across 246 tensors, supervised
+  by Sencrop in-situ minima on the Baronnies domain (2022-2025 frost seasons).
+- **Hub loader** (`downscaling/hub.py`) : loads released checkpoints by version
+  tag from the model registry.
+- **Release workflow** (`.github/workflows/release-to-hub.yml`) : packages and
+  publishes a trained checkpoint + model card to the hub on tag creation.
+- **Model card** : reproducibility envelope (data, hyperparameters, metrics)
+  shipped alongside the released weights.
+- **S3 persistence** for recalibrated outputs (`--out s3://`).
+- **JOSS paper draft** : `docs/methodology/joss-paper-draft.md` + `paper.bib`
+  bibliography (Issue #43 covered).
+- **Zenodo DOI** : concept DOI `10.5281/zenodo.20783563` referenced in
+  `CITATION.cff` and README badge.
+
+### Fixed
+
+- Smoke-test hardening from fresh clone (issue #48) — config defaults, missing
+  imports, doc references.
+
 ## [0.3.0] — 2026-06-21
 
 First public release with full JOSS-readiness scaffolding.
