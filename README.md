@@ -1,7 +1,7 @@
 # karpos-downscaling
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20783564.svg)](https://doi.org/10.5281/zenodo.20783564)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20783563.svg)](https://doi.org/10.5281/zenodo.20783563)
 [![Documentation Status](https://readthedocs.org/projects/karpos-downscaling/badge/?version=latest)](https://karpos-downscaling.readthedocs.io/en/latest/?badge=latest)
 
 Descente d'échelle de réanalyses atmosphériques (ERA5, CERRA) vers une
