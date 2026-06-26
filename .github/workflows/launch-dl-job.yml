@@ -1,4 +1,4 @@
-name: Launch DL Job (RunPod — manuel)
+name: Launch DL job (RunPod, manuel)
 
 # Lance un job de downscaling DL sur RunPod depuis GitHub Actions.
 # Le pod démarre, exécute la commande, puis s'arrête automatiquement.
