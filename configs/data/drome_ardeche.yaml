@@ -16,6 +16,10 @@ sencrop_root: ""        # Local path ou s3:// vers le bulk export Sencrop
 cerra_atm_dir: ""       # Dir contenant cerra_atm_<year>.nc
 cerra_land_dir: ""      # Dir contenant cerra_land_<year>.nc
 cerra_orography: ""     # NetCDF orographie CERRA (time-invariant)
-dem: ""                 # NetCDF DEM (IGN BD ALTI 25 m ou SRTM 30 m)
+dem_raw: ""             # NetCDF DEM source (IGN BD ALTI 25 m ou SRTM 30 m), consommé par run_downscaling.py
+dem_attrs: ""           # NetCDF DEM avec terrain attributes (slope, aspect, TPI, …), consommé par run_calibration.py
+era5_sl: null           # NetCDF ou list[NetCDF] ERA5 single-levels (override Hydra au runtime, ex: data.era5_sl=[avril.nc,mai.nc])
+obs_ref: null           # NetCDF observations de référence (optionnel, calibration QDM)
+mod_ref: null           # NetCDF modèle sur période de référence (optionnel, calibration QDM)
 era5_synoptic_dir: ""   # Dir contenant era5_synoptic_<year>.nc (pour flag_regimes)
 regimes_dir: ""         # Dir contenant regimes_<year>.csv (output de flag_regimes)
