@@ -167,7 +167,7 @@ indépendants du choix de chemin (A ou B).
 |-------|-----------|------|
 | A | Backbone Prithvi WxC réel (`loader.py`) | ✅ câblé + testé (config jouet) |
 | A | Pipeline d'entrée **MERRA-2** (`FrostNightDataset → batch`) | 🔴 **manquant** ([#1](https://github.com/maurinl26/karpos-downscaling/issues/1)) |
-| B | U-Net FiLM (ERA5/CERRA → 1 km) | ✅ entraînement Lightning |
+| B | U-Net FiLM (CERRA → 1 km) | ✅ entraînement Lightning (cf. [`methodology/canonical-input.md`](methodology/canonical-input.md)) |
 | B | Tête DEM sur prévision Prithvi | ✅ câblée (forward réel) |
 | B | Pipeline statistique (lapse-rate + QDM) | ✅ |
 | C | Fine-tuning sparse **Netatmo + Sencrop** | ✅ Lightning, source-agnostique (`StationFineTuneDataset`) |
@@ -226,7 +226,14 @@ indépendants du choix de chemin (A ou B).
   tête DEM (⇒ archi Granite) ; GPU lourd. **Pas de valeur sur la chaîne actuelle.**
 
 ### Chemin B — *Réanalyse-directe CERRA* (léger, déjà construit)
-`CERRA 5.5 km (ou ERA5-Land 9 km) → U-Net FiLM / statistique → 1 km → calibration`
+`CERRA 5.5 km → U-Net FiLM / statistique → 1 km → calibration`
+
+> Source d'entrée canonique aujourd'hui : **CERRA** (cf.
+> [`methodology/canonical-input.md`](methodology/canonical-input.md)).
+> Migration AROME 1.3 km planifiée septembre 2026 ([downscaling#70](https://github.com/maurinl26/karpos-downscaling/issues/70)).
+> ERA5-Land 9 km reste utilisable comme baseline comparative (cf. tables
+> `gmd-paper-draft.md` et `lot-b-calibration-report.md`) mais n'est plus
+> alimenté côté production.
 - **+** s'appuie sur le **socle CERRA** (cœur Karpos), pipelines déjà en place,
   pas de dépendance MERRA-2/foundation model, validable rapidement.
 - **−** pas de *prior* foundation model ; repose sur la calibration locale pour

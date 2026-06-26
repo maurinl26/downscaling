@@ -16,7 +16,9 @@ elevation_aware: true      # correction d'altitude station/maille (valorise le M
 min_stations: 5            # nb minimal de stations valides par nuit
 
 # Lecture CERRA (vraies données) — cf. CERRACoarseProvider.
-file_template_cerra: "era5land_{date}.nc"   # entrée = ERA5-Land 1km (cohérent avec l'entraînement A)
+# Source canonique du chemin produit : CERRA (cf. docs/methodology/canonical-input.md).
+# Migration AROME-native planifiée septembre 2026 (downscaling#70).
+file_template_cerra: "cerra_{date}.nc"
 var_map: {}                # {canonique: nom_cerra} si les noms diffèrent (ex: t2m: 2t)
 regrid: false              # true si CERRA pas déjà sur la grille fine (MNT)
 regrid_method: linear

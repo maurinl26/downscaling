@@ -53,7 +53,7 @@ ou `s3cmd`/`rclone`. Bucket suggéré : `karpos-downscaling`.
 s3://karpos-downscaling/
 ├── training/drome_ardeche/2015-2021/   coarse/*.nc  fine/*.nc  dem_attributes.nc
 ├── sencrop/                            sencrop_{date}.csv  (étage C)
-├── cerra_fine/                         era5land_{date}.nc  (étage C)
+├── cerra_fine/                         cerra_{date}.nc     (étage C, source canonique)
 └── artifacts/<run_id>/                 best_model.ckpt  normalization_stats.json
 ```
 

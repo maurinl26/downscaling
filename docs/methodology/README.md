@@ -18,6 +18,7 @@ The goal is twofold :
 | `chilling-model-baronnies.md` | Phenological complement : chilling unit accumulation model for apricot in Drôme Baronnies (Corréard, Plaisians, Mirabel-aux-Baronnies). |
 | `gmd-paper-draft.md` | Skeleton outline of the GMD (Geoscientific Model Development) paper — "A regime-aware statistical downscaling framework for spring frost forecasting in mountainous arboriculture". Target submission : autumn 2026. |
 | `joss-paper-draft.md` | Skeleton outline of the JOSS (Journal of Open Source Software) paper — `karpos-downscaling: A toolkit for sparse-network anchored statistical downscaling of frost risk in arboriculture`. Target submission : late summer 2026. |
+| `canonical-input.md` | Short ADR (2026-06-26) documenting **CERRA** as the canonical input source of the production chain. ERA5-Land kept as a comparative baseline. AROME-native migration planned September 2026 (downscaling#70). |
 
 ## Boundary with the proprietary stack
 
