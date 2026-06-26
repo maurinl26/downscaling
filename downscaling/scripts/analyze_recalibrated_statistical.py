@@ -19,11 +19,21 @@ Pour chaque année dont le Zarr existe sous `--root`, le script :
 Usage
 -----
 
+    # Local
     python -m downscaling.scripts.analyze_recalibrated_statistical \\
         --root /workspace/data/output/recalibrated_statistical \\
         --sencrop s3://karpos-backtest-data/sencrop \\
         --threshold-c -2.2 \\
         --wandb-project karpos-recalibrate-statistical
+
+    # S3 (Scaleway endpoint via AWS_ENDPOINT_URL ou AWS_S3_ENDPOINT)
+    AWS_ENDPOINT_URL=https://s3.fr-par.scw.cloud \\
+    python -m downscaling.scripts.analyze_recalibrated_statistical \\
+        --root s3://karpos-backtest-data/recalibrated/statistical \\
+        --sencrop s3://karpos-backtest-data/sencrop \\
+        --years 2022 2023 \\
+        --threshold-c -2.2 \\
+        --wandb-disabled
 
 W&B
 ---
@@ -41,7 +51,9 @@ import logging
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
+import fsspec
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -52,6 +64,56 @@ from downscaling.prtihvi_wxc.sencrop import (
 )
 
 log = logging.getLogger("analyze_stat")
+
+
+# ---------------------------------------------------------------------------
+# Helpers — root local ou S3 (cf. issue #55, alignement project-data-strategy-runpod-s3)
+# ---------------------------------------------------------------------------
+def _is_remote(url: str) -> bool:
+    """True si ``url`` est une URI non-locale (``s3://``, ``gs://``, etc.)."""
+    parsed = urlparse(url)
+    return bool(parsed.scheme) and parsed.scheme not in ("", "file")
+
+
+def _storage_options() -> dict:
+    """Storage options pour fsspec / s3fs : endpoint custom (Scaleway) si défini.
+
+    Cohérent avec ``recalibrate_statistical.py:291`` : on lit
+    ``AWS_ENDPOINT_URL`` (convention boto3) ou ``AWS_S3_ENDPOINT`` (legacy).
+    """
+    endpoint = os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT")
+    if endpoint:
+        return {"client_kwargs": {"endpoint_url": endpoint}}
+    return {}
+
+
+def _list_zarrs(root: str) -> list[str]:
+    """Liste les ``<year>.zarr`` sous ``root`` (local OU s3://).
+
+    Retourne des URIs complètes (préserve le schéma ``s3://``) ou des chemins
+    locaux selon la nature de ``root``. Tri ascendant par nom.
+    """
+    if _is_remote(root):
+        fs, _ = fsspec.url_to_fs(root, **_storage_options())
+        # fs.glob renvoie sans le schéma → on le rajoute.
+        protocol = root.split("://", 1)[0]
+        pattern = root.rstrip("/") + "/*.zarr"
+        matches = sorted(fs.glob(pattern))
+        return [m if "://" in m else f"{protocol}://{m}" for m in matches]
+    return [str(p) for p in sorted(Path(root).glob("*.zarr"))]
+
+
+def _zarr_stem(zarr_url: str) -> str:
+    """Year stem depuis une URI ou un path local : '.../2022.zarr' -> '2022'."""
+    name = zarr_url.rstrip("/").rsplit("/", 1)[-1]
+    return name.removesuffix(".zarr")
+
+
+def _open_zarr(zarr_url: str) -> xr.Dataset:
+    """``xr.open_zarr`` qui marche local ou s3:// (avec endpoint custom)."""
+    if _is_remote(zarr_url):
+        return xr.open_zarr(zarr_url, storage_options=_storage_options())
+    return xr.open_zarr(zarr_url)
 
 
 def _bbox_from_grid(da: xr.DataArray | xr.Dataset) -> dict[str, float]:
@@ -111,13 +173,13 @@ def _load_regimes(regimes_csv: Path | None) -> dict[str, str]:
 
 
 def _analyze_year(
-    year_zarr: Path,
+    year_zarr: str,
     sencrop_root: str,
     threshold_c: float,
     regimes: dict[str, str] | None = None,
 ) -> dict:
-    """Charge un Zarr annuel, extrait résidus station, calcule métriques."""
-    ds = xr.open_zarr(year_zarr)
+    """Charge un Zarr annuel (local ou s3://), extrait résidus station, calcule métriques."""
+    ds = _open_zarr(year_zarr)
     var_name = list(ds.data_vars)[0]  # t2m généralement
     da = ds[var_name]
     # Auto-detect Kelvin (CERRA T2m) → convert to Celsius.
@@ -132,7 +194,7 @@ def _analyze_year(
         log.info("Detected Kelvin units, converting to Celsius")
         da = da - 273.15
     bbox = _bbox_from_grid(da)
-    year = int(year_zarr.stem)
+    year = int(_zarr_stem(year_zarr))
 
     # Tolère time stocké en int (bug Stage 2 antérieur) : synthétise les dates
     # à partir de l'année + fenêtre frost-flo (fév 1 → ...). 90 nuits attendues.
@@ -270,7 +332,12 @@ def _analyze_year(
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--root", type=Path, required=True, help="Dir avec <year>.zarr")
+    p.add_argument(
+        "--root",
+        type=str,
+        required=True,
+        help="Dir avec <year>.zarr (local OU s3:// — cf. AWS_ENDPOINT_URL pour Scaleway)",
+    )
     p.add_argument("--sencrop", type=str, required=True, help="Sencrop root (local ou s3://)")
     p.add_argument("--threshold-c", type=float, default=-2.2)
     p.add_argument(
@@ -285,17 +352,24 @@ def main() -> int:
     p.add_argument(
         "--years", type=int, nargs="*", default=None, help="Subset, défaut: tous les *.zarr trouvés"
     )
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Dossier local pour les sidecars <year>.posthoc.json. "
+        "Défaut : à côté du Zarr si --root local, CWD si --root s3://.",
+    )
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
-    zarrs = sorted(args.root.glob("*.zarr"))
+    zarrs = _list_zarrs(args.root)
     if args.years:
-        zarrs = [z for z in zarrs if int(z.stem) in args.years]
+        zarrs = [z for z in zarrs if int(_zarr_stem(z)) in args.years]
     if not zarrs:
         log.error("No <year>.zarr under %s", args.root)
         return 2
-    log.info("Analyzing %d Zarr(s): %s", len(zarrs), [z.name for z in zarrs])
+    log.info("Analyzing %d Zarr(s): %s", len(zarrs), [_zarr_stem(z) + ".zarr" for z in zarrs])
 
     # W&B init (optionnel)
     wandb_run = None
@@ -331,8 +405,18 @@ def main() -> int:
             log.exception("Year %s failed: %s", z.stem, exc)
             continue
         all_summaries.append(s)
-        # Write metadata.posthoc.json à côté du Zarr
-        out_json = z.parent / f"{z.stem}.posthoc.json"
+        # Write metadata.posthoc.json sidecar.
+        # - local --root : à côté du Zarr (rétro-compat)
+        # - s3 --root    : impossible d'écrire à côté sans creds write, donc
+        #                  on tombe en CWD (ou --out-dir si fourni).
+        stem = _zarr_stem(z)
+        if args.out_dir is not None:
+            args.out_dir.mkdir(parents=True, exist_ok=True)
+            out_json = args.out_dir / f"{stem}.posthoc.json"
+        elif _is_remote(z):
+            out_json = Path.cwd() / f"{stem}.posthoc.json"
+        else:
+            out_json = Path(z).parent / f"{stem}.posthoc.json"
         out_json.write_text(json.dumps(s, indent=2, default=str))
         log.info("Wrote %s", out_json)
         if wandb_run is not None:

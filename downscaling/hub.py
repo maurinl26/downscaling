@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-import torch
-from huggingface_hub import hf_hub_download
+if TYPE_CHECKING:
+    import torch  # noqa: F401 — used in annotations only (PEP 563 strings)
 
-from downscaling.deep_learning.model import build_model
+# `torch`, `huggingface_hub` et `build_model` sont lazy-importés dans les fonctions
+# qui les consomment, pour que `import downscaling.hub` reste léger.
+# Justification : l'extra `statistical` (utilisé en CI tests.yml) ne tire ni torch
+# ni huggingface_hub. L'API publique `load_baronnies_v1` n'est utile que dans le
+# contexte de la release Prithvi/DL où ces deps sont installées (`--extra prithvi`).
 
 KARPOS_HF_ORG = "karpos26"
 
@@ -45,17 +50,23 @@ def _resolve_release(release: str) -> Mapping[str, str]:
 
 
 def _load_config(repo_id: str, filename: str) -> dict:
+    from huggingface_hub import hf_hub_download  # noqa: PLC0415 — lazy (extra `prithvi`)
+
     path = hf_hub_download(repo_id=repo_id, filename=filename)
     with open(path) as handle:
         return json.load(handle)
 
 
 def _load_state_dict(repo_id: str, filename: str) -> dict:
+    from huggingface_hub import hf_hub_download  # noqa: PLC0415 — lazy (extra `prithvi`)
+
     path = hf_hub_download(repo_id=repo_id, filename=filename)
     if filename.endswith(".safetensors"):
         from safetensors.torch import load_file
 
         return load_file(path)
+    import torch  # noqa: PLC0415 — lazy (extra `dl` / `prithvi`)
+
     return torch.load(path, map_location="cpu", weights_only=True)
 
 
@@ -95,6 +106,8 @@ def load_from_hub(
     >>> model = load_from_hub("baronnies-v1", device="cuda")
     >>> # expects input shape (B, met_in_ch + dem_in_ch, H, W)
     """
+    from downscaling.deep_learning.model import build_model  # noqa: PLC0415 — lazy
+
     spec = _resolve_release(release)
     config = _load_config(spec["repo_id"], spec["config_file"])
     state_dict = _load_state_dict(spec["repo_id"], spec["weights_file"])
