@@ -171,6 +171,30 @@ standard output and to W&B (unless `--wandb-disabled`). To evaluate
 multiple thresholds, re-run with a different `--threshold-c` value
 (0.0 for the reference, –5.0 for severe events).
 
+### Reading Zarr from S3 directly
+
+`--root` accepts `s3://` URIs so you can analyse remote outputs without
+pulling them locally (useful when running from a RunPod pod or any
+compute node sharing the bucket). Set the S3 endpoint via the standard
+`AWS_ENDPOINT_URL` env var (Scaleway in the example below) and provide
+credentials the usual way (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+or `~/.aws/credentials`):
+
+```bash
+AWS_ENDPOINT_URL=https://s3.fr-par.scw.cloud \
+uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
+  --root s3://karpos-backtest-data/recalibrated/statistical \
+  --sencrop s3://karpos-backtest-data/sencrop \
+  --years 2022 2023 2024 \
+  --threshold-c -2.2 \
+  --wandb-disabled
+```
+
+The `<year>.posthoc.json` sidecars are written to the current working
+directory by default when `--root` is remote (they cannot be written
+back next to the source without write credentials); use `--out-dir` to
+choose another local destination.
+
 ## Step 6 (optional) — Stratify by synoptic regime
 
 If you want to interpret your scores per atmospheric regime (radiative vs
