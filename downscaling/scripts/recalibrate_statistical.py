@@ -237,6 +237,14 @@ def main() -> int:
     )
     p.add_argument("--variable", default="t2m")
     p.add_argument("--sigma-km", type=float, default=7.0)
+    p.add_argument(
+        "--emit-prerbf",
+        action="store_true",
+        help="Persiste aussi la grille PRE-RBF (lapse + QDM, avant correction résiduelle "
+        "Sencrop) sous la variable `t2m_prerbf`. Requis par la validation LOO / "
+        "leave-one-cluster-out (analyze --loo, issue #33). Off par défaut : ne change "
+        "pas les artefacts zarr existants (une seule variable t2m).",
+    )
     p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
     p.add_argument("--wandb-disabled", action="store_true")
     args = p.parse_args()
@@ -422,6 +430,7 @@ def main() -> int:
             wandb_run = None
 
     out_grids = []
+    out_grids_prerbf: list[xr.DataArray] = []  # grille lapse+QDM avant RBF (LOO, #33)
     n_stations_used = []
     # Métriques in-sample par nuit (résidus station observation - grid après calibration)
     per_night_records: list[dict] = []
@@ -469,6 +478,11 @@ def main() -> int:
             n_stations_used.append(0)
 
         out_grids.append(grid_corr.expand_dims(time=[d]))
+        # grid_fine est la grille lapse+QDM AVANT RBF (grid_corr en est dérivée par
+        # copie, grid_fine n'est pas muté). On la persiste pour rejouer le RBF en
+        # leave-one-out côté analyze (#33).
+        if args.emit_prerbf:
+            out_grids_prerbf.append(grid_fine.expand_dims(time=[d]))
 
         # Métriques résidus station (in-sample : sur les stations utilisées dans la calibration)
         if kept_stations:
@@ -513,6 +527,10 @@ def main() -> int:
         return 2
 
     out_ds = xr.concat(out_grids, dim="time")
+    if args.emit_prerbf and out_grids_prerbf:
+        prerbf_da = xr.concat(out_grids_prerbf, dim="time")
+        out_ds = xr.Dataset({"t2m": out_ds, "t2m_prerbf": prerbf_da})
+        log.info("Emitting pre-RBF grid (t2m_prerbf) alongside t2m for LOO analysis (#33)")
     zarr_store = make_zarr_store(args.out, args.year)
     out_ds.to_zarr(zarr_store, mode="w")
     log.info("Wrote %s (%d nights)", describe(args.out, args.year, ".zarr"), len(out_grids))
@@ -555,6 +573,7 @@ def main() -> int:
         "sencrop_root": str(args.sencrop),
         "sigma_km": args.sigma_km,
         "qdm_joblib": str(args.qdm_joblib) if args.qdm_joblib else None,
+        "emit_prerbf": bool(args.emit_prerbf),
         **summary,
     }
     metadata_path = write_sidecar(
