@@ -480,6 +480,7 @@ def _analyze_year_loo(
     threshold_c: float,
     sigma_km: float,
     cluster_km: float,
+    station_bbox: tuple[float, float, float, float] | None = None,
 ) -> dict:
     """Métriques POD/FAR/CSI HORS-STATION (out-of-sample) pour une année.
 
@@ -509,6 +510,21 @@ def _analyze_year_loo(
         da = da.assign_coords(time=start + pd.to_timedelta(da["time"].values, unit="D"))
 
     stations_df = load_stations_catalog(sencrop_root, bbox=bbox)
+    # Sous-périmètre optionnel (ex. cut Baronnies/Nyons cold-pool) : restreint les
+    # stations d'évaluation ET donneuses du RBF à la sous-bbox, sans changer la grille.
+    if station_bbox is not None:
+        la0, la1, lo0, lo1 = station_bbox
+        n_before = len(stations_df)
+        stations_df = stations_df[
+            (stations_df["latitude"] >= la0)
+            & (stations_df["latitude"] <= la1)
+            & (stations_df["longitude"] >= lo0)
+            & (stations_df["longitude"] <= lo1)
+        ]
+        log.info(
+            "station-bbox lat[%.3f,%.3f] lon[%.3f,%.3f] : %d → %d stations",
+            la0, la1, lo0, lo1, n_before, len(stations_df),
+        )
     bucket_ids = stations_df["bucket_id"].astype(int).tolist()
     ts = load_timeseries(years=[year], root=sencrop_root, station_only=True, bucket_ids=bucket_ids)
     ts["timestamp"] = pd.to_datetime(ts["timestamp"], utc=True)
@@ -610,7 +626,12 @@ def _run_loo(zarrs: list[str], args: argparse.Namespace) -> int:
         log.info("--- LOO year %s ---", _zarr_stem(z))
         try:
             s = _analyze_year_loo(
-                z, args.sencrop, args.threshold_c, args.sigma_km, args.cluster_km
+                z,
+                args.sencrop,
+                args.threshold_c,
+                args.sigma_km,
+                args.cluster_km,
+                station_bbox=tuple(args.station_bbox) if args.station_bbox else None,
             )
         except Exception as exc:
             log.exception("LOO year %s failed: %s", _zarr_stem(z), exc)
@@ -788,6 +809,15 @@ def main() -> int:
         type=str,
         default="nu",
         help="Étiquette du run LOO (ex. 'nu' ou 'qdm') → nom de fichier + colonne CSV.",
+    )
+    p.add_argument(
+        "--station-bbox",
+        type=float,
+        nargs=4,
+        default=None,
+        metavar=("LAT_MIN", "LAT_MAX", "LON_MIN", "LON_MAX"),
+        help="Restreint le LOO à un sous-périmètre de stations (ex. cut Baronnies/Nyons "
+        "cold-pool) sans changer la grille. Évite la dilution par les plaines Rhône.",
     )
     p.add_argument(
         "--regimes-csv",
