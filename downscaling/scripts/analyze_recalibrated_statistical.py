@@ -83,10 +83,14 @@ def _storage_options() -> dict:
     Cohérent avec ``recalibrate_statistical.py:291`` : on lit
     ``AWS_ENDPOINT_URL`` (convention boto3) ou ``AWS_S3_ENDPOINT`` (legacy).
     """
+    # skip_instance_cache=True : un S3FileSystem frais par appel, lié au contexte
+    # asyncio courant. Évite l'erreur s3fs "Token was created in a different Context"
+    # quand on ouvre plusieurs zarr S3 en boucle dans le même process (#33 LOO).
     endpoint = os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT")
+    opts: dict = {"skip_instance_cache": True}
     if endpoint:
-        return {"client_kwargs": {"endpoint_url": endpoint}}
-    return {}
+        opts["client_kwargs"] = {"endpoint_url": endpoint}
+    return opts
 
 
 def _list_zarrs(root: str) -> list[str]:
@@ -701,6 +705,51 @@ def _run_loo(zarrs: list[str], args: argparse.Namespace) -> int:
                 md["n_pairs"],
                 md["n_groups"],
             )
+
+    # W&B : logge les agrégats hors-station (le livrable métrique du #33). Le chemin
+    # LOO ne passait pas par l'init W&B de main() — d'où l'absence de ces métriques
+    # dans le projet. Guardé par WANDB_API_KEY + --wandb-disabled.
+    if not getattr(args, "wandb_disabled", False) and os.environ.get("WANDB_API_KEY"):
+        try:
+            import wandb
+
+            run = wandb.init(
+                project=args.wandb_project,
+                name=f"loo-{args.variant}",
+                config={
+                    "stage": "loo_out_of_station",
+                    "variant": args.variant,
+                    "threshold_c": args.threshold_c,
+                    "sigma_km": args.sigma_km,
+                    "cluster_km": args.cluster_km,
+                    "git_sha": git_sha,
+                    "years": [s["year"] for s in summaries],
+                },
+                reinit=True,
+            )
+            tbl = wandb.Table(
+                columns=["year", "grouping", "n_pairs", "POD", "FAR", "CSI", "rmse", "bias"]
+            )
+            for s in summaries:
+                for mode, md in s["modes"].items():
+                    a = md["aggregate"]
+                    tbl.add_data(
+                        s["year"], mode, md["n_pairs"],
+                        a.get("POD"), a.get("FAR"), a.get("CSI"), a.get("rmse"), a.get("bias"),
+                    )
+                    wandb.log(
+                        {
+                            f"{mode}/{s['year']}/POD": a.get("POD"),
+                            f"{mode}/{s['year']}/FAR": a.get("FAR"),
+                            f"{mode}/{s['year']}/CSI": a.get("CSI"),
+                            f"{mode}/{s['year']}/rmse": a.get("rmse"),
+                        }
+                    )
+            wandb.log({"loo_summary": tbl})
+            log.info("W&B LOO run: %s", run.url)
+            run.finish()
+        except Exception as exc:
+            log.warning("W&B LOO logging failed (continuing): %s", exc)
     return 0
 
 
@@ -785,12 +834,12 @@ def main() -> int:
 
             wandb_run = wandb.init(
                 project=args.wandb_project,
-                name=f"analyze-stat-{'_'.join([z.stem for z in zarrs])}",
+                name=f"analyze-stat-{'_'.join([_zarr_stem(z) for z in zarrs])}",
                 config={
                     "stage": "statistical_posthoc",
                     "threshold_c": args.threshold_c,
                     "sencrop_root": args.sencrop,
-                    "years": [int(z.stem) for z in zarrs],
+                    "years": [int(_zarr_stem(z)) for z in zarrs],
                 },
                 reinit=True,
             )
@@ -804,11 +853,11 @@ def main() -> int:
 
     all_summaries: list[dict] = []
     for z in zarrs:
-        log.info("--- year %s ---", z.stem)
+        log.info("--- year %s ---", _zarr_stem(z))
         try:
             s = _analyze_year(z, args.sencrop, args.threshold_c, regimes=regimes)
         except Exception as exc:
-            log.exception("Year %s failed: %s", z.stem, exc)
+            log.exception("Year %s failed: %s", _zarr_stem(z), exc)
             continue
         all_summaries.append(s)
         # Write metadata.posthoc.json sidecar.
