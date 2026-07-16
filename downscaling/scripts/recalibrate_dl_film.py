@@ -73,7 +73,11 @@ from downscaling.deep_learning.sparse_calibration import (
 )
 from downscaling.prtihvi_wxc.netatmo_qc import NetatmoNocturnalQC
 from downscaling.prtihvi_wxc.sencrop import load_sencrop
-from downscaling.prtihvi_wxc.stations import night_station_targets
+from downscaling.prtihvi_wxc.stations import (
+    assign_to_grid,
+    elevation_offset,
+    night_station_targets,
+)
 from downscaling.utils.io import describe, is_remote, make_zarr_store, write_sidecar
 
 log = logging.getLogger("recalibrate_dl_film")
@@ -175,8 +179,13 @@ class BulkSencropDataset(Dataset):
         min_stations: int = 5,
         lapse_rate: float = -6.5e-3,
         cond_table: dict[str, np.ndarray] | None = None,
+        holdout_bbox: tuple[float, float, float, float] | None = None,
+        role: str = "all",
+        radome_map: dict[str, list[tuple[float, float, float, float]]] | None = None,
+        surfex_provider=None,  # #81 : callable date -> (H, W) champ SURFEX °C (enveloppe)
     ) -> None:
         self.coarse_provider = coarse_provider
+        self.surfex_provider = surfex_provider
         self.sencrop_root = sencrop_root
         self.lat_grid = lat_grid
         self.lon_grid = lon_grid
@@ -184,6 +193,11 @@ class BulkSencropDataset(Dataset):
         self.min_stations = min_stations
         self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
         self.cond_table = cond_table
+        self.holdout_bbox = holdout_bbox
+        self.role = role
+        # RADOME (obs quotidiennes MF) : cibles de supervision ADDITIONNELLES,
+        # {date 'YYYY-MM-DD': [(lat, lon, alt_m, tmin_C), …]}. cf. radome_loader.
+        self.radome_map = radome_map
 
         # Pre-filter to dates where the bulk has enough stations.
         kept = []
@@ -205,16 +219,57 @@ class BulkSencropDataset(Dataset):
                     len(kept),
                 )
 
+    def with_role(self, role: str) -> BulkSencropDataset:
+        """Clone superficiel avec un rôle leave-station-out (#33)."""
+        import copy
+
+        clone = copy.copy(self)
+        clone.role = role
+        return clone
+
     def __len__(self) -> int:
         return len(self.dates)
 
     def __getitem__(self, idx: int) -> dict:
         d = self.dates[idx]
         x_met, x_dem = self.coarse_provider(d)
+        sample_env = None
+        if self.surfex_provider is not None:
+            surfex = self.surfex_provider(d)  # (H, W) °C
+            sample_env = torch.stack(
+                [x_met[0], torch.as_tensor(surfex, dtype=torch.float32)], dim=0
+            )  # (2, H, W) : [CERRA 1km, SURFEX 1km]
         obs_qc = self.qc.run(load_sencrop(self.sencrop_root, d))
         tmin, row, col, dz = night_station_targets(
-            obs_qc, self.lat_grid, self.lon_grid, self.elevation_grid
+            obs_qc,
+            self.lat_grid,
+            self.lon_grid,
+            self.elevation_grid,
+            holdout_bbox=self.holdout_bbox,
+            role=self.role,
         )
+        # Merge des cibles RADOME de la nuit (postes d'altitude). RADOME sert au
+        # TRAINING : role="train" exclut les RADOME dans la holdout-bbox (pas de
+        # fuite Baronnies) ; role="val" n'ajoute AUCUN RADOME (l'éval reste Sencrop
+        # dans la bbox, comparable au baseline LOO Lot B) ; role="all" prend tout.
+        if self.radome_map is not None and self.role != "val":
+            rad = self.radome_map.get(d)
+            if rad:
+                arr = np.asarray(rad, dtype=np.float64)
+                rlat, rlon, ralt, rtn = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+                if self.holdout_bbox is not None and self.role == "train":
+                    la0, la1, lo0, lo1 = self.holdout_bbox
+                    outside = ~(
+                        (rlat >= la0) & (rlat <= la1) & (rlon >= lo0) & (rlon <= lo1)
+                    )
+                    rlat, rlon, ralt, rtn = rlat[outside], rlon[outside], ralt[outside], rtn[outside]
+                if rtn.size:
+                    rrow, rcol = assign_to_grid(rlat, rlon, self.lat_grid, self.lon_grid)
+                    rdz = elevation_offset(ralt, rrow, rcol, self.elevation_grid)
+                    tmin = np.concatenate([tmin, rtn.astype(np.float32)])
+                    row = np.concatenate([row, rrow])
+                    col = np.concatenate([col, rcol])
+                    dz = np.concatenate([dz, rdz.astype(np.float32)])
         sample = {
             "x_met": x_met,
             "x_dem": x_dem,
@@ -224,6 +279,8 @@ class BulkSencropDataset(Dataset):
             "obs_dz": torch.as_tensor(dz, dtype=torch.float32),
             "date": d,
         }
+        if sample_env is not None:
+            sample["x_env"] = sample_env
         if self.cond_table is not None:
             cv = self.cond_table.get(d)
             if cv is None:
@@ -247,7 +304,45 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def _build_coarse_provider(cerra_path: Path, dem_path: Path):
+def _resolve_to_local(uri: str, *, label: str) -> Path:
+    """Résout un input local OU ``s3://`` vers un chemin local (même logique que
+    recalibrate_statistical). s3:// → download /tmp via s3fs (endpoint Scaleway)."""
+    if uri.startswith("s3://"):
+        import tempfile
+
+        import s3fs
+
+        local = Path(tempfile.gettempdir()) / f"{label}_{Path(uri).name}"
+        log.info("Téléchargement %s depuis %s → %s", label, uri, local)
+        fs = s3fs.S3FileSystem(
+            endpoint_url=os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT"),
+        )
+        fs.get(uri.replace("s3://", "", 1), str(local))
+        return local
+    return Path(uri)
+
+
+def _load_coarse_orography(orog_uri: str) -> np.ndarray:
+    """Orographie coarse CERRA → altitude 2D (m). Même détection que recalibrate_statistical
+    (orography/orog/z/surface_geopotential ; géopotentiel m²/s² → m via /9.80665)."""
+    local = _resolve_to_local(orog_uri, label="cerra_orography")
+    ds = xr.open_dataset(local)
+    for name in ("orography", "orog", "z", "surface_geopotential"):
+        if name in ds:
+            da = ds[name]
+            if name in ("z", "surface_geopotential"):
+                da = da / 9.80665  # géopotentiel (m²/s²) → altitude (m)
+            for tdim in ("valid_time", "time"):
+                if tdim in da.dims:
+                    da = da.isel({tdim: 0}, drop=True)
+            return da.values.astype(np.float32)
+    raise ValueError(
+        f"Aucune variable orographie connue dans {orog_uri} "
+        "(cherché : orography, orog, z, surface_geopotential)"
+    )
+
+
+def _build_coarse_provider(cerra_path: Path, dem_path: Path, cerra_orog_path: str | None = None):
     """Loads CERRA atm + DEM once, returns a callable date -> (x_met, x_dem).
 
     Gère le mismatch CERRA NetCDF : variable temporelle 'valid_time' au lieu de
@@ -328,7 +423,85 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path):
         x_met = fine.squeeze(0)  # (1, H_fine, W_fine)
         return x_met, x_dem
 
-    return provider, ds_cerra, ds_dem
+    # First-guess lapse (v2b) : dz = z_DEM_1km − z_orog_coarse_1km (m), statique.
+    # Le first-guess lapse = T_CERRA_1km + lapse_rate·dz reproduit le plancher Lot B
+    # (~1,6°C) au lieu du CERRA bilinéaire brut (~2,8°C).
+    fg_dz = None
+    if cerra_orog_path is not None:
+        z_coarse = _load_coarse_orography(cerra_orog_path)  # (Hc, Wc), m
+        z_coarse_1km = (
+            F.interpolate(
+                torch.from_numpy(z_coarse).unsqueeze(0).unsqueeze(0),
+                size=(H_fine, W_fine),
+                mode="bilinear",
+                align_corners=False,
+            )
+            .squeeze()
+            .numpy()
+        )  # (H_fine, W_fine)
+        elev_var = "elevation" if "elevation" in ds_dem.data_vars else list(ds_dem.data_vars)[0]
+        z_fine = ds_dem[elev_var].values.astype(np.float32)  # (H_fine, W_fine), m brut
+        fg_dz = np.nan_to_num(z_fine - z_coarse_1km, nan=0.0).astype(np.float32)
+        log.info(
+            "First-guess lapse : dz = z_DEM − z_orog_coarse : mean=%.1f m std=%.1f m (min %.0f, max %.0f)",
+            float(np.nanmean(fg_dz)),
+            float(np.nanstd(fg_dz)),
+            float(np.nanmin(fg_dz)),
+            float(np.nanmax(fg_dz)),
+        )
+
+    return provider, ds_cerra, ds_dem, fg_dz
+
+
+def _build_surfex_provider(surfex_path: str, lat_grid: np.ndarray, lon_grid: np.ndarray):
+    """Charge l'artefact SURFEX (T2M K, LAT/LON) → callable date -> (H, W) °C (#81).
+
+    Le champ SURFEX 1 km (grille Lambert propre) est régridé au plus proche voisin
+    sur la grille DEM fine (lat/lon), et réduit au **Tmin journalier** (min de T2M
+    sur les heures de la date) → borne froide assimilée de l'enveloppe du clamp.
+    """
+    from scipy.spatial import cKDTree
+
+    local = _resolve_to_local(surfex_path, label="surfex_envelope")
+    ds = xr.open_dataset(local)
+    T = np.asarray(ds["T2M"].values, dtype=np.float32)  # (time, yy, xx) Kelvin
+    LAT = np.asarray(ds["LAT"].values, dtype=np.float64)  # (yy, xx)
+    LON = np.asarray(ds["LON"].values, dtype=np.float64)
+    times = pd.to_datetime(ds["time"].values)
+    day_of = np.array([t.date() for t in times])
+
+    la = np.asarray(lat_grid, dtype=np.float64)
+    lo = np.asarray(lon_grid, dtype=np.float64)
+    LO2, LA2 = np.meshgrid(lo, la) if la.ndim == 1 else (lo, la)
+    H_fine, W_fine = LA2.shape
+    tree = cKDTree(np.column_stack([LON.ravel(), LAT.ravel()]))
+    _, idx = tree.query(np.column_stack([LO2.ravel(), LA2.ravel()]))
+    log.info(
+        "SURFEX envelope: %s (%d pas), régrid NN %s → grille fine (%d, %d)",
+        Path(local).name, T.shape[0], tuple(LAT.shape), H_fine, W_fine,
+    )
+
+    def surfex_provider(d: str) -> np.ndarray:
+        dd = pd.Timestamp(d).date()
+        sel = day_of == dd
+        if not sel.any():
+            sel = np.zeros(len(times), bool)
+            sel[int(np.argmin(np.abs(times - pd.Timestamp(d))))] = True
+        tmin_c = np.nanmin(T[sel], axis=0) - 273.15  # (yy, xx) °C
+        return tmin_c.ravel()[idx].reshape(H_fine, W_fine).astype(np.float32)
+
+    return surfex_provider
+
+
+def _dl_output_dataset(out_da: xr.DataArray) -> xr.Dataset:
+    """Champ DL (backbone 1 km) → Dataset ``{t2m, t2m_prerbf}``.
+
+    Le DL n'applique aucune correction RBF Sencrop lui-même : ``t2m`` (produit)
+    et ``t2m_prerbf`` (backbone pour le RBF-LOO de ``analyze --loo``) sont donc
+    identiques. Émettre ``t2m_prerbf`` permet de brancher le RBF Sencrop + LOO
+    par-dessus le DL → comparaison fair DL+RBF vs Lot B (#33).
+    """
+    return xr.Dataset({"t2m": out_da, "t2m_prerbf": out_da})
 
 
 def _dates_in_year(ds_cerra: xr.Dataset, year: int) -> list[str]:
@@ -398,6 +571,31 @@ def main() -> int:
         "(misses cost ×9 false alarms). Issue #5.",
     )
     p.add_argument(
+        "--target-mode",
+        choices=("raw", "residual"),
+        default="raw",
+        help="'raw' (défaut) = le U-Net prédit Tmin directement (baseline, replique "
+        "CERRA + biais chaud). 'residual' (v2) = first-guess physique (CERRA 1 km) + "
+        "résidu appris → plancher = first-guess, capacité focalisée sur la structure "
+        "fine (cuvette). Fixe le déficit de fit in-sample.",
+    )
+    p.add_argument(
+        "--first-guess",
+        choices=("bilinear", "lapse"),
+        default="bilinear",
+        help="First-guess du mode résidu (v2b). 'bilinear' (défaut) = CERRA bilinéaire à "
+        "1 km (plancher ~2,8°C). 'lapse' = + correction lapse-rate maille↔coarse "
+        "(plancher ≈ Lot B ~1,6°C) — requiert --cerra-orog. N'a d'effet qu'avec "
+        "--target-mode residual.",
+    )
+    p.add_argument(
+        "--cerra-orog",
+        type=str,
+        default=None,
+        help="Orographie coarse CERRA (cerra_orography.nc), locale OU s3://. Requise "
+        "pour --first-guess lapse. Ex. s3://karpos-backtest-data/recalibrated/cerra_orography.nc.",
+    )
+    p.add_argument(
         "--cond-vars",
         type=str,
         default="",
@@ -410,6 +608,59 @@ def main() -> int:
         default=None,
         help="Path to regimes_all.csv (output of flag_regimes.py). "
         "Required when --cond-vars is non-empty.",
+    )
+    p.add_argument(
+        "--holdout-bbox",
+        type=float,
+        nargs=4,
+        default=None,
+        metavar=("LAT_MIN", "LAT_MAX", "LON_MIN", "LON_MAX"),
+        help="Leave-station-out : tient les stations de cette bbox HORS du fit "
+        "(train) et les utilise comme val out-of-station. Rend val/rmse comparable "
+        "au LOO Lot B (#33). Ex. Baronnies cold-pool : 44.15 44.45 5.15 5.40.",
+    )
+    p.add_argument(
+        "--es-min-delta",
+        type=float,
+        default=1e-3,
+        help="EarlyStopping min_delta sur val/rmse (avec --early-stopping-patience>0). "
+        "Recommandé 0.05 pour durcir (évite de traîner sur du bruit).",
+    )
+    p.add_argument(
+        "--radome-obs",
+        type=str,
+        default=None,
+        help="Racine S3/locale des obs RADOME quotidiennes (station=<id>/*.csv), ex. "
+        "s3://karpos-backtest-data/observations/radome-oauth/quotidienne/2023. Ajoute les "
+        "postes d'altitude comme cibles de supervision (le régime R4a cold-pool). "
+        "Requiert --radome-catalogue.",
+    )
+    p.add_argument(
+        "--radome-catalogue",
+        type=str,
+        default=None,
+        help="CSV catalogue RADOME (station_id, lat, lon, alt_m). "
+        "Ex. s3://karpos-backtest-data/observations/radome-oauth/catalogue_2023.csv.",
+    )
+    p.add_argument(
+        "--surfex",
+        type=str,
+        default=None,
+        help="Artefact SURFEX (T2M/LAT/LON), local OU s3://. Fournit la borne froide "
+        "assimilée de l'enveloppe du clamp (#81). Ex. "
+        "s3://karpos-backtest-data/surfex/drome_1km/2023-04/surfex_drome_2023-04.nc.",
+    )
+    p.add_argument(
+        "--clamp",
+        action="store_true",
+        help="#81 : borne la sortie DL dans l'enveloppe [min,max](CERRA, SURFEX) via "
+        "tête tanh différentiable → composant assurable. Requiert --surfex.",
+    )
+    p.add_argument(
+        "--clamp-margin",
+        type=float,
+        default=0.0,
+        help="Marge °C ajoutée à la demi-largeur d'enveloppe (0 = enveloppe stricte).",
     )
     p.add_argument("--wandb-project", default="karpos-recalibrate-dl-film")
     p.add_argument("--wandb-disabled", action="store_true")
@@ -429,8 +680,15 @@ def main() -> int:
         ckpt_dir = Path(args.out)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    if args.first_guess == "lapse" and not args.cerra_orog:
+        raise ValueError("--first-guess lapse requiert --cerra-orog (orographie coarse CERRA)")
+
     # ---- Coarse provider + dates --------------------------------------------
-    provider, ds_cerra, ds_dem = _build_coarse_provider(args.cerra_atm, args.dem)
+    # dz (first-guess lapse) chargé seulement en mode lapse.
+    orog_for_fg = args.cerra_orog if args.first_guess == "lapse" else None
+    provider, ds_cerra, ds_dem, fg_dz = _build_coarse_provider(
+        args.cerra_atm, args.dem, cerra_orog_path=orog_for_fg
+    )
     dates = _dates_in_year(ds_cerra, args.year)
     log.info("Year=%d, %d candidate dates", args.year, len(dates))
 
@@ -440,6 +698,13 @@ def main() -> int:
     elev_var = "elevation" if "elevation" in ds_dem.data_vars else next(iter(ds_dem.data_vars))
     dem_2d = ds_dem[elev_var].values.astype(np.float32)
     dem_in_ch = len(list(ds_dem.data_vars))
+
+    # ---- SURFEX envelope provider (#81 clamp) -------------------------------
+    if args.clamp and not args.surfex:
+        raise ValueError("--clamp requiert --surfex (borne froide assimilée de l'enveloppe)")
+    surfex_provider = None
+    if args.surfex:
+        surfex_provider = _build_surfex_provider(args.surfex, lat_grid, lon_grid)
 
     # ---- FiLM conditioning vars (régime + ERA5 + saisonnalité) --------------
     cond_vars = {v.strip() for v in args.cond_vars.split(",") if v.strip()}
@@ -453,6 +718,19 @@ def main() -> int:
     else:
         log.info("FiLM conditioning : DEM-only (baseline)")
 
+    # ---- RADOME (cibles de supervision d'altitude additionnelles) -----------
+    radome_map = None
+    if args.radome_obs:
+        if not args.radome_catalogue:
+            raise ValueError("--radome-obs requiert --radome-catalogue")
+        from downscaling.deep_learning.radome_loader import load_radome_targets
+
+        radome_map = load_radome_targets(args.radome_obs, args.radome_catalogue)
+        log.info(
+            "RADOME branché en supervision (train). Holdout appliqué aussi aux RADOME "
+            "(pas de fuite Baronnies) ; éval reste Sencrop dans la bbox."
+        )
+
     # ---- Dataset + DataModule -----------------------------------------------
     dataset = BulkSencropDataset(
         dates=dates,
@@ -463,7 +741,16 @@ def main() -> int:
         elevation_grid=dem_2d,
         min_stations=5,
         cond_table=cond_table,
+        holdout_bbox=tuple(args.holdout_bbox) if args.holdout_bbox else None,
+        radome_map=radome_map,
+        surfex_provider=surfex_provider,
     )
+    if args.holdout_bbox:
+        log.info(
+            "Leave-station-out actif : val = stations dans bbox lat[%.2f,%.2f] lon[%.2f,%.2f] "
+            "(hors du fit) — val/rmse comparable au LOO Lot B #33",
+            *args.holdout_bbox,
+        )
     if len(dataset) == 0:
         log.error("No valid nights found — aborting")
         return 2
@@ -503,11 +790,30 @@ def main() -> int:
         elevation_aware=True,
         hourly=False,
         reduce="min",
+        target_mode=args.target_mode,
+        first_guess=args.first_guess,
+        first_guess_dz=torch.from_numpy(fg_dz) if fg_dz is not None else None,
+        clamp=args.clamp,
+        clamp_margin=args.clamp_margin,
     )
+    if args.clamp:
+        log.info(
+            "Clamp #81 ACTIF : sortie bornée tanh dans [min,max](CERRA, SURFEX) + marge %.1f°C "
+            "→ composant assurable, risque de modèle plafonné par |CERRA−SURFEX|",
+            args.clamp_margin,
+        )
     if args.loss_quantile is not None:
         log.info("Loss : pinball quantile q=%.2f (tail-aware, issue #5)", args.loss_quantile)
     else:
         log.info("Loss : RMSE (symmetric, baseline)")
+    if args.target_mode == "residual":
+        log.info(
+            "Target : residual (first-guess=%s + résidu appris) — plancher %s",
+            args.first_guess,
+            "≈ Lot B lapse (~1,6°C)" if args.first_guess == "lapse" else "CERRA bilinéaire (~2,8°C)",
+        )
+    else:
+        log.info("Target : raw Tmin (baseline)")
 
     # ---- Trainer ------------------------------------------------------------
     import lightning.pytorch as pl
@@ -528,10 +834,14 @@ def main() -> int:
                 monitor="val/rmse",
                 mode="min",
                 patience=args.early_stopping_patience,
-                min_delta=1e-3,
+                min_delta=args.es_min_delta,
             )
         )
-        log.info("EarlyStopping enabled: patience=%d", args.early_stopping_patience)
+        log.info(
+            "EarlyStopping enabled: monitor=val/rmse patience=%d min_delta=%.3f",
+            args.early_stopping_patience,
+            args.es_min_delta,
+        )
 
     logger = False
     wandb_run_url = None
@@ -595,6 +905,10 @@ def main() -> int:
                 "x_met": x_met.unsqueeze(0).to(inference_device),
                 "x_dem": x_dem.unsqueeze(0).to(inference_device),
             }
+            if surfex_provider is not None:
+                surfex = torch.as_tensor(surfex_provider(d), dtype=torch.float32)
+                x_env = torch.stack([x_met[0], surfex], dim=0)  # (2, H, W)
+                batch["x_env"] = x_env.unsqueeze(0).to(inference_device)
             if cond_table is not None:
                 cv = cond_table.get(d)
                 if cv is None:
@@ -607,13 +921,24 @@ def main() -> int:
                 pred,
                 dims=("latitude", "longitude"),
                 coords={"latitude": lat_grid, "longitude": lon_grid},
+                name="t2m",
             ).expand_dims(time=[pd.Timestamp(d)])
             out_grids.append(slab)
 
-    out_ds = xr.concat(out_grids, dim="time")
+    out_da = xr.concat(out_grids, dim="time")
+    # Le champ DL est le BACKBONE 1 km (avant correction RBF Sencrop live). On l'émet
+    # aussi sous `t2m_prerbf` pour que `analyze_recalibrated_statistical.py --loo`
+    # applique le RBF Sencrop + leave-one-out par-dessus → comparaison fair DL+RBF
+    # vs Lot B (lapse+QDM)+RBF (#33). Le DL n'applique aucun RBF lui-même, donc
+    # t2m == t2m_prerbf ici.
+    out_ds = _dl_output_dataset(out_da)
     zarr_store = make_zarr_store(args.out, args.year)
     out_ds.to_zarr(zarr_store, mode="w")
-    log.info("Wrote %s (%d nights)", describe(args.out, args.year, ".zarr"), len(out_grids))
+    log.info(
+        "Wrote %s (%d nights, vars: t2m + t2m_prerbf pour RBF-LOO)",
+        describe(args.out, args.year, ".zarr"),
+        len(out_grids),
+    )
 
     # ---- Reproducibility metadata -------------------------------------------
     metadata = {
@@ -629,8 +954,18 @@ def main() -> int:
         "n_levels": args.n_levels,
         "loss": "pinball" if args.loss_quantile is not None else "rmse",
         "loss_quantile": args.loss_quantile,
+        "target_mode": args.target_mode,
+        "first_guess": args.first_guess,
+        "clamp": bool(args.clamp),
+        "clamp_margin": args.clamp_margin,
+        "surfex": str(args.surfex) if args.surfex else None,
+        "cerra_orog": str(args.cerra_orog) if args.cerra_orog else None,
         "early_stopping_patience": args.early_stopping_patience,
+        "es_min_delta": args.es_min_delta,
+        "holdout_bbox": list(args.holdout_bbox) if args.holdout_bbox else None,
         "cond_vars": sorted(cond_vars) if cond_vars else [],
+        "radome_obs": args.radome_obs,
+        "radome_catalogue": args.radome_catalogue,
         "cond_dim": cond_dim,
         "n_nights": len(dataset),
         "wandb_run_url": wandb_run_url,
