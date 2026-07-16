@@ -453,18 +453,25 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path, cerra_orog_path: st
     return provider, ds_cerra, ds_dem, fg_dz
 
 
-def _build_surfex_provider(surfex_path: str, lat_grid: np.ndarray, lon_grid: np.ndarray):
-    """Charge l'artefact SURFEX (T2M K, LAT/LON) → callable date -> (H, W) °C (#81).
+def _build_surfex_provider(
+    surfex_path: str, lat_grid: np.ndarray, lon_grid: np.ndarray, var: str = "T2M"
+):
+    """Charge l'artefact SURFEX (LAT/LON + var K) → callable date -> (H, W) °C (#81).
 
     Le champ SURFEX 1 km (grille Lambert propre) est régridé au plus proche voisin
-    sur la grille DEM fine (lat/lon), et réduit au **Tmin journalier** (min de T2M
-    sur les heures de la date) → borne froide assimilée de l'enveloppe du clamp.
+    sur la grille DEM fine (lat/lon), et réduit au **Tmin journalier** (min de la
+    variable sur les heures de la date) → borne froide assimilée de l'enveloppe.
+
+    ``var`` : 'T2M' (air) ou 'TSRAD' (T_skin, ~1,6°C plus froid = gel radiatif,
+    plancher physiquement correct — #82).
     """
     from scipy.spatial import cKDTree
 
     local = _resolve_to_local(surfex_path, label="surfex_envelope")
     ds = xr.open_dataset(local)
-    T = np.asarray(ds["T2M"].values, dtype=np.float32)  # (time, yy, xx) Kelvin
+    if var not in ds.variables:
+        raise ValueError(f"--surfex-var {var!r} absent de l'artefact ({list(ds.data_vars)})")
+    T = np.asarray(ds[var].values, dtype=np.float32)  # (time, yy, xx) Kelvin
     LAT = np.asarray(ds["LAT"].values, dtype=np.float64)  # (yy, xx)
     LON = np.asarray(ds["LON"].values, dtype=np.float64)
     times = pd.to_datetime(ds["time"].values)
@@ -477,8 +484,8 @@ def _build_surfex_provider(surfex_path: str, lat_grid: np.ndarray, lon_grid: np.
     tree = cKDTree(np.column_stack([LON.ravel(), LAT.ravel()]))
     _, idx = tree.query(np.column_stack([LO2.ravel(), LA2.ravel()]))
     log.info(
-        "SURFEX envelope: %s (%d pas), régrid NN %s → grille fine (%d, %d)",
-        Path(local).name, T.shape[0], tuple(LAT.shape), H_fine, W_fine,
+        "SURFEX envelope: %s var=%s (%d pas), régrid NN %s → grille fine (%d, %d)",
+        Path(local).name, var, T.shape[0], tuple(LAT.shape), H_fine, W_fine,
     )
 
     def surfex_provider(d: str) -> np.ndarray:
@@ -651,6 +658,13 @@ def main() -> int:
         "s3://karpos-backtest-data/surfex/drome_1km/2023-04/surfex_drome_2023-04.nc.",
     )
     p.add_argument(
+        "--surfex-var",
+        type=str,
+        default="TSRAD",
+        help="Variable SURFEX pour la borne froide de l'enveloppe : 'TSRAD' (T_skin, "
+        "gel radiatif, défaut, #82) ou 'T2M' (air).",
+    )
+    p.add_argument(
         "--clamp",
         action="store_true",
         help="#81 : borne la sortie DL dans l'enveloppe [min,max](CERRA, SURFEX) via "
@@ -704,7 +718,9 @@ def main() -> int:
         raise ValueError("--clamp requiert --surfex (borne froide assimilée de l'enveloppe)")
     surfex_provider = None
     if args.surfex:
-        surfex_provider = _build_surfex_provider(args.surfex, lat_grid, lon_grid)
+        surfex_provider = _build_surfex_provider(
+            args.surfex, lat_grid, lon_grid, var=args.surfex_var
+        )
 
     # ---- FiLM conditioning vars (régime + ERA5 + saisonnalité) --------------
     cond_vars = {v.strip() for v in args.cond_vars.split(",") if v.strip()}
@@ -959,6 +975,7 @@ def main() -> int:
         "clamp": bool(args.clamp),
         "clamp_margin": args.clamp_margin,
         "surfex": str(args.surfex) if args.surfex else None,
+        "surfex_var": args.surfex_var if args.surfex else None,
         "cerra_orog": str(args.cerra_orog) if args.cerra_orog else None,
         "early_stopping_patience": args.early_stopping_patience,
         "es_min_delta": args.es_min_delta,
