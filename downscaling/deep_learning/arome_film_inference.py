@@ -278,11 +278,15 @@ def group_arome_nights(
             coarse = sub.isel(time=int(np.argmin(np.abs(sub_times - ref))))
         else:
             raise ValueError(f"reduce must be min|mean|snapshot, got {reduce!r}")
-        # Coordinate-aware regrid onto the DEM grid, extrapolating any edge gaps.
-        fine = coarse.interp(
-            latitude=dem_lat, longitude=dem_lon, method="linear",
-            kwargs={"fill_value": None},
-        )
+        # Coordinate-aware regrid onto the DEM grid (bilinear). The DEM query
+        # coordinates are clamped into the AROME footprint before interpolation:
+        # this both keeps interp inside the data (no NaN) and gives a nearest-edge
+        # extension over the thin strip where the DEM extends a fraction of a degree
+        # beyond the AROME domain → the served field is 100 % finite on the DEM grid.
+        alat, alon = coarse["latitude"].values, coarse["longitude"].values
+        qlat = np.clip(dem_lat, float(alat.min()), float(alat.max()))
+        qlon = np.clip(dem_lon, float(alon.min()), float(alon.max()))
+        fine = coarse.interp(latitude=qlat, longitude=qlon, method="linear")
         out.append((key.strftime("%Y-%m-%d"), _to_celsius(fine.values.astype(np.float32))))
     return out
 
