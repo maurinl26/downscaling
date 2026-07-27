@@ -64,6 +64,7 @@ from downscaling.prtihvi_wxc.sencrop import (
     load_stations_catalog,
     load_timeseries,
 )
+from downscaling.scripts.economic_value import relative_economic_value
 
 log = logging.getLogger("analyze_stat")
 
@@ -584,6 +585,14 @@ def _analyze_year_loo(
         arr_obs = np.array(all_obs)
         arr_pred = np.array(all_pred)
         agg = _contingency(arr_obs, arr_pred, threshold_c) if len(arr_obs) else {}
+        # Valeur Économique Relative (REV, #230) sur les paires hors-station de ce
+        # mode : bloc additif, ne modifie pas les clés existantes. Calculée sur les
+        # contingences LOO (jamais in-sample), conformément à la méthodo lentille A.
+        rev = (
+            relative_economic_value(arr_obs, arr_pred, threshold_c=threshold_c)
+            if len(arr_obs)
+            else None
+        )
         modes[mode] = {
             "n_pairs": int(len(arr_obs)),
             "n_groups": len(set(groups.values())),
@@ -595,6 +604,7 @@ def _analyze_year_loo(
                 "bias": float(np.mean(arr_obs - arr_pred)) if len(arr_obs) else float("nan"),
             },
             "per_station": station_rows,
+            "rev": rev,
         }
 
     return {

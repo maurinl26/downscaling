@@ -89,6 +89,88 @@ def _night_window(ds: xr.Dataset, d: date) -> xr.Dataset:
     return ds.sel(time=slice(start, end))
 
 
+# Candidats de noms de variables NetCDF CERRA (le nom court diffère du nom CDS).
+_CERRA_VARS = {
+    "wind_speed": ("si10", "ws10", "10si", "wind_speed", "10m_wind_speed"),
+    "wind_dir": ("wdir10", "wd10", "10wdir", "wind_direction", "10m_wind_direction"),
+    "mslp": ("msl", "prmsl", "mean_sea_level_pressure", "msror"),
+    "tcc": ("tcc", "total_cloud_cover", "tciwv"),
+    "rh": ("r2", "r", "2r", "relative_humidity", "hur"),
+    "t2m": ("t2m", "2t", "t", "temperature", "air_temperature"),
+}
+
+
+def _resolve_var(ds: xr.Dataset, key: str) -> xr.DataArray:
+    """Trouve une variable CERRA par sa liste de noms candidats, sinon erreur claire."""
+    for cand in _CERRA_VARS[key]:
+        if cand in ds.data_vars or cand in ds:
+            return ds[cand]
+    raise ValueError(
+        f"CERRA : aucune variable '{key}' trouvée (candidats {_CERRA_VARS[key]}). "
+        f"Variables présentes : {list(ds.data_vars)}"
+    )
+
+
+def _td_from_rh(t2m_c: np.ndarray, rh_frac: np.ndarray) -> np.ndarray:
+    """Point de rosée (°C) depuis T2m (°C) et RH (fraction 0-1), Magnus inverse.
+
+    e_s(T) = 6.112·exp(17.62·T/(243.12+T)) [hPa] ; e = RH·e_s(T) ;
+    Td = 243.12·ln(e/6.112) / (17.62 − ln(e/6.112)). Valide -45..+60 °C.
+    """
+    es_t = 6.112 * np.exp(17.62 * t2m_c / (243.12 + t2m_c))
+    e = np.clip(rh_frac, 1e-6, 1.0) * es_t
+    gamma = np.log(e / 6.112)
+    return 243.12 * gamma / (17.62 - gamma)
+
+
+def _night_features_cerra(ds_night: xr.Dataset, bbox: dict[str, float]) -> dict[str, float]:
+    """Features synoptiques CERRA pour une nuit (médiane bbox + fenêtre).
+
+    CERRA fournit vitesse ET direction de vent directement (pas u/v) et RH (pas
+    dewpoint) → Td calculé via Magnus. Unités auto-détectées (K→°C, %→fraction,
+    Pa→hPa). Le t2m doit être mergé dans ``ds_night`` (fichier CERRA atm séparé).
+    """
+    # CERRA grid : lat peut être ascendante ou descendante — on tente les deux.
+    sub = ds_night.sel(
+        lat=slice(bbox["lat_max"], bbox["lat_min"]),
+        lon=slice(bbox["lon_min"], bbox["lon_max"]),
+    )
+    if sub.sizes.get("lat", 0) == 0:
+        sub = ds_night.sel(
+            lat=slice(bbox["lat_min"], bbox["lat_max"]),
+            lon=slice(bbox["lon_min"], bbox["lon_max"]),
+        )
+    if sub.sizes.get("time", 0) == 0 or sub.sizes.get("lat", 0) == 0:
+        return {}
+
+    wind = _resolve_var(sub, "wind_speed").values
+    wdir = _resolve_var(sub, "wind_dir").values
+    tcc = _resolve_var(sub, "tcc").values.astype(float)
+    if np.nanmedian(tcc) > 1.5:  # % ou oktas → fraction
+        tcc = tcc / (100.0 if np.nanmedian(tcc) > 8.5 else 8.0)
+    msl = _resolve_var(sub, "mslp").values.astype(float)
+    if np.nanmedian(msl) > 2000.0:  # Pa → hPa
+        msl = msl / 100.0
+    rh = _resolve_var(sub, "rh").values.astype(float)
+    rh_frac = rh / 100.0 if np.nanmedian(rh) > 1.5 else rh
+    t2m = _resolve_var(sub, "t2m").values.astype(float)
+    t2m_c = t2m - 273.15 if np.nanmedian(t2m) > 100.0 else t2m
+    td_c = _td_from_rh(t2m_c, rh_frac)
+    dewpoint_dep = t2m_c - td_c
+
+    return {
+        "wind_med": float(np.nanmedian(wind)),
+        "wind_dir_med": _circular_median_dir(wdir),
+        "tcc_med": float(np.nanmedian(tcc)),
+        "mslp_med": float(np.nanmedian(msl)),
+        "dewpoint_dep_med": float(np.nanmedian(dewpoint_dep)),
+        "t2m_med": float(np.nanmedian(t2m_c)),
+        "rh_med": float(np.nanmedian(rh_frac)),
+        "dewpoint_dep_min": float(np.nanmin(dewpoint_dep)),
+        "rh_min": float(np.nanmin(rh_frac)),
+    }
+
+
 def _night_features(
     ds_night: xr.Dataset,
     bbox: dict[str, float],
@@ -221,10 +303,29 @@ def _dates_for_year(ds: xr.Dataset, year: int, months: tuple[int, ...]) -> list[
 def main() -> int:
     p = argparse.ArgumentParser(description="Classify frost-flo nights into synoptic regimes")
     p.add_argument(
+        "--source",
+        choices=["era5", "cerra"],
+        default="era5",
+        help="Réanalyse source du régime. CERRA pour conditionner un downscaling CERRA "
+        "(cohérence entrée/conditionnement). Défaut era5 (rétro-compat).",
+    )
+    p.add_argument(
         "--era5-dir",
         type=Path,
-        required=True,
-        help="Directory containing era5_synoptic_<year>.nc files",
+        default=None,
+        help="[source=era5] Directory containing era5_synoptic_<year>.nc files",
+    )
+    p.add_argument(
+        "--cerra-synoptic",
+        type=Path,
+        default=None,
+        help="[source=cerra] NetCDF synoptique CERRA (si10, wdir10, msl, tcc, r2)",
+    )
+    p.add_argument(
+        "--cerra-t2m",
+        type=Path,
+        default=None,
+        help="[source=cerra] NetCDF CERRA atm t2m (pour calculer Td depuis RH)",
     )
     p.add_argument("--years", type=int, nargs="+", required=True)
     p.add_argument(
@@ -252,6 +353,12 @@ def main() -> int:
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+    if args.source == "era5" and args.era5_dir is None:
+        p.error("--era5-dir requis avec --source era5")
+    if args.source == "cerra" and (args.cerra_synoptic is None or args.cerra_t2m is None):
+        p.error("--cerra-synoptic ET --cerra-t2m requis avec --source cerra")
+
     args.out.mkdir(parents=True, exist_ok=True)
 
     bbox = {
@@ -260,27 +367,41 @@ def main() -> int:
         "lon_min": min(args.bbox_lon),
         "lon_max": max(args.bbox_lon),
     }
-    log.info("Bbox: %s", bbox)
+    log.info("Bbox: %s | source=%s", bbox, args.source)
+
+    # CERRA : un seul NetCDF synoptique + t2m (fichier atm séparé), mergés une fois.
+    cerra_ds: xr.Dataset | None = None
+    if args.source == "cerra":
+        ds_syn = _normalize_era5(xr.open_dataset(args.cerra_synoptic))
+        ds_t2m_raw = _normalize_era5(xr.open_dataset(args.cerra_t2m))
+        t2m_da = _resolve_var(ds_t2m_raw, "t2m").rename("t2m")
+        cerra_ds = xr.merge([ds_syn, t2m_da], join="inner", compat="override")
+        log.info("CERRA synoptique+t2m mergés : vars=%s", list(cerra_ds.data_vars))
 
     summary_per_year: dict[int, dict[str, int]] = {}
     all_rows: list[dict] = []
 
     for year in args.years:
-        path = args.era5_dir / f"era5_synoptic_{year}.nc"
-        if not path.exists():
-            log.warning("%d: %s manquant, skip", year, path)
-            continue
-        log.info("--- year %d ---", year)
-        ds = _normalize_era5(xr.open_dataset(path))
-
-        # T850 optionnel pour proxy inversion
-        path_t850 = args.era5_dir / f"era5_t850_{year}.nc"
-        ds_t850 = None
-        if path_t850.exists():
-            ds_t850 = _normalize_era5(xr.open_dataset(path_t850))
-            log.info("  T850 chargé : %s", path_t850.name)
+        if args.source == "cerra":
+            ds = cerra_ds
+            ds_t850 = None
+            log.info("--- year %d (cerra) ---", year)
         else:
-            log.info("  T850 absent → R4 reste indivisé (fallback)")
+            path = args.era5_dir / f"era5_synoptic_{year}.nc"
+            if not path.exists():
+                log.warning("%d: %s manquant, skip", year, path)
+                continue
+            log.info("--- year %d ---", year)
+            ds = _normalize_era5(xr.open_dataset(path))
+
+            # T850 optionnel pour proxy inversion
+            path_t850 = args.era5_dir / f"era5_t850_{year}.nc"
+            ds_t850 = None
+            if path_t850.exists():
+                ds_t850 = _normalize_era5(xr.open_dataset(path_t850))
+                log.info("  T850 chargé : %s", path_t850.name)
+            else:
+                log.info("  T850 absent → R4 reste indivisé (fallback)")
 
         dates = _dates_for_year(ds, year, tuple(args.months))
         log.info("  %d nuits à classifier", len(dates))
@@ -297,8 +418,11 @@ def main() -> int:
         }
         for d in dates:
             ds_night = _night_window(ds, d)
-            ds_t850_night = _night_window(ds_t850, d) if ds_t850 is not None else None
-            feats = _night_features(ds_night, bbox, ds_t850_night=ds_t850_night)
+            if args.source == "cerra":
+                feats = _night_features_cerra(ds_night, bbox)
+            else:
+                ds_t850_night = _night_window(ds_t850, d) if ds_t850 is not None else None
+                feats = _night_features(ds_night, bbox, ds_t850_night=ds_t850_night)
             regime = _classify(feats)
             regime_counts[regime] = regime_counts.get(regime, 0) + 1
             row = {"date": d.isoformat(), "regime": regime, **feats}

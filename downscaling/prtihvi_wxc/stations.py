@@ -29,18 +29,33 @@ def night_station_targets(
     lat_grid: np.ndarray,
     lon_grid: np.ndarray,
     elevation_grid: np.ndarray | None = None,
+    *,
+    holdout_bbox: tuple[float, float, float, float] | None = None,
+    role: str = "all",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Observations QC'd d'une nuit → cibles sparse ``(tmin, row, col, dz)``.
 
     Mutualise l'extraction entre les datasets de calibration (Prithvi / U-Net) :
     Tmin par station valide, leur position sur la grille HR, et le décalage
     d'altitude ``dz`` (m) pour la correction lapse-rate.
+
+    Leave-station-out (parité avec le LOO Lot B #33) : si ``holdout_bbox``
+    ``(lat_min, lat_max, lon_min, lon_max)`` est fourni et ``role != "all"`` :
+    - ``role="train"`` : ne garde que les stations HORS de la bbox (fit sans elles) ;
+    - ``role="val"``   : ne garde que les stations DEDANS (éval out-of-station).
+    Défaut ``role="all"`` → toutes les stations (rétro-compat). Peut retourner des
+    tableaux vides (nuit sans station dans le rôle) — l'appelant doit gérer.
     """
     tmin = tmin_nocturnal(obs_qc)
     valid = ~np.isnan(tmin.values)
     lat, lon = obs_qc.lat[valid], obs_qc.lon[valid]
     elev = obs_qc.elevation_m[valid]
     vals = tmin.values[valid].astype(np.float32)
+    if holdout_bbox is not None and role != "all":
+        la0, la1, lo0, lo1 = holdout_bbox
+        inside = (lat >= la0) & (lat <= la1) & (lon >= lo0) & (lon <= lo1)
+        keep = inside if role == "val" else ~inside
+        lat, lon, elev, vals = lat[keep], lon[keep], elev[keep], vals[keep]
     row, col = assign_to_grid(lat, lon, lat_grid, lon_grid)
     dz = elevation_offset(elev, row, col, elevation_grid)
     return vals, row, col, dz
