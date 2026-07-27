@@ -87,8 +87,8 @@ def load_radome_targets(obs_root: str, catalogue_path: str) -> RadomeTargets:
         lat, lon, alt = meta[sid]
         uri = f if "://" in f else (proto + f if proto else f)
         try:
-            # CSV sauvé par le batch : séparateur virgule, décimales FR quotées ('6,4').
-            df = pd.read_csv(uri, storage_options=_storage_options(uri) or None)
+            # CSV MF DPClim : séparateur ';', décimales virgule FR ('-2,2').
+            df = pd.read_csv(uri, sep=";", storage_options=_storage_options(uri) or None)
         except Exception as exc:  # noqa: BLE001 — station illisible : on skip, pas fatal
             log.warning("RADOME station %s illisible (%s) — skip", sid, exc)
             continue
