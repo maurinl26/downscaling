@@ -45,6 +45,9 @@ def unet_sparse_collate(samples: list[dict]) -> dict:
     # FiLM conditioning scalaire (régime + ERA5 + saisonnalité), optionnel
     if samples and samples[0].get("cond_vec") is not None:
         out["cond_vec"] = torch.stack([s["cond_vec"] for s in samples])
+    # Champs d'enveloppe physique (CERRA, SURFEX) pour la tête bornée (#81), optionnel.
+    if samples and samples[0].get("x_env") is not None:
+        out["x_env"] = torch.stack([s["x_env"] for s in samples])
     return out
 
 
@@ -68,10 +71,23 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         elevation_aware: bool = True,
         hourly: bool = False,  # descente horaire puis réduction (Tmin correct)
         reduce: str = "min",  # réduction temporelle des prédictions ('min' = Tmin)
+        target_mode: str = "raw",  # 'raw' = Tmin directe ; 'residual' = first-guess + résidu
+        first_guess: str = "bilinear",  # first-guess du mode résidu : 'bilinear' | 'lapse'
+        first_guess_dz: torch.Tensor | None = None,  # (H, W) = z_DEM_1km − z_orog_coarse_1km (m)
+        clamp: bool = False,  # #81 : borne la sortie dans l'enveloppe physique (x_env)
+        clamp_margin: float = 0.0,  # marge °C ajoutée à la demi-largeur d'enveloppe
     ):
         super().__init__()
         self.model = model
         self.denorm = tuple(denorm) if denorm is not None else None
+        if target_mode not in ("raw", "residual"):
+            raise ValueError(f"target_mode must be 'raw' or 'residual', got {target_mode!r}")
+        if first_guess not in ("bilinear", "lapse"):
+            raise ValueError(f"first_guess must be 'bilinear' or 'lapse', got {first_guess!r}")
+        if first_guess == "lapse" and first_guess_dz is None:
+            raise ValueError(
+                "first_guess='lapse' requiert first_guess_dz = z_DEM_1km − z_orog_coarse_1km (m)"
+            )
         lw = loss_weights or {}
         self.criterion = SparseSupervisedLoss(
             lambda_obs=lw.get("obs", 1.0),
@@ -85,7 +101,18 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         self.elevation_aware = elevation_aware
         self.hourly = hourly
         self.reduce = reduce
-        self.save_hyperparameters(ignore=["model"])
+        self.target_mode = target_mode
+        self.first_guess = first_guess
+        self.clamp = clamp
+        self.clamp_margin = float(clamp_margin)
+        # dz = (z_DEM_1km − z_orog_coarse_1km) en mètres, STATIQUE (orographie et DEM
+        # time-invariants). Registré en buffer → suit le device (MPS/CUDA). None en
+        # mode bilinear.
+        if first_guess_dz is not None:
+            self.register_buffer("first_guess_dz", first_guess_dz.float())
+        else:
+            self.first_guess_dz = None
+        self.save_hyperparameters(ignore=["model", "first_guess_dz"])
 
     def forward(self, x_met: torch.Tensor, x_dem: torch.Tensor) -> torch.Tensor:
         return self.model(x_met, x_dem)
@@ -118,6 +145,14 @@ class UNetSparseCalibrationModule(pl.LightningModule):
                 pred = self.model(batch["x_met"], batch["x_dem"], cond_vec)[:, c : c + 1]
             else:
                 pred = self(batch["x_met"], batch["x_dem"])[:, c : c + 1]  # (1, 1, H, W)
+        # Tête BORNÉE (#81) : la sortie vit dans l'enveloppe physique [lo, hi] des
+        # champs de `x_env` (CERRA, SURFEX). Résidu tanh-borné, différentiable :
+        #   T = centre + demi_largeur · tanh(raw) ∈ [lo − m, hi + m]
+        # `raw` = sortie CNN normalisée (O(1), idéale pour tanh) ; le biais grande
+        # échelle est porté par le centre d'enveloppe. Risque de modèle plafonné
+        # par l'écart |CERRA − SURFEX| → composant assurable, explicabilité bornée.
+        if self.clamp:
+            return self._bounded_head(pred, batch)
         # La sortie du U-Net est en espace NORMALISÉ (z-score des stats d'entraînement).
         # Dénormaliser → °C (les cibles d'entraînement sont en °C). À défaut de stats,
         # repli historique : soustraction Kelvin (suppose une sortie physique en K).
@@ -126,7 +161,59 @@ class UNetSparseCalibrationModule(pl.LightningModule):
             pred = pred * std + mean
         elif self.kelvin_to_celsius:
             pred = pred - KELVIN
+        # Résidu (v2) : le U-Net apprend la CORRECTION à un first-guess physique
+        # (CERRA descendu à 1 km = canal météo cible), au lieu de re-prédire toute
+        # la Tmin. `pred = first_guess + résidu`. Plancher : résidu → 0 ⇒ on retombe
+        # sur le first-guess. Le biais grande-échelle est porté par le first-guess,
+        # le modèle ne façonne que la structure fine (cuvette, radiatif).
+        # NB altitude : le first-guess porte déjà la valeur CERRA ; la correction
+        # station↔maille (lapse_rate·obs_dz) reste gérée UNE seule fois dans la loss.
+        if self.target_mode == "residual":
+            pred = self._first_guess(batch) + pred
         return pred
+
+    def _bounded_head(self, raw: torch.Tensor, batch) -> torch.Tensor:
+        """Sortie bornée tanh dans l'enveloppe de ``x_env`` (#81, variante c).
+
+        ``raw`` = ``(1, 1, H, W)`` sortie CNN (normalisée). ``x_env`` = ``(1, K, H, W)``
+        champs physiques (CERRA, SURFEX) en °C. Retourne
+        ``centre + demi_largeur·tanh(raw)`` ∈ ``[min(env) − m, max(env) + m]``,
+        prouvablement dans l'enveloppe (m = ``clamp_margin``).
+        """
+        env = batch.get("x_env")
+        if env is None:
+            raise RuntimeError("clamp=True requiert x_env (champs d'enveloppe) dans le batch")
+        lo = env.min(dim=1, keepdim=True).values  # (1, 1, H, W)
+        hi = env.max(dim=1, keepdim=True).values
+        center = 0.5 * (lo + hi)
+        half = 0.5 * (hi - lo) + self.clamp_margin
+        return center + half * torch.tanh(raw)
+
+    def _first_guess(self, batch) -> torch.Tensor:
+        """First-guess physique ``(1, 1, H, W)``.
+
+        - ``bilinear`` : canal météo cible (CERRA bilinéaire à 1 km, °C). Plancher
+          faible (≈ valeur coarse brute, biais chaud) — le résidu part quasi de zéro.
+        - ``lapse``    : + correction lapse-rate GRILLE
+          ``lapse_rate·(z_DEM_1km − z_orog_coarse_1km)`` → plancher ≈ Lot B (~1,6°C).
+          ⚠️ Correction GRILLE (maille 1 km vs orographie coarse), DISTINCTE de la
+          correction STATION↔maille (``lapse_rate·obs_dz``) faite dans la loss : deux
+          ``dz`` différents, pas de double-comptage.
+        """
+        c = self.target_channel
+        xm = batch["x_met"]
+        if self.hourly:
+            # (1, T, C, H, W) → réduction temporelle du canal cible (même réduction
+            # que les prédictions : min = Tmin).
+            base = self._reduce_time(xm[0, :, c])[None, None]
+        else:
+            base = xm[:, c : c + 1]  # (1, 1, H, W)
+        if self.first_guess == "lapse":
+            if self.first_guess_dz is None:
+                raise RuntimeError("first_guess='lapse' mais first_guess_dz absent")
+            # (H, W) broadcast → (1, 1, H, W)
+            base = base + self.lapse_rate * self.first_guess_dz
+        return base
 
     def _shared_step(self, batch):
         pred = self._predict_target(batch)
@@ -140,7 +227,15 @@ class UNetSparseCalibrationModule(pl.LightningModule):
             lapse_rate=self.lapse_rate,
         )
 
+    @staticmethod
+    def _is_empty(batch) -> bool:
+        """Nuit sans station dans ce rôle (leave-station-out) → sample vide à sauter."""
+        obs = batch["obs_tmin"][0]
+        return int(getattr(obs, "numel", lambda: len(obs))()) == 0
+
     def training_step(self, batch, batch_idx):
+        if self._is_empty(batch):
+            return None  # Lightning saute le batch (pas d'obs dans ce rôle)
         loss, parts = self._shared_step(batch)
         self.log("train/loss", loss, prog_bar=True, batch_size=1)
         # Always log RMSE in degrees Celsius for comparability across loss types
@@ -150,6 +245,8 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if self._is_empty(batch):
+            return None  # nuit val sans station held-out → skip (n'entre pas dans val/rmse)
         loss, parts = self._shared_step(batch)
         self.log("val/loss", loss, prog_bar=True, batch_size=1)
         # Always log RMSE in °C for comparability across loss types (EarlyStopping monitors this)
@@ -185,6 +282,16 @@ class UNetSparseDataModule(pl.LightningDataModule):
         self.val_ds: Dataset | None = None
 
     def setup(self, stage: str | None = None):
+        # Leave-station-out (#33) : si le dataset porte un holdout_bbox et sait se
+        # cloner par rôle, train/val couvrent les MÊMES nuits mais des stations
+        # DISJOINTES (train = hors bbox, val = dans bbox) → aucune fuite station.
+        if getattr(self.dataset, "holdout_bbox", None) is not None and hasattr(
+            self.dataset, "with_role"
+        ):
+            self.train_ds = self.dataset.with_role("train")
+            self.val_ds = self.dataset.with_role("val")
+            return
+        # Fallback : split aléatoire par nuit (rétro-compat, fuite station connue).
         n_val = max(1, int(len(self.dataset) * self.val_fraction))
         n_train = len(self.dataset) - n_val
         generator = torch.Generator().manual_seed(self.seed)
@@ -231,8 +338,12 @@ class UNetStationDataset(Dataset):
         elevation_grid=None,
         min_stations: int = 5,
         lapse_rate: float = -6.5e-3,
+        holdout_bbox: tuple[float, float, float, float] | None = None,
+        role: str = "all",
+        surfex_provider=None,  # #81 : callable date -> (H, W) champ SURFEX °C (enveloppe)
     ):
         self.coarse_provider = coarse_provider
+        self.surfex_provider = surfex_provider
         self.obs_dir = Path(obs_dir)
         self.lat_grid = lat_grid
         self.lon_grid = lon_grid
@@ -241,7 +352,17 @@ class UNetStationDataset(Dataset):
         self.elevation_grid = elevation_grid
         self.min_stations = min_stations
         self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
+        self.holdout_bbox = holdout_bbox
+        self.role = role
         self.dates = [d for d in dates if self._path(d).exists()]
+
+    def with_role(self, role: str) -> UNetStationDataset:
+        """Clone superficiel (partage grilles/provider) avec un rôle leave-station-out."""
+        import copy
+
+        clone = copy.copy(self)
+        clone.role = role
+        return clone
 
     def _path(self, date: str) -> Path:
         return self.obs_dir / self.file_template.format(date=date)
@@ -252,11 +373,24 @@ class UNetStationDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         date = self.dates[idx]
         x_met, x_dem = self.coarse_provider(date)
+        sample_env = None
+        if self.surfex_provider is not None:
+            # enveloppe = [CERRA 1km (canal météo 0), SURFEX 1km], même grille fine, °C
+            surfex = self.surfex_provider(date)  # (H, W)
+            cerra = x_met[0]  # (H, W)
+            sample_env = torch.stack(
+                [cerra, torch.as_tensor(surfex, dtype=torch.float32)], dim=0
+            )  # (2, H, W)
         obs_qc = self.qc.run(self.obs_loader(str(self._path(date)), date))
         tmin, row, col, dz = night_station_targets(
-            obs_qc, self.lat_grid, self.lon_grid, self.elevation_grid
+            obs_qc,
+            self.lat_grid,
+            self.lon_grid,
+            self.elevation_grid,
+            holdout_bbox=self.holdout_bbox,
+            role=self.role,
         )
-        return {
+        sample = {
             "x_met": x_met,
             "x_dem": x_dem,
             "obs_tmin": torch.as_tensor(tmin, dtype=torch.float32),
@@ -265,3 +399,6 @@ class UNetStationDataset(Dataset):
             "obs_dz": torch.as_tensor(dz, dtype=torch.float32),
             "date": date,
         }
+        if sample_env is not None:
+            sample["x_env"] = sample_env
+        return sample

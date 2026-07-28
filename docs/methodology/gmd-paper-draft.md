@@ -2,205 +2,187 @@
 type: trame-publication
 project: Karpos
 cible-journal: GMD (Geoscientific Model Development, Copernicus / EGU)
-status: brouillon-trame
-epic: EPIC 1 — Scientifique POD/FAR/Biais
-related-code: parametric_insurance
-tags: [karpos, recherche, publication, gmd, validation-scientifique]
+status: brouillon v4 — corps papier réorganisé + Discussion/Conclusion en prose ; méta en annexe
+epic: EPIC 1 — Scientifique POD/FAR/CSI + valeur de prévision
+related-code: karpos-downscaling
+langue: FR (EN régénéré à la demande — cf. workflow GMD)
 created: 2026-06-17
+updated: 2026-07-27
+tags: [karpos, recherche, publication, gmd, prévision, calibration, REV, LOO]
 ---
 
-# Trame publication GMD — Downscaling et calibration de réanalyses pour l'assurance paramétrique gel arboricole
+# Rendre les prévisions de gel exploitables à la parcelle par calibration in situ
 
-> **Objectif** : publier une validation scientifique complète du dispositif Karpos v0.3 dans **GMD (Geoscientific Model Development, Copernicus/EGU)**. Le papier sert simultanément (i) de caution publique pour la marque blanche / partenaires assureurs, (ii) de réponse anticipée au futur dépôt Comité des Indices (CNES, INRAE, Météo France, IDELE, ISG), (iii) de preuve différenciante face à Airbus IPP qui n'a jamais publié de POD/FAR/CSI.
+> **Angle : prévision** (pas assurance). Une prévision — réanalyse ou AROME — à maille kilométrique est aveugle au gel radiatif de parcelle ; une calibration par capteurs in situ la rend exploitable. Chiffres **honnêtes en leave-one-station-out**. Le méta de rédaction (journal, titre, auteurs, calendrier) est en **annexe** de fin de fichier.
 
-## 1. Positionnement et angle
+## Résumé
 
-### Pourquoi GMD
-- **Open Access** (Copernicus), comité de lecture transparent (les reviews et révisions sont publiées), cycle 4-9 mois.
-- Lectorat exactement ciblé : modélisation atmosphérique appliquée, downscaling, validation operationnelle.
-- Alternatives écartées : *Agric. For. Meteorol.* (cycle 8-14 mois, paywall partiel), *Sci. Reports* (généraliste, signal moins fort en assurance), *Atmospheric Measurement Techniques* (cible plus instrumentale).
+*(Rédigé en français ; version anglaise régénérée à la demande — cf. workflow GMD.)*
 
-### Titre brouillon (3 variantes à arbitrer)
+> La détection du gel de printemps **à l'échelle de la parcelle** est un verrou opérationnel : prévisions et réanalyses à maille kilométrique lissent la queue froide et sont **aveugles au gel radiatif de cuvette**, là où le risque se concentre. Nous présentons une chaîne de descente d'échelle par apprentissage profond qui affine la réanalyse CERRA (5,5 km) et la **calibre sur un réseau de capteurs in-verger (Sencrop)** par assimilation à fonction de base radiale. En validation stricte **leave-one-station-out** (2022-2025, ~12 500 nuits-station, vergers d'abricotiers de la vallée du Rhône, aucune fuite), la chaîne atteint un **CSI de 0,38** au seuil agronomique −2,2 °C (POD 0,48 / FAR 0,36), contre **0,27** pour la seule calibration statistique et **0,17** pour la réanalyse brute — la **supervision in situ porte l'essentiel du gain**. Appliquée à une prévision **AROME opérationnelle à J-1**, la même calibration fait passer la détection à la parcelle de **5 % à 50 % (×10)**, et se transfère d'une saison à l'autre (CSI 0,34, train 2024 → test 2025). Une analyse **coût-perte** (valeur économique relative) montre que, sur la plage coût-perte réelle des exploitants, la chaîne capture **80 à 85 %** de la valeur d'une prévision parfaite (~**460 à 1 960 €·ha⁻¹·an⁻¹** évités). Le levier de la valeur n'est pas le modèle atmosphérique mais le **réseau de capteurs in situ**. Pipeline open source ; poids et calibration commerciables.
 
-- **V1 — méthodo focus** : *"A residual U-Net downscaling of CERRA reanalyses with in-orchard sensor calibration for parametric frost insurance: validation over apricot orchards in the Rhône Valley"*
-- **V2 — produit focus** : *"From 5.5 km reanalysis to operational frost indices: an end-to-end deep-learning pipeline validated against the Sencrop sensor network on apricot orchards"*
-- **V3 — assurance focus** : *"Reducing basis risk in parametric frost insurance: phenology-aware downscaling and out-of-sample calibration of CERRA reanalyses"*
+## 1. Introduction
 
-Reco : **V3** — c'est l'angle assurance qui maximise la citabilité côté MGA/assureurs et qui amorce le moat commercial.
+Le gel de printemps est, pour l'arboriculture et la viticulture, l'aléa qui peut effacer une récolte en une seule nuit. Sa fréquence augmente paradoxalement sous le réchauffement : des hivers plus doux avancent le débourrement, exposant des organes floraux vulnérables à des gelées tardives inchangées — l'épisode d'avril 2021, qui a ravagé une large part des vergers et vignobles français, en est l'illustration. Face à ce risque, deux décisions dépendent d'une information fiable **à l'échelle de la parcelle** : la **protection active** la nuit même (aspersion, tours à vent, bougies — coûteuse, à n'engager qu'à bon escient) et, en aval, le **transfert de risque** assurantiel.
 
-### Auteurs proposés
+Or l'information disponible n'est pas à la bonne échelle. Les prévisions et réanalyses opérationnelles raisonnent à la maille kilométrique — AROME à 1,3-2,5 km, CERRA à 5,5 km, ERA5-Land à 9 km. À ces résolutions, la **queue froide est lissée** : le gel radiatif de cuvette, produit d'un refroidissement nocturne local par rayonnement et d'accumulation d'air froid en fond de vallée (*cold-air pooling*), n'est pas résolu — précisément là où le gel se concentre et frappe le plus fort. Les approches existantes ne franchissent pas ce dernier kilomètre : la descente d'échelle statistique corrige un biais moyen sans restituer la structure fine ; les produits de télédétection (par ex. Airbus IPP) rapportent des corrélations (R²) mais **aucune métrique de détection** (POD/FAR) publiée à la parcelle ; l'assurance récolte multirisque repose sur des moyennes olympiques peu résolues spatialement.
 
-- Loïc Maurin (EI Karpos) — *first + corresponding*
-- À solliciter (ordre d'approche, avant rédaction) :
-  - **Stefano Ubbiali** (IAC ETH Zurich) — caution dynamique downscaling, héritage PMAP/FVM
-  - **Christian Kühnlein** (ECMWF) — PI PMAP, autorité IFS
-  - **Tobias Dalhaus** (Wageningen, AECP ETH) — caution risque de base, méthodologie phéno-insurance
-  - **Robert Finger** (AECP ETH) — caution assurance indicielle
-- Hypothèse plausible : 3-4 auteurs au total, ordre Maurin – Ubbiali – Dalhaus – Kühnlein (à négocier).
+La thèse de ce travail est que **le dernier kilomètre ne se franchit pas par un meilleur modèle atmosphérique, mais par une calibration au contact du terrain** — l'assimilation d'un réseau dense de capteurs in-verger. Nous le démontrons en trois temps : (i) une **validation de méthode** en descente d'échelle de réanalyse, en protocole strict *leave-one-station-out* ; (ii) une **valeur en prévision opérationnelle**, en appliquant la même calibration à une prévision AROME à J-1 ; (iii) une **valeur décisionnelle** chiffrée par une analyse coût-perte. Le fil conducteur, empiriquement établi, est que **la supervision par capteurs in situ — non le socle atmosphérique ni la profondeur du réseau — porte l'essentiel du skill utile.**
 
-**Décision préalable à la rédaction** : sécuriser la contribution de chacun par mail avant d'avancer (réunion type 30 min × 3 contacts).
+**Contributions.** (1) *Résultat-phare, prévision* — une prévision AROME brute à J-1 ne détecte que 5 % des gels à la parcelle ; la calibration Sencrop la porte à 50 % (×10) et généralise d'une saison à l'autre. (2) *Empirique* — première validation publiée (à notre connaissance) sur réseau Sencrop in-verger densifié, en strict *leave-one-station-out*, isolant la calibration in situ comme composant porteur du skill. (3) *Décisionnelle* — valeur de prévision par analyse coût-perte (REV), quantifiant l'euro évité. (4) *Méthodologique* — chaîne U-Net résiduel + conditionnement MNT + supervision station hors-échantillon, transférable à toute paire (prévision/réanalyse, réseau capteur). (5) *Reproductibilité* — pipeline open source, protocole et graines documentés. Le reste du papier présente les données (§2), la méthode (§3), le protocole (§4), les résultats (§5), la discussion et les limites (§6-7).
 
-## 2. Question scientifique et contribution
+## 2. Données et zone d'étude
 
-### Question
-> *Une chaîne de downscaling deep-learning calibrée out-of-sample sur un réseau de capteurs in-verger peut-elle atteindre des performances de discrimination du gel (POD ≥ 80 %, FAR ≤ 20 %) suffisantes pour soutenir un contrat d'assurance paramétrique sur arboriculture fruitière ?*
+**Zone d'étude.** Les vergers d'abricotiers (variété Bergeron dominante) de la Drôme et de l'Ardèche, autour des Baronnies provençales — un relief de **vallées encaissées** propice au *cold-air pooling* et une sinistralité gel chronique (2017, 2019, 2021). C'est un cas d'étude exigeant : le gel radiatif y domine, à petite échelle spatiale, mal saisi par les mailles grossières.
 
-### Contributions explicites
-1. **Méthodologique** — chaîne intégrée U-Net résiduel + FiLM·DEM + calibration biais médian out-of-sample, applicable à toute paire (réanalyse, réseau capteur).
-2. **Empirique** — première validation publiée (à notre connaissance) sur réseau Sencrop densifié in-verger Drôme-Ardèche, avec courbes ROC et table comparative CERRA brut vs ERA5-Land vs downscaling vs calibration.
-3. **Opérationnelle** — démonstration que le **socle de réanalyse** (CERRA 5,5 km vs ERA5-Land 9 km) compte davantage que la profondeur du réseau de descente d'échelle, conséquence directe pour le choix d'architecture en production.
-4. **Reproductibilité** — pipeline publié en open source ([[Trame publication JOSS — parametric_insurance|JOSS parallèle]]) ; jeu de données capteur Sencrop accessible sur demande (NDA NDA Sencrop à arbitrer).
+**Réanalyses et modèles.** La réanalyse **CERRA** (5,5 km, disponible depuis 1984) est le socle canonique d'entrée ; **ERA5-Land** (9 km) sert de référence comparative pour isoler l'effet du socle (§5.2). Les champs de surface **SURFEX** (température radiative de surface `T_skin`) fournissent, avec CERRA, l'**enveloppe physique** de bornage du réseau (§3.1). Pour l'évaluation en prévision (§5.4), on utilise une prévision **AROME** archivée à J-1 (Open-Meteo Historical Forecast, ~2,5 km). Réanalyses CERRA et ERA5-Land sont librement accessibles via le CDS Copernicus.
 
-## 3. Pré-requis avant rédaction (état du dispositif scientifique)
+**Réseau de capteurs (vérité terrain).** Le réseau **Sencrop** de capteurs in-verger de la zone fournit la température, échantillonnée au pas **sub-horaire (~15 min)** ; la température minimale nocturne agrégée est notre vérité terrain. Après contrôle qualité, le jeu couvre **~12 500 nuits-station sur 2022-2025**.
+
+**Limite de mesure à garder en tête.** La Tmin Sencrop n'est pas une vérité parfaite : le capteur a une **constante de réponse thermique (~20 min)** qui, lors des refroidissements radiatifs rapides — le scénario même du gel sévère — le fait **lire plus chaud que la réalité** (§3.2, §6). Cette vérité terrain porte donc un **biais chaud connu**, corrélé au taux de refroidissement, à corriger (déconvolution) et à garder à l'esprit dans l'interprétation des scores.
+
+**Seuil d'événement.** L'événement « gel » est défini au seuil **agronomique −2,2 °C** (approximativement la température létale LT10 au stade floraison de l'abricot, d'après Proebsting & Mills), seuil auquel toutes les métriques (§4) sont calculées.
+
+## 3. Méthodes
+
+### 3.1 Réseau de descente d'échelle et bornage physique
+
+**Architecture résiduelle.** Le cœur de la chaîne est un U-Net convolutif opérant en **résiduel** : plutôt que de prédire directement la température minimale nocturne, le réseau apprend une **correction** `δ` ajoutée à un *first-guess* physique, soit `T̂min = T_fg + δ`. Le *first-guess* est le champ de réanalyse cible descendu bilinéairement à 1 km, éventuellement corrigé d'un gradient adiabatique de maille `Γ·(z_MNT − z_orographie_coarse)` (variante *lapse*, `Γ = −4 °C·km⁻¹`). Ce choix est déterminant : sans lui, le réseau régresse vers la climatologie douce et le pouvoir de détection du gel s'effondre (POD → 0). Le plancher garanti par le *first-guess* équivaut à la calibration statistique de référence (§3.2) ; le biais de grande échelle est porté par le *first-guess*, le réseau ne façonnant que la structure fine. La correction lapse de **maille** (1 km vs orographie coarse) est distincte de la correction station↔maille (`Γ·dz_obs`) appliquée une seule fois dans la perte — les deux `dz` diffèrent, sans double-comptage.
+
+**Conditionnement par le relief (FiLM).** À chaque niveau de l'encodeur, les cartes de caractéristiques météo `x` sont modulées de façon affine par une couche FiLM, `FiLM(x) = γ·x + β`. Le couple `(γ, β)` — **un par canal** — est produit par un petit perceptron à partir d'un **résumé global du relief** : le MNT est réduit par moyennage spatial global (`AdaptiveAvgPool2d(1)`) en un vecteur, optionnellement concaténé à un vecteur de conditionnement de grande échelle (p. ex. descripteurs de régime synoptique), puis projeté en `(γ, β)`. La couche est initialisée à l'identité (`γ = 1, β = 0`). **Portée du conditionnement — assumée explicitement** : le MNT étant globalement moyenné, cette modulation est **globale par canal** (le même `(γ, β)` s'applique à tous les pixels), et non une correction par pixel dépendant de l'altitude locale. Le conditionnement ajuste donc la réponse du réseau au **contexte topographique d'ensemble** du domaine, pas la structure fine intra-domaine. Nous ne la sur-attribuons pas au réseau : la structure fine (cuvettes, fonds froids radiatifs) est portée par l'assimilation in situ (§3.2), et une variante FiLM **spatiale** (`γ, β` sous forme de cartes) fait l'objet de l'ablation renvoyée à l'étude compagnon (§6).
+
+**Supervision de la queue froide (perte pinball).** La perte totale combine un terme d'attache aux stations et une régularisation, `L = L_obs + λ L_TV`. Le terme d'attache `L_obs` compare la prédiction — ramenée à l'altitude réelle du capteur par la correction adiabatique station↔maille `Γ·dz_obs` — à la Tmin observée. Plutôt qu'une erreur quadratique, on emploie une **perte pinball** (quantile) : pour un résidu `r = T_obs − T̂`, `L_obs = moyenne[ q·r si r ≥ 0 ; (q−1)·r sinon ]`, avec `q = 0,10`. Un résidu `r > 0` (prédiction trop **froide** → risque de fausse alerte) est pondéré `q = 0,1` ; un résidu `r < 0` (prédiction trop **chaude** → **gel manqué**) est pondéré `|q−1| = 0,9`. La perte pénalise donc un gel manqué **neuf fois plus** qu'une fausse alerte, biaisant volontairement les prédictions vers le froid (le quantile 10 %) et privilégiant la détection (POD) — là où une perte MSE symétrique régresse vers la moyenne douce et effondre la détection des extrêmes. Le terme `L_TV` est une **régularisation de variation totale** (`moyenne|∂_x T̂| + moyenne|∂_y T̂|`) imposant la cohérence spatiale du champ reconstruit.
+
+**Bornage physique du prior (clamp).** La tête de sortie borne la prédiction du réseau dans une **enveloppe physique** construite à partir des champs SURFEX et CERRA. Soit `E = {E_k}` la pile des champs d'enveloppe (température de surface radiative SURFEX `T_skin`, température CERRA), `lo = min_k E_k`, `hi = max_k E_k` ; la sortie est `T̂ = c + a·tanh(r)` avec `c = (lo+hi)/2` et `a = (hi−lo)/2 + m` (marge `m`). Elle appartient donc **par construction** à `[lo − m, hi + m]`, tout en restant différentiable, pour un skill quasi inchangé. Le clamp garantit ainsi que la **composante apprise** de l'indice — le *prior* modèle — ne produit **jamais** de valeur non physique. Il ne s'applique **pas** à la correction observationnelle (§3.2), et ce choix est délibéré (voir la décomposition auditable ci-dessous).
+
+### 3.2 Assimilation des observations Sencrop par fonction de base radiale (RBF)
+
+La correction qui porte l'essentiel du skill est une **assimilation** des résidus de stations Sencrop sur le champ descendu, apparentée à une interpolation optimale simplifiée. Pour chaque nuit et chaque maille servie `S`, on calcule un résidu par station donneuse `j`, `ρ_j = T_obs,j − T̂_pré-RBF(cellule_j)`, où `T̂_pré-RBF` est le champ **avant assimilation** (sortie du réseau, §3.1). Ces résidus sont interpolés sur `S` par une **pondération gaussienne** de la distance entre la maille de `S` et la station `j`, `w_j = exp(−d²_{S,j} / 2σ²)`, avec une longueur de corrélation `σ = 7 km`. La correction n'est appliquée que sous garde opérationnelle : au moins **5 stations présentes** cette nuit **et** au moins **3 donneurs valides** ; à défaut, on sert le champ non corrigé.
+
+**Validation hors-échantillon (anti-fuite).** La station évaluée est retirée de l'ensemble des donneurs (*leave-one-station-out*). Comme deux stations très proches portent un résidu quasi identique, on regroupe en outre les stations distantes de moins de `cluster_km` en grappes (union-find) et l'on retire la **grappe entière** (*leave-one-cluster-out*) — mode le plus défendable pour estimer la performance sur une parcelle **sans capteur**. Tous les scores rapportés (§5) proviennent de ce protocole ; les scores in-sample (station présente dans l'assimilation), plus optimistes (FAR ≈ 0,19 vs ≈ 0,45 sur une même année), sont explicitement écartés.
+
+**Articulation avec SURFEX.** SURFEX n'entre pas comme observation mais comme **contrainte physique** : ses champs de température de surface fournissent, avec CERRA, l'enveloppe de bornage du réseau (§3.1). L'assimilation Sencrop (RBF) apporte, elle, la **correction de biais locale** — fond de vallée, exposition, cold-air pooling — que ni la réanalyse ni SURFEX ne résolvent à la parcelle. C'est cette **assimilation in situ**, et non le modèle atmosphérique ou le réseau seul, qui porte l'essentiel du skill (§5).
+
+**Décomposition auditable de l'indice servi.** L'indice final est la somme d'un *prior* modèle **borné** (§3.1) et d'une correction observationnelle : `T̂_servi = clamp(T̂_DL) + Σ_j w_j ρ_j / Σ_j w_j`. La correction **peut** faire sortir l'indice de l'enveloppe physique du prior — et c'est **voulu** : elle est tirée des observations, qui constatent des froids que le modèle physique n'encadre pas (cuvettes radiatives). L'auditabilité de l'indice ne repose donc **pas** sur son appartenance à une enveloppe, mais sur sa **décomposition** : une composante modèle bornée + une composante observationnelle **transparente et reproductible** — moyenne pondérée de résidus de stations, poids `w_j = exp(−d²/2σ²)` dépendant **uniquement de la géométrie stations↔maille**. Pour tout indice servi, on peut donc dire exactement ce qui vient du modèle (borné) et ce qui vient de **quelles stations, avec quels poids** ; la part qui dépasse la physique **est la donnée elle-même**. Le garde-fou d'assurabilité n'est alors pas un bornage physique de l'indice, mais le **contrôle qualité** des observations et l'**agrégation robuste** (≥ 3 donneurs, pondération par distance, exclusion de grappe) : une station isolée aberrante est **diluée**, non propagée.
+
+### 3.3 Deux flux de température (à ne pas mélanger)
+- **Prévision / skill gel** : Tmin (T_skin radiatif CERRA / prévision AROME).
+- *(Couplage phénologique stade-aware : retiré du périmètre — feature applicative, #232.)*
+
+## 4. Protocole de validation
+
+- **Juge** : **CSI au seuil agronomique −2,2 °C**, en **leave-one-station-out** (station évaluée jamais dans le calage).
+- **Aucune fuite** : les chiffres in-sample sont écartés (ils font passer le FAR de ~0,45 à ~0,19 sur une même année).
+- **Deux régimes de validation** :
+  1. **Hindcast** (réanalyse CERRA descendue) — 2022-2025, ~12 500 nuits-station : valide la **méthode**.
+  2. **Prévision** (AROME archivé J-1, Open-Meteo, 2024-2025, 48 stations) : valide la **valeur opérationnelle** (le cœur du papier), avec **split temporel** train-une-saison → prévoir-l'autre.
+- **Agrégation** : contingences **micro-agrégées** (VP/FP/FN sommées sur les saisons) → poids négligeable à l'année dégénérée 2024 (quasi sans gel), pas d'artefact de moyenne annuelle.
+- **Métriques** : POD/FAR/CSI ; **valeur économique relative (REV)** ; stratification régime/altitude.
+- **Reproductibilité** : graine globale + exécution déterministe consignées.
+
+## 5. Résultats
+
+### 5.1 Validation de méthode : skill hindcast
+
+Nous validons d'abord la chaîne en *hindcast* (réanalyse CERRA descendue), en **leave-one-station-out** au seuil agronomique −2,2 °C sur 2022-2025 (~12 500 nuits-station). Les scores sont **micro-agrégés** — contingences (VP/FP/FN) sommées sur les quatre saisons — ce qui donne un poids négligeable à 2024, année quasi sans gel, et évite l'artefact d'une moyenne annuelle tirée vers le bas par une saison dégénérée (Fig. 2).
+
+| Méthode | POD | FAR | CSI |
+|---|---|---|---|
+| CERRA brute (5,5 km) | — | — | 0,17 |
+| Calibration statistique (Lot B) | 0,36 | 0,48 | 0,27 |
+| DL + supervision station (Lot C) | 0,48 | 0,36 | 0,38 |
+
+Le CSI progresse à chaque étage de la chaîne, de **0,17** (réanalyse brute) à **0,27** (calibration statistique) puis **0,38** (réseau supervisé par les stations) ; le Lot C améliore **simultanément** la détection (POD 0,36 → 0,48) et le taux de fausses alertes (FAR 0,48 → 0,36). Le skill est homogène entre saisons à événements (CSI Lot C : 0,38 en 2022, 0,42 en 2023, 0,33 en 2025 ; 2024, sans gel, n'est pas informative). Le **saut décisif provient de la supervision par capteurs** : l'apport du socle atmosphérique et de la profondeur du réseau est secondaire devant celui de l'assimilation in situ (§3.2).
+
+### 5.2 Le socle de réanalyse prime sur la profondeur du réseau
+
+À calibration égale, la réanalyse d'entrée pèse davantage que la complexité du réseau : CERRA 5,5 km surpasse ERA5-Land 9 km avant même toute correction apprise, ce qui oriente le choix d'architecture vers le **meilleur socle** plutôt que vers un réseau plus profond. *(Chiffres à recomputer en LOO — l'estimation actuelle est in-sample, #233 ; la conclusion qualitative est attendue robuste.)*
+
+### 5.3 Où le skill se concentre : le régime radiatif
+
+Stratifiés par régime synoptique, les événements de gel se concentrent en régime **radiatif** (nuit claire, calme, cuvette) — environ 46 % du total — et c'est précisément là que la chaîne est la plus skillée (CSI ≈ 0,21 contre ≈ 0,05 en régimes ventés/cycloniques, soit un facteur ~4). C'est physiquement cohérent : le gel radiatif de cuvette est ce que la maille grossière résout le plus mal et ce que les capteurs in situ observent le mieux. *(Stratification actuellement in-sample ; à refaire hors-station, #234.)*
+
+### 5.4 Résultat-phare : valeur en prévision opérationnelle (AROME)
+
+Le hindcast valide la méthode ; la prévision en mesure la valeur. Nous évaluons une prévision **AROME archivée à J-1** (Open-Meteo, 48 stations de la Drôme, 2024-2025), au même seuil −2,2 °C et hors-échantillon (Fig. 4). Brute, la prévision est **quasi aveugle au gel de parcelle** : POD 0,05, CSI 0,05 — le pas de 2,5 km lisse la queue froide et manque le décrochage radiatif local. La **calibration par les stations Sencrop** — un mapping de quantiles par station, appliqué **sans recours à l'observation de la nuit prévue** — porte la détection à **POD 0,50** (× 10) et le CSI à **0,32** (× 6). Surtout, cette calibration **se transfère dans le temps** : apprise sur 2024 et appliquée à 2025 (cadre strictement opératoire, aucune fuite), elle conserve un CSI de **0,34**. Le levier de la valeur n'est donc pas le modèle atmosphérique mais le **réseau de capteurs in situ**, qui rend exploitable une prévision qui ne l'était pas.
+
+*Note de mesure* : la vérité terrain Sencrop est elle-même biaisée **chaud** sur les refroidissements rapides (retard de réponse thermique ~20 min, §6) ; les scores de détection ci-dessus sont donc **conservateurs** — une déconvolution de ce retard devrait les relever sur les gels les plus sévères.
+
+### 5.5 Valeur décisionnelle : analyse coût-perte (REV)
+
+Un skill ne vaut que par la décision qu'il améliore. Nous quantifions la **valeur économique relative** (REV ; Richardson, 2000 ; Wilks) : un décideur protège (coût `C`) ou non (perte `L` en cas de gel), et `V(α)` mesure, sur le ratio coût-perte `α = C/L`, la fraction de la valeur d'une prévision parfaite que capte la chaîne (Fig. 5). L'implémentation est vérifiée par son **ancrage théorique** : au point `α = s` (base rate), `V` égale le score de Peirce (POD − POFD), avec correspondance numérique exacte. Sur la plage coût-perte **réelle** des exploitants (`α ≈ 0,02-0,10`, dérivée de coûts de protection de 0,6 à 2,5 k€·ha⁻¹·nuit⁻¹ et de valeurs de récolte de 15 à 40 k€·ha⁻¹), la chaîne capture **80 à 85 %** de la valeur d'une prévision parfaite (maximum `V = 0,85` à `α ≈ 0,07`), soit **~460 à 1 960 €·ha⁻¹·an⁻¹** de pertes évitées. Ce résultat éclaire le CSI « modeste » de 0,38 : parce que le ratio coût-perte du gel tombe **sur** le base rate, la chaîne opère dans son **régime de valeur maximale**. C'est l'argument que ni le RMSE ni la CRPS ne fournissent.
+
+### 5.6 Figures et tables
+
+Fig. 2 (CSI par étage, LOO), Fig. 3 (biais résiduel par station avant/après, −45 %), Fig. 4 (AROME brut vs calibré — résultat-phare), Fig. 5 (REV `V(α)` et zone de valeur) sont produites (`scripts/make_gmd_figures.py`, colorblind-safe, PNG + PDF). Restent Fig. 1 (zone d'étude + stations + MNT) et les tables de stratification en LOO (#234).
+
+## 6. Discussion
+
+**Franchir le dernier kilomètre.** Les systèmes opérationnels d'alerte gel raisonnent à la maille de leur modèle atmosphérique — typiquement AROME à 1,3-2,5 km. À cette résolution, le gel radiatif de cuvette, spatialement fin et concentré en fond de vallée, échappe à la prévision. Notre résultat central est qu'on ne franchit pas ce dernier kilomètre en raffinant le modèle atmosphérique, mais en **le mettant au contact du terrain** : une couche de calibration sur un réseau de capteurs in situ multiplie par dix la détection d'une prévision AROME brute (§5.4) et fait progresser le skill hindcast de 0,17 à 0,38 de CSI (§5.1). Le composant porteur, systématiquement, est l'**assimilation in situ** — ni le socle de réanalyse, ni la profondeur du réseau de neurones. La conséquence pratique est directe : l'actif différenciant d'un tel dispositif n'est pas l'architecture d'apprentissage, mais le **couplage entre une prévision descendue en échelle et un réseau de capteurs dense et calibré**.
+
+**Comparaison avec l'existant.** Les produits de télédétection du gel (par ex. Airbus IPP) rapportent des corrélations spatiales (R²) mais, à notre connaissance, aucune **métrique de détection** (POD/FAR/CSI) publiée à l'échelle de la parcelle. Nos scores, établis en protocole strict *leave-one-station-out*, comblent ce vide avec une double garantie : ils sont **honnêtes** (aucune fuite ; les valeurs in-sample, plus flatteuses, sont explicitement écartées) et **reproductibles** (pipeline open source). Par rapport à la télédétection, l'approche par réanalyse/prévision calibrée ne dépend pas de la couverture nuageuse, s'appuie sur des variables physiques cohérentes et bénéficie d'un historique long.
+
+**Interpréter un CSI de 0,38.** Un CSI de 0,38 peut sembler modeste. Deux éléments le recontextualisent. D'abord, le gel de parcelle est un événement rare, à queue froide, où le CSI est intrinsèquement sévère. Ensuite et surtout, **la valeur d'une prévision ne se lit pas dans son CSI mais dans la décision qu'elle améliore** : sur la plage coût-perte réelle des exploitants, ce CSI capture 80-85 % de la valeur d'une prévision parfaite (§5.5). C'est le décalage classique entre *qualité* et *valeur* d'une prévision, que l'analyse coût-perte rend explicite — et que le RMSE ou la CRPS masquent.
+
+**Applications en aval.** Une prévision skillée à la parcelle sert plusieurs usages sans changer de nature. En temps réel, elle **déclenche la protection active** (aspersion, tours à vent) à bon escient — et l'analyse coût-perte indique précisément la plage où cette décision crée de la valeur. En aval, la même sortie peut **sous-tendre un indice paramétrique** à faible risque de base pour l'assurance récolte ; c'est un débouché naturel, mais il reste une application — l'objet de ce travail est la **valeur de prévision**, mesurée pour elle-même.
+
+**Limites.** (i) Le CSI reste modéré ; la marge de progression passe surtout par la **densité du réseau** (le skill plafonne là où la calibration repose sur moins de cinq nuits observées par station). (ii) La **vérité terrain elle-même est biaisée** : le retard de réponse thermique des capteurs (~20 min) la fait lire trop chaud lors des refroidissements rapides (biais ≈ `τ·|dT/dt|`, ~1-2 °C sur les gels les plus sévères) ; nos scores de détection sont donc **conservateurs**, et une déconvolution `T̂_air = T_c + τ·dT_c/dt` de ce retard est le premier chantier de mesure (#236). (iii) Le **déterminisme d'entraînement** doit être finalisé pour une reproductibilité au chiffre près. (iv) L'évaluation en prévision repose sur une archive AROME à 2,5 km ; la bascule vers AROME natif 1,3 km est attendue positive.
+
+**Perspectives.** Quatre pistes prolongent ce travail : la bascule vers **AROME natif 1,3 km** ; l'introduction de **seuils spécifiques au stade phénologique** (couplage chilling-forcing, en cours d'intégration applicative) pour attaquer le risque de base *temporel* ; une **ablation du conditionnement topographique** (FiLM spatial vs global) pour isoler la contribution propre du réseau, objet d'une étude compagnon (ANITI, 2027) ; et l'extension à des **horizons de prévision** plus longs que J-1. La chaîne est enfin **transférable** à toute culture disposant d'un réseau de capteurs dense et de seuils de sensibilité par stade — cerise, pêche, vigne, kiwi.
+
+## 7. Conclusion
+
+La détection du gel à l'échelle de la parcelle bute sur un problème d'échelle que les modèles atmosphériques, même descendus en échelle, ne résolvent pas seuls. Nous montrons, en validation stricte hors-station, qu'une **calibration par un réseau de capteurs in situ** franchit ce dernier kilomètre : elle transforme une prévision AROME brute quasi aveugle (POD 0,05) en une prévision exploitable (POD 0,50, ×10) qui se transfère d'une saison à l'autre, et porte le skill hindcast à un CSI de 0,38. Traduit en décision par une analyse coût-perte, ce skill capture 80-85 % de la valeur d'une prévision parfaite sur la plage coût-perte réelle des exploitants. Le message tient en une phrase : **le levier de la valeur n'est pas le modèle atmosphérique, c'est le réseau de capteurs in situ qui le met au contact du terrain.** Le pipeline est publié en open source ; poids entraînés et calibration sont disponibles sous licence.
+
+## Code and data availability
+- Code : `karpos-downscaling` — Apache 2.0 — DOI Zenodo via JOSS.
+- Poids + calibration : licence commerciale (corresponding author).
+- Sencrop : agrégées/anonymisées sur demande ; brut sous NDA. Prévision AROME : Open-Meteo Historical Forecast. Réanalyses : CDS Copernicus.
+
+## Author contributions · Acknowledgements · References
+- *Acknowledgements* : travail mené dans le cadre de l'EI **Karpos** ; données **Sencrop** (M. Ducroquet) ; échanges T. Dalhaus ; étude compagnon FiLM à venir avec **L. Risser (ANITI)**.
+- ~30-40 réf. (Richardson 2000 ; Wilks *Statistical Methods in the Atmospheric Sciences* ; Ronneberger et al. 2015 U-Net ; Perez et al. 2018 FiLM ; CERRA ; ERA5-Land ; AROME ; Open-Meteo).
+
+---
+
+# Annexe — Notes de rédaction (hors manuscrit)
+
+## A. Positionnement éditorial
+
+**Pourquoi GMD.** Open Access Copernicus, comité de lecture transparent, cycle 4-9 mois ; lectorat modélisation atmosphérique appliquée / descente d'échelle / **prévision opérationnelle** — l'angle prévision est dans la cible.
+
+**Titre (orienté prévision).** EN : *« Making frost forecasts actionable at the parcel scale: in-situ sensor calibration of downscaled reanalyses and AROME, validated leave-one-station-out »*. FR : *« De la maille kilométrique à la parcelle : calibration in situ de prévisions de gel descendues en échelle, et sa valeur décisionnelle »*.
+
+**Auteurs et affiliation.** Loïc Maurin¹ (premier auteur, corresponding) — ¹ École Nationale de la Météorologie (ENM), Météo-France, Toulouse ; ORCID 0009-0004-8117-4850. ⚠️ Affiliation de publication = **ENM / Météo-France seule** ; **Karpos (EI)** en *Acknowledgements*. Co-auteurs à confirmer : Stefano Ubbiali (IAC ETH — descente d'échelle), Tobias Dalhaus (Wageningen/AECP ETH — valeur décisionnelle). Étude compagnon (2027) : ablation FiLM·MNT avec Laurent Risser (ANITI/Toulouse-INP).
+
+## B. Prérequis avant rédaction finale
 
 | Item | État | Action |
 |---|---|---|
-| Test pur 2025 — métriques figées | ✅ v0.3 livrée 10/06 | Conservation gelée jusqu'à publication |
-| Documentation méthode (protocole splits, calibration, métriques) | ✅ [[Campagne Sencrop S23 — preuve de thèse gel]] | À synthétiser en papier |
-| Comparaison CERRA vs ERA5-Land à calibration égale | ✅ Faite | Table à reprendre |
-| Reproductibilité — code + données accessibles | Code OK (cf. JOSS) ; données capteur = NDA Sencrop | Négocier release agrégée (pas station-by-station) avec Martin Ducroquet |
-| Étude d'ablation (RAW / U-Net seul / U-Net + calib) | ✅ déjà table v0.3 | OK |
-| Comparaison stratifiée par régime radiatif vs advectif | ⚠️ partielle | À compléter — c'est un papier-killer si on tient le radiatif/advectif (cf. [[Downscaling gel - discrimination radiatif-advectif (FiLM)]]) |
-| Validation phénologique (PhenoFlex z_c calé) | 🔴 non calé — floraison simulée mi-avril vs observée début mars | **Bloquant** — calage offline chillR sur DIVAE/PHENOCLIM à finir avant rédaction |
-| Diagrammes de fiabilité (calibration probabiliste) | À faire | 1-2 j |
+| Chiffres LOO honnêtes (hindcast + AROME) | ✅ persistés | figés |
+| Posthoc Lot C opposable (#222) | ✅ | — |
+| Figures F2-F5 | ✅ #235 (faites) | Fig. 1 restante |
+| CERRA vs ERA5-Land **en LOO** | 🔴 #233 | 1-2 j |
+| Régimes **hors-station** | 🔴 #234 | 2-3 j |
+| Seed + `deterministic=True` | 🔴 #228 | 0,5 j |
+| Déconvolution retard capteur | 🔴 #236 | à cadrer |
+| ~~PhenoFlex z_c~~ | ✅ retiré (feature app, #232) | — |
 
-**Verrou principal avant rédaction** : calage PhenoFlex z_c. Sans ça, on peut publier la partie downscaling+calibration mais pas le couplage phéno → le papier perd 30 % de sa valeur.
+**Aucun verrou bloquant** : le corps est rédigé ; restent des recomputes LOO et Fig. 1 avant soumission.
 
-## 4. Structure cible — sections GMD
+## C. Calendrier (recadré — S31, 27/07/2026)
 
-GMD impose une structure souple mais les sections suivantes sont attendues.
-
-### `Abstract` (≤ 250 mots)
-
-Brouillon de contenu :
-> Parametric crop insurance pays out on objective meteorological thresholds rather than indemnified losses, but its commercial viability hinges on minimizing basis risk — the gap between physical event and indemnity decision. We present and validate a deep-learning pipeline that downscales kilometre-scale reanalyses (CERRA 5.5 km, ARRA 1.3 km) and calibrates them against an in-orchard sensor network (Sencrop), with phenology-aware frost indices coupled via the PhenoFlex chilling × forcing model (Luedeling et al. 2021). On a pure 2025 hold-out (4 110 observations, 379 frost events) over apricot orchards in the Rhône Valley, the chain achieves POD = 0.80 at FAR < 0.20 (AUC = 0.987) — a fivefold improvement over raw CERRA (POD = 0.47) and a nine-fold improvement over raw ERA5-Land (POD = 0.09). We further show that the choice of reanalysis backbone dominates downscaling network depth: raw CERRA already outperforms calibrated ERA5-Land. Phenological stage prediction via PhenoFlex reduces the basis risk identified by Dalhaus et al. (2018) by enabling stage-specific frost thresholds (T₁₀/T₉₀ Proebsting & Mills). The full pipeline is open-source [reference to JOSS DOI]; trained weights and station calibration are commercially licensable.
-
-### `1. Introduction` (~1500 mots)
-
-- Contexte assurance climatique : retrait des assureurs sur cultures à forte sinistralité chronique (illustrer avec abricot Baronnies — 80 % pertes structurelles).
-- Limites des produits actuels : Airbus IPP remote-sensing pur sans POD/FAR publiés ; MRC piégée par la moyenne olympique.
-- Verrou scientifique : risque de base (basis risk) — temporel (stade) et spatial (résolution réanalyse).
-- Notre contribution (rappel §2).
-- Plan du papier.
-
-### `2. Data and study area` (~1000 mots)
-
-- **Zone d'étude** : Drôme-Ardèche, focus Baronnies provençales — caractéristiques topographiques (vallées encaissées, cold-air pooling), espèce dominante (abricot Bergeron), sinistralité observée.
-- **Réanalyses** : CERRA 5,5 km (1984-présent), ERA5-Land 9 km (référence), ARRA 1,3 km (référence cible).
-- **Réseau capteurs** : Sencrop ~4 000 stations Drôme-Ardèche, in-verger ; protocole QC ; recouvrement temporel.
-- **Vérité terrain** : déclarations de pertes Agreste SAA (si accessibles) + témoignages locaux pour événement 2021.
-
-### `3. Methods` (~2500 mots, le cœur)
-
-#### 3.1 Architecture downscaling
-- U-Net résiduel : sortie = entrée + correction (évite régression vers climatologie douce)
-- Conditionnement FiLM·DEM : `γ(DEM)·x + β(DEM)` à chaque niveau encodeur
-- Pré-entraînement toutes nuits → fine-tuning nuits de gel queue pondérée
-- Schéma : pré-entraînement + fine-tuning, perte pinball quantile (pas MSE) — *cf. dégradation MSE en annexe*
-
-#### 3.2 Calibration capteurs out-of-sample
-- Biais médian par station Sencrop, ajusté sur 2022-2024
-- Repli sur biais global pour stations non vues
-- Seuil de décision τ* optimisé sous contrainte FAR ≤ 20 %
-
-#### 3.3 Couplage phénologique PhenoFlex
-- Modèle Dynamique (Chill Portions, Fishman 1987 ; paramétrisation chillR de Luedeling)
-- GDH Anderson 1986 (sigmoïde 3 paramètres)
-- Transition sigmoïde chill → heat, paramètre s1
-- Seuils T₁₀/T₉₀ par stade BBCH (Proebsting & Mills, FAO 2005)
-
-#### 3.4 Indices de gel
-- IND-01 à IND-05 (cf. [[Phénologie - Indices paramétriques gel]])
-- Double seuil maturation + intensité — apport vs proxy GDD depuis 1ᵉʳ jan.
-
-### `4. Validation protocol` (~800 mots)
-
-- **Splits** : train 2015-2021 / dev-calibration 2022-2024 / **test pur 2025** / 2026 réservé.
-- **Aucune fuite** : biais et seuil τ* ajustés sur dev, appliqués tels quels sur test.
-- **Métriques** : POD = TP/(TP+FN), FAR = FP/(FP+TP), CSI, AUC, diagrammes de fiabilité.
-- **Stratification** : par altitude, par régime radiatif/advectif, par stade BBCH.
-- **Bootstrap event-wise** pour intervalles de confiance.
-
-### `5. Results` (~2000 mots)
-
-Au moins 4 figures et 2 tables :
-- Figure 1 — Zone d'étude + localisation stations Sencrop + DEM
-- Figure 2 — Courbes ROC sur test pur 2025, par méthode (RAW CERRA, RAW ERA5, downscaled, downscaled+calibrated)
-- Figure 3 — Carte des biais par station Sencrop avant/après calibration
-- Figure 4 — Diagrammes de fiabilité par régime radiatif/advectif
-- Table 1 — Résumé performances POD/FAR/CSI/AUC par méthode × backbone
-- Table 2 — Stratification altitude × régime
-
-Récit attendu :
-1. RAW CERRA bat RAW ERA5-Land → le **socle de réanalyse domine** la profondeur du réseau de downscaling.
-2. La **calibration capteurs** double encore le POD à FAR fixe.
-3. Le **gain est principalement attribuable au radiatif** (cuvettes, cold-air pooling) — c'est ce que le conditionnement FiLM·DEM résout.
-
-### `6. Discussion` (~1500 mots)
-
-- **Comparaison avec IPP Airbus** : remote sensing pur, R² 0.71-0.81 ; pas de métriques de discrimination publiées. Notre POD/FAR comble ce vide ; nos avantages : pas de problème de couverture nuageuse, historique 60+ ans, variables physiques cohérentes.
-- **Limite densité capteurs** : POD plafonne là où la calibration repose sur < 5 nuits observées par station → roadmap densification ARRA + Weenat.
-- **Limite phénologique** : `z_c` calés ce trimestre (validation DIVAE Gotheron/Toulenne, PHENOCLIM AgroClim).
-- **Transférabilité** : la chaîne s'applique à toute culture pour laquelle (i) un réseau capteur dense existe et (ii) des seuils T₁₀/T₉₀ par stade sont publiés. Cultures candidates : cerise, pêche, vigne, kiwi.
-
-### `7. Conclusion` (~500 mots)
-
-- POD 0,80 @ FAR < 20 % sur test pur 2025 = seuil commercial atteint en gel arboricole sur la zone.
-- Le couplage downscaling + calibration + phénologie réduit le risque de base à la fois spatial et temporel.
-- Pipeline open-source (JOSS), poids commerciables.
-
-### `Code and data availability`
-
-- Code : `parametric_insurance` v0.3.0 — Apache 2.0 — DOI Zenodo via JOSS.
-- Poids entraînés et calibration station : disponibles sur licence commerciale (contact corresponding author).
-- Données capteur Sencrop : agrégées (commune-mois, anonymisées) sur demande ; data brute sous NDA Sencrop.
-- Réanalyses CERRA / ERA5-Land : librement accessibles via CDS Copernicus.
-
-### `Author contributions` · `Acknowledgements` · `References`
-
-(standards, environ 30-40 références au total)
-
-## 5. Calendrier de rédaction
-
-| Étape | Charge | Échéance cible |
+| Étape | Charge | Cible |
 |---|---|---|
-| Calage offline PhenoFlex z_c (verrou bloquant) | 5-7 j | S26-S30 |
-| Stratification radiatif/advectif (papier-killer) | 3-5 j | S28-S32 |
-| Validation co-auteurs (Ubbiali, Dalhaus) | 3-4 réunions | S26-S30 |
-| Rédaction draft v1 (toutes sections) | 10-12 j | S33-S40 (sept.) |
-| Revue interne par co-auteurs (rounds 1-2) | 5 j | S41-S44 (oct.) |
-| Soumission GMD | 1 j | **S45 (début nov.)** |
-| Review GMD (interactive discussion) | — | S47-S55 (déc.-fév.) |
-| Acceptation cible | — | **S10-S15 2027 (mars-avril)** |
+| Recompute LOO (#233/#234) + seed (#228) + Fig. 1 | ~6-8 j | août-sept |
+| Co-auteurs (Ubbiali, Dalhaus) | 2-3 réunions | sept |
+| Finalisation prose + relecture interne | 5-7 j | oct |
+| Soumission GMD | 1 j | **nov 2026** |
 
-**Charge totale rédaction** : ~25-30 j sur S26-S44 (étalable sur 5 mois).
-
-## 6. Risques et garde-fous
-
-| Risque | Garde-fou |
-|---|---|
-| Calage PhenoFlex bloque indéfiniment (données DIVAE inaccessibles) | Repli proxy PHENOCLIM AgroClim (publique) — moins fin mais publiable |
-| Sencrop refuse release agrégée des données | Repli station-by-station anonymisée sur sous-échantillon |
-| Co-auteurs ETH ralentissent / refusent | Solo + acknowledgements seulement — papier reste publiable |
-| Reviewers GMD demandent extension à 2026 (jeu réservé) | Préparer à l'avance le rejeu 2026 sans toucher au modèle entraîné |
-| Concurrence Airbus / Sofar publie un papier équivalent entre temps | Première soumission rapide (nov. 2026) + JOSS en parallèle pour blocage de l'antériorité |
-
-## 7. Articulation avec le reste du dispositif
-
-- **JOSS papier** ([[Trame publication JOSS — parametric_insurance]]) : sort en premier (S30), fixe le code et donne le DOI à citer dans le GMD.
-- **DEP v0** ([[Trame DEP v0 — note d'analyse technique]]) : invoque les métriques publiées du papier GMD comme caution scientifique (page "méthodologie").
-- **Landing** ([[Sprint S26 — Landing EI-Karpos (Option B)]]) : section "Preuve produit" pointera vers le pré-print HAL/Zenodo en attente de la publication GMD finale.
-- **Pitch AG Syndicat septembre** : *"un papier scientifique en cours de soumission sur ces résultats"* = caution forte vs procès en crédibilité du dossier antérieurement fermé.
-
-## 8. Liens
-
+## D. Liens
+- [[Méthodo — Valeur économique des prévisions gel (REV + risque de base)]]
+- [[Métriques trackées — Lot B vs Lot C]]
+- [[Audit — Architecture downscaling gel (clamp + Sencrop-SURFEX)]]
+- [[Produit - 27-07-2026]]
 - [[Trame publication JOSS — parametric_insurance]]
-- [[Trame DEP v0 — note d'analyse technique]]
-- [[Campagne Sencrop S23 — preuve de thèse gel]]
-- [[Produit - 10-06-2026]]
-- [[PhenoFlex — Couplage Chilling × Forcing (abricot)]]
-- [[Rapport — Modèle de chilling pour l'abricot des Baronnies]]
-- [[Downscaling gel - discrimination radiatif-advectif (FiLM)]]
-- [[Benchmark IPP Airbus - Requirements Indice]]
-- [[feedback-perf-framing-sap]] (cadrage Sûr/Actuel/Projection à respecter dans abstract et conclusion)
-- [[Sprint S26 — Landing EI-Karpos (Option B)]]
+- [[feedback-perf-framing-sap]]

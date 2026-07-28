@@ -64,6 +64,7 @@ from downscaling.prtihvi_wxc.sencrop import (
     load_stations_catalog,
     load_timeseries,
 )
+from downscaling.scripts.economic_value import relative_economic_value
 
 log = logging.getLogger("analyze_stat")
 

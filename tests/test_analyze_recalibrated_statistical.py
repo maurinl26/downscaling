@@ -35,22 +35,29 @@ class TestIsRemote:
 
 
 class TestStorageOptions:
-    def test_no_endpoint_env_returns_empty_dict(self, monkeypatch):
+    def test_no_endpoint_env_returns_skip_cache_only(self, monkeypatch):
         monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
         monkeypatch.delenv("AWS_S3_ENDPOINT", raising=False)
-        assert _storage_options() == {}
+        # skip_instance_cache=True est toujours présent (fraîcheur s3fs en boucle LOO).
+        assert _storage_options() == {"skip_instance_cache": True}
 
     def test_aws_endpoint_url_wins(self, monkeypatch):
         monkeypatch.setenv("AWS_ENDPOINT_URL", "https://s3.fr-par.scw.cloud")
         monkeypatch.delenv("AWS_S3_ENDPOINT", raising=False)
         opts = _storage_options()
-        assert opts == {"client_kwargs": {"endpoint_url": "https://s3.fr-par.scw.cloud"}}
+        assert opts == {
+            "skip_instance_cache": True,
+            "client_kwargs": {"endpoint_url": "https://s3.fr-par.scw.cloud"},
+        }
 
     def test_legacy_aws_s3_endpoint_fallback(self, monkeypatch):
         monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
         monkeypatch.setenv("AWS_S3_ENDPOINT", "https://s3.legacy.cloud")
         opts = _storage_options()
-        assert opts == {"client_kwargs": {"endpoint_url": "https://s3.legacy.cloud"}}
+        assert opts == {
+            "skip_instance_cache": True,
+            "client_kwargs": {"endpoint_url": "https://s3.legacy.cloud"},
+        }
 
     def test_aws_endpoint_url_preferred_over_legacy(self, monkeypatch):
         monkeypatch.setenv("AWS_ENDPOINT_URL", "https://canonical")
