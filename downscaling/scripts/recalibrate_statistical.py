@@ -126,6 +126,29 @@ def _git_sha() -> str:
         return "unknown"
 
 
+def _resolve_to_local(uri: str, *, label: str) -> Path:
+    """Résout un input local OU ``s3://`` vers un chemin local lisible par xarray.
+
+    Si ``uri`` est une URL ``s3://``, télécharge vers un fichier temporaire
+    (endpoint Scaleway via ``AWS_ENDPOINT_URL`` / ``AWS_S3_ENDPOINT``) et retourne
+    le chemin local. Sinon retourne ``Path(uri)`` tel quel. Permet de tourner en
+    local (MacBook Air) sur des données stockées sur S3 (cf. reprise archi 2026-07).
+    """
+    if uri.startswith("s3://"):
+        import tempfile
+
+        import s3fs
+
+        local = Path(tempfile.gettempdir()) / f"{label}_{Path(uri).name}"
+        log.info("Téléchargement %s depuis %s → %s", label, uri, local)
+        fs = s3fs.S3FileSystem(
+            endpoint_url=os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT"),
+        )
+        fs.get(uri.replace("s3://", "", 1), str(local))
+        return local
+    return Path(uri)
+
+
 # ---------------------------------------------------------------------------
 # Residual correction (Gaussian RBF on Sencrop stations)
 # ---------------------------------------------------------------------------
@@ -206,8 +229,18 @@ def main() -> int:
         description="Statistical recalibration (lapse + QDM) with Sencrop residual"
     )
     p.add_argument("--year", type=int, required=True)
-    p.add_argument("--cerra-atm", type=Path, required=True)
-    p.add_argument("--cerra-land", type=Path, required=True, help="kept for symmetry / future")
+    p.add_argument(
+        "--cerra-atm",
+        type=str,
+        required=True,
+        help="CERRA atm NetCDF. Chemin local OU URL s3://bucket/key (téléchargé vers /tmp).",
+    )
+    p.add_argument(
+        "--cerra-land",
+        type=str,
+        required=True,
+        help="kept for symmetry / future. Chemin local OU s3:// (non ouvert : metadata only).",
+    )
     p.add_argument(
         "--cerra-orog",
         type=str,
@@ -216,7 +249,12 @@ def main() -> int:
         "biais lapse-rate ; sans, fallback z_source=0 m (biais +3-4°C connu). "
         "Supporte chemin local OU URL s3://bucket/key (téléchargé vers /tmp).",
     )
-    p.add_argument("--dem", type=Path, required=True)
+    p.add_argument(
+        "--dem",
+        type=str,
+        required=True,
+        help="DEM NetCDF (IGN BD ALTI). Chemin local OU URL s3://bucket/key (téléchargé vers /tmp).",
+    )
     p.add_argument("--sencrop", type=str, required=True, help="bulk root (local or s3://)")
     p.add_argument(
         "--out",
@@ -230,13 +268,22 @@ def main() -> int:
     )
     p.add_argument(
         "--qdm-joblib",
-        type=Path,
+        type=str,
         default=None,
         help="Pre-fitted QuantileDeltaMapping joblib (cf. calibrate_qdm.py). "
-        "Applied after lapse-rate, before RBF Sencrop residual. C4.1.",
+        "Applied after lapse-rate, before RBF Sencrop residual. C4.1. "
+        "Chemin local OU URL s3://bucket/key (téléchargé vers /tmp).",
     )
     p.add_argument("--variable", default="t2m")
     p.add_argument("--sigma-km", type=float, default=7.0)
+    p.add_argument(
+        "--emit-prerbf",
+        action="store_true",
+        help="Persiste aussi la grille PRE-RBF (lapse + QDM, avant correction résiduelle "
+        "Sencrop) sous la variable `t2m_prerbf`. Requis par la validation LOO / "
+        "leave-one-cluster-out (analyze --loo, issue #33). Off par défaut : ne change "
+        "pas les artefacts zarr existants (une seule variable t2m).",
+    )
     p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
     p.add_argument("--wandb-disabled", action="store_true")
     args = p.parse_args()
@@ -245,8 +292,9 @@ def main() -> int:
 
     log.info("Statistical recalibration | year=%d | out=%s", args.year, args.out)
 
-    # 1. Load CERRA, compute nightly Tmin
-    ds = xr.open_dataset(args.cerra_atm)
+    # 1. Load CERRA, compute nightly Tmin (résout s3:// → local si besoin).
+    cerra_atm_local = _resolve_to_local(args.cerra_atm, label="cerra_atm")
+    ds = xr.open_dataset(cerra_atm_local)
     t_var = args.variable if args.variable in ds else "t2m"
     if t_var not in ds:
         # Sometimes the variable is named differently in CERRA atm
@@ -288,20 +336,7 @@ def main() -> int:
     orog_da = None
     orog_local: Path | None = None
     if args.cerra_orog:
-        if args.cerra_orog.startswith("s3://"):
-            import tempfile
-
-            import s3fs
-
-            orog_local = Path(tempfile.gettempdir()) / "cerra_orography.nc"
-            log.info("Téléchargement orographie depuis %s → %s", args.cerra_orog, orog_local)
-            fs = s3fs.S3FileSystem(
-                endpoint_url=os.environ.get("AWS_ENDPOINT_URL")
-                or os.environ.get("AWS_S3_ENDPOINT"),
-            )
-            fs.get(args.cerra_orog.replace("s3://", "", 1), str(orog_local))
-        else:
-            orog_local = Path(args.cerra_orog)
+        orog_local = _resolve_to_local(args.cerra_orog, label="cerra_orography")
         if not orog_local.exists():
             log.warning("--cerra-orog %s introuvable, fallback z_source=0 m", orog_local)
             orog_local = None
@@ -350,8 +385,9 @@ def main() -> int:
     # NB: l'ancien `pipe.calibrate(ref_ds, ref_ds)` était un placeholder cassé
     # (calibrait QDM sur elle-même, no-op). Remplacé par chargement joblib
     # produit par `calibrate_qdm.py` (C4.1, issue maurinl26/karpos-downscaling#32).
+    dem_local = _resolve_to_local(args.dem, label="dem")
     pipe = StatisticalDownscalingPipeline(
-        dem_path=args.dem,
+        dem_path=dem_local,
         obs_ref_path=None,
         use_qdm=False,  # QDM appliquée manuellement après pipe.run, avant RBF
     )
@@ -360,10 +396,11 @@ def main() -> int:
     if args.qdm_joblib is not None:
         import joblib
 
-        if not args.qdm_joblib.exists():
+        qdm_local = _resolve_to_local(args.qdm_joblib, label="qdm")
+        if not qdm_local.exists():
             log.error("--qdm-joblib %s introuvable", args.qdm_joblib)
             return 2
-        qdm = joblib.load(args.qdm_joblib)
+        qdm = joblib.load(qdm_local)
         log.info(
             "QDM chargée depuis %s (n_quantiles=%d, by_month=%s)",
             args.qdm_joblib,
@@ -422,6 +459,7 @@ def main() -> int:
             wandb_run = None
 
     out_grids = []
+    out_grids_prerbf: list[xr.DataArray] = []  # grille lapse+QDM avant RBF (LOO, #33)
     n_stations_used = []
     # Métriques in-sample par nuit (résidus station observation - grid après calibration)
     per_night_records: list[dict] = []
@@ -469,6 +507,11 @@ def main() -> int:
             n_stations_used.append(0)
 
         out_grids.append(grid_corr.expand_dims(time=[d]))
+        # grid_fine est la grille lapse+QDM AVANT RBF (grid_corr en est dérivée par
+        # copie, grid_fine n'est pas muté). On la persiste pour rejouer le RBF en
+        # leave-one-out côté analyze (#33).
+        if args.emit_prerbf:
+            out_grids_prerbf.append(grid_fine.expand_dims(time=[d]))
 
         # Métriques résidus station (in-sample : sur les stations utilisées dans la calibration)
         if kept_stations:
@@ -513,6 +556,10 @@ def main() -> int:
         return 2
 
     out_ds = xr.concat(out_grids, dim="time")
+    if args.emit_prerbf and out_grids_prerbf:
+        prerbf_da = xr.concat(out_grids_prerbf, dim="time")
+        out_ds = xr.Dataset({"t2m": out_ds, "t2m_prerbf": prerbf_da})
+        log.info("Emitting pre-RBF grid (t2m_prerbf) alongside t2m for LOO analysis (#33)")
     zarr_store = make_zarr_store(args.out, args.year)
     out_ds.to_zarr(zarr_store, mode="w")
     log.info("Wrote %s (%d nights)", describe(args.out, args.year, ".zarr"), len(out_grids))
@@ -555,6 +602,7 @@ def main() -> int:
         "sencrop_root": str(args.sencrop),
         "sigma_km": args.sigma_km,
         "qdm_joblib": str(args.qdm_joblib) if args.qdm_joblib else None,
+        "emit_prerbf": bool(args.emit_prerbf),
         **summary,
     }
     metadata_path = write_sidecar(

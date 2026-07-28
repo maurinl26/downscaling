@@ -46,9 +46,11 @@ W&B et imprime le résumé sur stdout / metadata.json à côté de chaque Zarr.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -81,10 +83,14 @@ def _storage_options() -> dict:
     Cohérent avec ``recalibrate_statistical.py:291`` : on lit
     ``AWS_ENDPOINT_URL`` (convention boto3) ou ``AWS_S3_ENDPOINT`` (legacy).
     """
+    # skip_instance_cache=True : un S3FileSystem frais par appel, lié au contexte
+    # asyncio courant. Évite l'erreur s3fs "Token was created in a different Context"
+    # quand on ouvre plusieurs zarr S3 en boucle dans le même process (#33 LOO).
     endpoint = os.environ.get("AWS_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT")
+    opts: dict = {"skip_instance_cache": True}
     if endpoint:
-        return {"client_kwargs": {"endpoint_url": endpoint}}
-    return {}
+        opts["client_kwargs"] = {"endpoint_url": endpoint}
+    return opts
 
 
 def _list_zarrs(root: str) -> list[str]:
@@ -158,6 +164,144 @@ def _contingency(obs: np.ndarray, pred: np.ndarray, threshold: float) -> dict[st
         "CSI": csi,
         "bias_score": bias_score,
     }
+
+
+def _git_sha() -> str:
+    try:
+        return (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
+            .decode()
+            .strip()
+        )
+    except Exception:
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Validation hors-station (LOO / leave-one-cluster-out) — issue #33
+# ---------------------------------------------------------------------------
+def _cluster_groups(station_meta: pd.DataFrame, cluster_km: float) -> dict[int, int]:
+    """Regroupe les stations à moins de ``cluster_km`` km en clusters (union-find).
+
+    Deux stations plus proches que ``cluster_km`` portent quasi le même résidu RBF
+    (σ=7 km) : les laisser dehors une par une sous-estime l'erreur hors-station
+    (cf. les 2 stations Plaisians). Le leave-one-cluster-out exclut le groupe entier.
+
+    Retourne ``{bucket_id: group_id}``. Avec ``cluster_km <= 0`` chaque station est
+    son propre groupe (= LOO station-par-station classique).
+    """
+    bids = [int(b) for b in station_meta.index]
+    parent = {b: b for b in bids}
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    if cluster_km > 0:
+        for i, bi in enumerate(bids):
+            lat_i = float(station_meta.at[bi, "latitude"])
+            lon_i = float(station_meta.at[bi, "longitude"])
+            for bj in bids[i + 1 :]:
+                lat_j = float(station_meta.at[bj, "latitude"])
+                lon_j = float(station_meta.at[bj, "longitude"])
+                dlat = (lat_i - lat_j) * 111.0
+                dlon = (lon_i - lon_j) * 111.0 * np.cos(np.deg2rad(0.5 * (lat_i + lat_j)))
+                if np.hypot(dlat, dlon) <= cluster_km:
+                    union(bi, bj)
+    return {b: find(b) for b in bids}
+
+
+def _loo_predict(
+    da_pre: xr.DataArray,
+    station_meta: pd.DataFrame,
+    obs_per_night: pd.DataFrame,
+    lat_grid: np.ndarray,
+    lon_grid: np.ndarray,
+    sigma_km: float,
+    groups: dict[int, int],
+) -> dict[int, dict[str, list[float]]]:
+    """Rejoue le RBF résiduel de prod en laissant dehors le groupe de la station cible.
+
+    Reproduit fidèlement ``recalibrate_statistical._residual_correction`` :
+    - résidu donneur = ``obs_j - t2m_prerbf(cell_j)`` (grille AVANT RBF)
+    - poids gaussien ``exp(-d²/2σ²)`` entre la maille de S et la station donneuse j,
+      ``cos`` évalué à la latitude du donneur (comme en prod)
+    - garde de prod : correction appliquée seulement si ≥ 5 stations présentes la nuit
+      ET ≥ 3 donneurs valides ; sinon la grille servie = ``t2m_prerbf`` (non corrigée).
+
+    Retourne ``{bucket_id: {"obs": [...], "pred": [...]}}`` (paires station-nuit).
+    """
+    # Maille la plus proche de chaque station (séparable, identique à la prod).
+    cell = {
+        int(b): (
+            int(np.argmin(np.abs(lat_grid - float(station_meta.at[b, "latitude"])))),
+            int(np.argmin(np.abs(lon_grid - float(station_meta.at[b, "longitude"])))),
+        )
+        for b in station_meta.index
+    }
+
+    out: dict[int, dict[str, list[float]]] = {}
+    for d in da_pre["time"].values:
+        d_py = pd.Timestamp(d).date()
+        nights = obs_per_night[obs_per_night["night_date"] == d_py]
+        if nights.empty:
+            continue
+        slab = da_pre.sel(time=d).values  # (lat, lon), pré-RBF
+
+        # Stations présentes cette nuit avec obs + prerbf valides.
+        present: list[dict] = []
+        for _, row in nights.iterrows():
+            bid = int(row["station_id"])
+            if bid not in cell:
+                continue
+            ii, jj = cell[bid]
+            obs_v = float(row["temperature"])
+            pre_v = float(slab[ii, jj])
+            if np.isnan(obs_v) or np.isnan(pre_v):
+                continue
+            present.append(
+                {
+                    "bid": bid,
+                    "obs": obs_v,
+                    "pre": pre_v,
+                    "lat": float(station_meta.at[bid, "latitude"]),
+                    "lon": float(station_meta.at[bid, "longitude"]),
+                    "clat": float(lat_grid[ii]),
+                    "clon": float(lon_grid[jj]),
+                }
+            )
+
+        corrected = len(present) >= 5  # garde prod (recalibrate:462)
+        for s in present:
+            if not corrected:
+                pred = s["pre"]
+            else:
+                gid = groups[s["bid"]]
+                donors = [o for o in present if groups[o["bid"]] != gid]
+                res = np.array([o["obs"] - o["pre"] for o in donors])
+                valid = ~np.isnan(res)
+                if valid.sum() < 3:  # garde prod (_residual_correction:173)
+                    pred = s["pre"]
+                else:
+                    dla = np.array([o["lat"] for o in donors])[valid]
+                    dlo = np.array([o["lon"] for o in donors])[valid]
+                    dlat = (s["clat"] - dla) * 111.0
+                    dlon = (s["clon"] - dlo) * 111.0 * np.cos(np.deg2rad(dla))
+                    w = np.exp(-(dlat**2 + dlon**2) / (2.0 * sigma_km**2))
+                    tot = float(w.sum())
+                    corr = float((w * res[valid]).sum() / tot) if tot > 1e-6 else 0.0
+                    pred = s["pre"] + corr
+            rec = out.setdefault(s["bid"], {"obs": [], "pred": []})
+            rec["obs"].append(s["obs"])
+            rec["pred"].append(pred)
+    return out
 
 
 def _load_regimes(regimes_csv: Path | None) -> dict[str, str]:
@@ -330,6 +474,306 @@ def _analyze_year(
     return summary
 
 
+def _analyze_year_loo(
+    year_zarr: str,
+    sencrop_root: str,
+    threshold_c: float,
+    sigma_km: float,
+    cluster_km: float,
+    station_bbox: tuple[float, float, float, float] | None = None,
+) -> dict:
+    """Métriques POD/FAR/CSI HORS-STATION (out-of-sample) pour une année.
+
+    Exige la variable ``t2m_prerbf`` dans le Zarr (recalibrate --emit-prerbf).
+    Calcule deux jeux : mode ``station`` (LOO classique, #33) et mode ``cluster``
+    (leave-one-cluster-out, ``cluster_km``, défendable hors-station réel).
+    """
+    ds = _open_zarr(year_zarr)
+    if "t2m_prerbf" not in ds.data_vars:
+        raise ValueError(
+            f"{year_zarr}: mode LOO requiert la variable 't2m_prerbf'. "
+            "Régénère le Zarr avec `recalibrate_statistical.py --emit-prerbf` (#33)."
+        )
+    da = ds["t2m_prerbf"]
+    # Détection Kelvin robuste (médiane globale) — cf. _analyze_year, bug #17.
+    src_units = str(da.attrs.get("units", "")).lower()
+    sample_global = float(np.nanmedian(da.values))
+    if src_units in ("k", "kelvin") or sample_global > 100:
+        log.info("t2m_prerbf en Kelvin, conversion → Celsius")
+        da = da - 273.15
+    bbox = _bbox_from_grid(da)
+    year = int(_zarr_stem(year_zarr))
+
+    # Time int → dates synthétiques (cf. _analyze_year).
+    if da["time"].dtype.kind != "M":
+        start = pd.Timestamp(f"{year}-02-01")
+        da = da.assign_coords(time=start + pd.to_timedelta(da["time"].values, unit="D"))
+
+    stations_df = load_stations_catalog(sencrop_root, bbox=bbox)
+    # Sous-périmètre optionnel (ex. cut Baronnies/Nyons cold-pool) : restreint les
+    # stations d'évaluation ET donneuses du RBF à la sous-bbox, sans changer la grille.
+    if station_bbox is not None:
+        la0, la1, lo0, lo1 = station_bbox
+        n_before = len(stations_df)
+        stations_df = stations_df[
+            (stations_df["latitude"] >= la0)
+            & (stations_df["latitude"] <= la1)
+            & (stations_df["longitude"] >= lo0)
+            & (stations_df["longitude"] <= lo1)
+        ]
+        log.info(
+            "station-bbox lat[%.3f,%.3f] lon[%.3f,%.3f] : %d → %d stations",
+            la0, la1, lo0, lo1, n_before, len(stations_df),
+        )
+    bucket_ids = stations_df["bucket_id"].astype(int).tolist()
+    ts = load_timeseries(years=[year], root=sencrop_root, station_only=True, bucket_ids=bucket_ids)
+    ts["timestamp"] = pd.to_datetime(ts["timestamp"], utc=True)
+    ts["night_date"] = (ts["timestamp"] - pd.Timedelta("9h")).dt.date
+    obs_per_night = ts.groupby(["night_date", "station_id"])["temperature"].min().reset_index()
+
+    lat_name = "latitude" if "latitude" in da.coords else "lat"
+    lon_name = "longitude" if "longitude" in da.coords else "lon"
+    lat_grid = da[lat_name].values
+    lon_grid = da[lon_name].values
+
+    station_meta = (
+        stations_df[["bucket_id", "latitude", "longitude"]]
+        .drop_duplicates(subset=["bucket_id"], keep="first")
+        .set_index("bucket_id")
+    )
+
+    groups_by_mode = {
+        "station": _cluster_groups(station_meta, cluster_km=0.0),
+        "cluster": _cluster_groups(station_meta, cluster_km=cluster_km),
+    }
+    n_clusters = len(set(groups_by_mode["cluster"].values()))
+    log.info(
+        "LOO %s : %d stations, %d clusters à %.1f km",
+        year,
+        len(station_meta),
+        n_clusters,
+        cluster_km,
+    )
+
+    modes: dict[str, dict] = {}
+    for mode, groups in groups_by_mode.items():
+        per_station = _loo_predict(
+            da, station_meta, obs_per_night, lat_grid, lon_grid, sigma_km, groups
+        )
+        all_obs: list[float] = []
+        all_pred: list[float] = []
+        station_rows: list[dict] = []
+        for bid, rec in per_station.items():
+            o = np.array(rec["obs"])
+            pv = np.array(rec["pred"])
+            all_obs.extend(rec["obs"])
+            all_pred.extend(rec["pred"])
+            cont = _contingency(o, pv, threshold_c)
+            station_rows.append(
+                {
+                    "station_id": int(bid),
+                    "group_id": int(groups[bid]),
+                    "n_pairs": int(len(o)),
+                    "POD": cont["POD"],
+                    "FAR": cont["FAR"],
+                    "CSI": cont["CSI"],
+                    "rmse": float(np.sqrt(np.mean((o - pv) ** 2))) if len(o) else float("nan"),
+                    "bias": float(np.mean(o - pv)) if len(o) else float("nan"),
+                }
+            )
+        arr_obs = np.array(all_obs)
+        arr_pred = np.array(all_pred)
+        agg = _contingency(arr_obs, arr_pred, threshold_c) if len(arr_obs) else {}
+        modes[mode] = {
+            "n_pairs": int(len(arr_obs)),
+            "n_groups": len(set(groups.values())),
+            "aggregate": {
+                **agg,
+                "rmse": float(np.sqrt(np.mean((arr_obs - arr_pred) ** 2)))
+                if len(arr_obs)
+                else float("nan"),
+                "bias": float(np.mean(arr_obs - arr_pred)) if len(arr_obs) else float("nan"),
+            },
+            "per_station": station_rows,
+        }
+
+    return {
+        "year": year,
+        "threshold_c": threshold_c,
+        "sigma_km": sigma_km,
+        "cluster_km": cluster_km,
+        "n_stations": int(len(station_meta)),
+        "bbox": bbox,
+        "modes": modes,
+    }
+
+
+def _run_loo(zarrs: list[str], args: argparse.Namespace) -> int:
+    """Exécute la validation hors-station sur toutes les années → CSV + JSON.
+
+    Sortie (dans --out-dir, ou CWD) :
+    - ``lot_b_loo_<variant>.csv`` : une ligne par (année × mode × station) + agrégats,
+      avec audit trail (git_sha, command) — matière du livrable opposable C5.
+    - ``<year>.loo.json`` : détail complet par année.
+    """
+    out_dir = args.out_dir if args.out_dir is not None else Path.cwd()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    git_sha = _git_sha()
+    command = " ".join(["uv", "run", "python", *sys.argv])
+
+    summaries: list[dict] = []
+    for z in zarrs:
+        log.info("--- LOO year %s ---", _zarr_stem(z))
+        try:
+            s = _analyze_year_loo(
+                z,
+                args.sencrop,
+                args.threshold_c,
+                args.sigma_km,
+                args.cluster_km,
+                station_bbox=tuple(args.station_bbox) if args.station_bbox else None,
+            )
+        except Exception as exc:
+            log.exception("LOO year %s failed: %s", _zarr_stem(z), exc)
+            continue
+        summaries.append(s)
+        (out_dir / f"{s['year']}.loo.json").write_text(json.dumps(s, indent=2, default=str))
+
+    if not summaries:
+        log.error("Aucune année LOO produite (t2m_prerbf manquant ?)")
+        return 2
+
+    csv_path = out_dir / f"lot_b_loo_{args.variant}.csv"
+    fields = [
+        "variant",
+        "grouping",
+        "year",
+        "scope",
+        "station_id",
+        "group_id",
+        "n_pairs",
+        "threshold_c",
+        "sigma_km",
+        "cluster_km",
+        "POD",
+        "FAR",
+        "CSI",
+        "rmse",
+        "bias",
+        "git_sha",
+        "command",
+    ]
+    with csv_path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields)
+        w.writeheader()
+        for s in summaries:
+            base = {
+                "variant": args.variant,
+                "year": s["year"],
+                "threshold_c": s["threshold_c"],
+                "sigma_km": s["sigma_km"],
+                "cluster_km": s["cluster_km"],
+                "git_sha": git_sha,
+                "command": command,
+            }
+            for mode, md in s["modes"].items():
+                agg = md["aggregate"]
+                w.writerow(
+                    {
+                        **base,
+                        "grouping": mode,
+                        "scope": "ALL",
+                        "station_id": "",
+                        "group_id": "",
+                        "n_pairs": md["n_pairs"],
+                        "POD": agg.get("POD"),
+                        "FAR": agg.get("FAR"),
+                        "CSI": agg.get("CSI"),
+                        "rmse": agg.get("rmse"),
+                        "bias": agg.get("bias"),
+                    }
+                )
+                for row in md["per_station"]:
+                    w.writerow(
+                        {
+                            **base,
+                            "grouping": mode,
+                            "scope": "station",
+                            "station_id": row["station_id"],
+                            "group_id": row["group_id"],
+                            "n_pairs": row["n_pairs"],
+                            "POD": row["POD"],
+                            "FAR": row["FAR"],
+                            "CSI": row["CSI"],
+                            "rmse": row["rmse"],
+                            "bias": row["bias"],
+                        }
+                    )
+    log.info("Wrote %s", csv_path)
+
+    # Synthèse console : agrégat hors-station par année × mode.
+    for s in summaries:
+        for mode, md in s["modes"].items():
+            a = md["aggregate"]
+            log.info(
+                "LOO %s [%s] : POD=%.2f FAR=%.2f CSI=%.2f RMSE=%.2f (n=%d, %d groupes)",
+                s["year"],
+                mode,
+                a.get("POD", float("nan")),
+                a.get("FAR", float("nan")),
+                a.get("CSI", float("nan")),
+                a.get("rmse", float("nan")),
+                md["n_pairs"],
+                md["n_groups"],
+            )
+
+    # W&B : logge les agrégats hors-station (le livrable métrique du #33). Le chemin
+    # LOO ne passait pas par l'init W&B de main() — d'où l'absence de ces métriques
+    # dans le projet. Guardé par WANDB_API_KEY + --wandb-disabled.
+    if not getattr(args, "wandb_disabled", False) and os.environ.get("WANDB_API_KEY"):
+        try:
+            import wandb
+
+            run = wandb.init(
+                project=args.wandb_project,
+                name=f"loo-{args.variant}",
+                config={
+                    "stage": "loo_out_of_station",
+                    "variant": args.variant,
+                    "threshold_c": args.threshold_c,
+                    "sigma_km": args.sigma_km,
+                    "cluster_km": args.cluster_km,
+                    "git_sha": git_sha,
+                    "years": [s["year"] for s in summaries],
+                },
+                reinit=True,
+            )
+            tbl = wandb.Table(
+                columns=["year", "grouping", "n_pairs", "POD", "FAR", "CSI", "rmse", "bias"]
+            )
+            for s in summaries:
+                for mode, md in s["modes"].items():
+                    a = md["aggregate"]
+                    tbl.add_data(
+                        s["year"], mode, md["n_pairs"],
+                        a.get("POD"), a.get("FAR"), a.get("CSI"), a.get("rmse"), a.get("bias"),
+                    )
+                    wandb.log(
+                        {
+                            f"{mode}/{s['year']}/POD": a.get("POD"),
+                            f"{mode}/{s['year']}/FAR": a.get("FAR"),
+                            f"{mode}/{s['year']}/CSI": a.get("CSI"),
+                            f"{mode}/{s['year']}/rmse": a.get("rmse"),
+                        }
+                    )
+            wandb.log({"loo_summary": tbl})
+            log.info("W&B LOO run: %s", run.url)
+            run.finish()
+        except Exception as exc:
+            log.warning("W&B LOO logging failed (continuing): %s", exc)
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -340,6 +784,41 @@ def main() -> int:
     )
     p.add_argument("--sencrop", type=str, required=True, help="Sencrop root (local ou s3://)")
     p.add_argument("--threshold-c", type=float, default=-2.2)
+    p.add_argument(
+        "--loo",
+        action="store_true",
+        help="Validation HORS-STATION (out-of-sample) : rejoue le RBF en leave-one-out "
+        "station-par-station ET leave-one-cluster-out. Exige la var t2m_prerbf dans le "
+        "Zarr (recalibrate --emit-prerbf). Produit lot_b_loo_<variant>.csv (#33).",
+    )
+    p.add_argument(
+        "--sigma-km",
+        type=float,
+        default=7.0,
+        help="σ du RBF résiduel — DOIT matcher la valeur de prod (recalibrate --sigma-km).",
+    )
+    p.add_argument(
+        "--cluster-km",
+        type=float,
+        default=7.0,
+        help="Distance de regroupement pour le leave-one-cluster-out (défaut = σ). "
+        "Les stations plus proches sont exclues ensemble.",
+    )
+    p.add_argument(
+        "--variant",
+        type=str,
+        default="nu",
+        help="Étiquette du run LOO (ex. 'nu' ou 'qdm') → nom de fichier + colonne CSV.",
+    )
+    p.add_argument(
+        "--station-bbox",
+        type=float,
+        nargs=4,
+        default=None,
+        metavar=("LAT_MIN", "LAT_MAX", "LON_MIN", "LON_MAX"),
+        help="Restreint le LOO à un sous-périmètre de stations (ex. cut Baronnies/Nyons "
+        "cold-pool) sans changer la grille. Évite la dilution par les plaines Rhône.",
+    )
     p.add_argument(
         "--regimes-csv",
         type=Path,
@@ -371,6 +850,12 @@ def main() -> int:
         return 2
     log.info("Analyzing %d Zarr(s): %s", len(zarrs), [_zarr_stem(z) + ".zarr" for z in zarrs])
 
+    # -----------------------------------------------------------------------
+    # Mode LOO / leave-one-cluster-out (#33) — court-circuite l'analyse in-sample.
+    # -----------------------------------------------------------------------
+    if args.loo:
+        return _run_loo(zarrs, args)
+
     # W&B init (optionnel)
     wandb_run = None
     if not args.wandb_disabled and os.environ.get("WANDB_API_KEY"):
@@ -379,12 +864,12 @@ def main() -> int:
 
             wandb_run = wandb.init(
                 project=args.wandb_project,
-                name=f"analyze-stat-{'_'.join([z.stem for z in zarrs])}",
+                name=f"analyze-stat-{'_'.join([_zarr_stem(z) for z in zarrs])}",
                 config={
                     "stage": "statistical_posthoc",
                     "threshold_c": args.threshold_c,
                     "sencrop_root": args.sencrop,
-                    "years": [int(z.stem) for z in zarrs],
+                    "years": [int(_zarr_stem(z)) for z in zarrs],
                 },
                 reinit=True,
             )
@@ -398,11 +883,11 @@ def main() -> int:
 
     all_summaries: list[dict] = []
     for z in zarrs:
-        log.info("--- year %s ---", z.stem)
+        log.info("--- year %s ---", _zarr_stem(z))
         try:
             s = _analyze_year(z, args.sencrop, args.threshold_c, regimes=regimes)
         except Exception as exc:
-            log.exception("Year %s failed: %s", z.stem, exc)
+            log.exception("Year %s failed: %s", _zarr_stem(z), exc)
             continue
         all_summaries.append(s)
         # Write metadata.posthoc.json sidecar.
