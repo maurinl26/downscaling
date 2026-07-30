@@ -18,7 +18,7 @@ What this does
    see "Why not DLInferencePipeline" below) and runs it per night.
 4. Extracts the downscaled **nightly Tmin** field.
 5. Writes a canonical zarr (variable ``t2m_lotc``) to
-   ``s3://karpos-downscaling/lot_c/<run>.zarr`` (already SSRF-whitelisted by the
+   ``s3://karpos-downscaling/karpos_sr/<run>.zarr`` (already SSRF-whitelisted by the
    titiler serving), plus a reproducibility sidecar.
 
 Why not ``DLInferencePipeline``
@@ -62,7 +62,7 @@ Usage
         --arome    s3://karpos-forecasts/arome/2026-04-27T00.zarr \
         --dem      /path/to/dem_attributes_svf.nc \
         --checkpoint checkpoints/multiyear_2024/2024-best.ckpt \
-        --out      s3://karpos-downscaling/lot_c \
+        --out      s3://karpos-downscaling/karpos_sr \
         --run-id   2026-04-27T00
 
 Reproducibility envelope (submodule rule)
@@ -382,7 +382,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--arome", required=True, help="AROME run zarr (s3://karpos-forecasts/arome/<run>.zarr or local)")
     p.add_argument("--dem", required=True, help="Terrain-attribute DEM NetCDF aligned on the FiLM grid (SVF DEM)")
     p.add_argument("--checkpoint", required=True, help="Lot C Lightning .ckpt (checkpoints/multiyear_<year>/<year>-best.ckpt)")
-    p.add_argument("--out", required=True, help="Output root (s3://karpos-downscaling/lot_c or local dir)")
+    p.add_argument("--out", required=True, help="Output root (s3://karpos-downscaling/karpos_sr or local dir)")
     p.add_argument("--run-id", required=True, help="Run identifier → <out>/<run-id>.zarr")
     p.add_argument("--reduce", choices=("min", "mean", "snapshot"), default="min",
                    help="Hourly→night reduction of AROME T2m. See input-semantics caveat.")

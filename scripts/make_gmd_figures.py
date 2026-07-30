@@ -7,7 +7,7 @@ PNG (300 dpi) + PDF vectoriel dans ``docs/methodology/figures/``.
 Sources de données (voir aussi la provenance annotée sur chaque figure) :
   * LOO Lot B / Lot C : JSON persistés sous ``docs/methodology/figures/loo_json/``
     (copies des sorties de validation leave-one-station-out, seuil -2,2 °C,
-    aussi disponibles sur S3 ``analyses/c5_lot_b/`` et ``analyses/c5_lot_c/``).
+    aussi disponibles sur S3 ``analyses/c5_lot_b/`` et ``analyses/c5_karpos_sr/``).
   * CERRA brut (hindcast) : CSI 0,17 — note vault « Métriques trackées — Lot B
     vs Lot C » §6 (non recalculé ici, absent des JSON).
   * AROME : run live de ``downscaling/scripts/arome_forecast_skill.py``
