@@ -1,4 +1,4 @@
-"""Tests du loader RADOME + de son merge holdout-aware dans le dataset Lot C.
+"""Tests du loader RADOME + de son merge holdout-aware dans le dataset KarposSR.
 
 Valide : (1) parse décimale virgule FR + mapping DATE(YYYYMMDD)→nuit + fallback
 TNSOL ; (2) le merge RADOME dans BulkSencropDataset respecte le holdout

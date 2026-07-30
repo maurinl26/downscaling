@@ -1,4 +1,4 @@
-"""Loader RADOME/climato quotidien → cibles de supervision sparse pour le Lot C.
+"""Loader RADOME/climato quotidien → cibles de supervision sparse pour le KarposSR.
 
 Les obs Météo-France DPClim (arborescence ``station=<id>/*.csv``, séparateur
 ``;``, **décimales virgule FR**) donnent une Tmin **quotidienne** : ``TN`` (min

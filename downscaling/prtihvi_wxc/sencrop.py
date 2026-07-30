@@ -39,7 +39,7 @@ Deux formats d'entrée supportés
    un seul fichier au schéma ad-hoc ``SENCROP_COLUMNS`` mappable via
    ``columns=``.
 
-Pour les nouveaux entraînements (Lot B, Lot C) la forme bulk est obligatoire ;
+Pour les nouveaux entraînements (Lot B, KarposSR) la forme bulk est obligatoire ;
 la forme single-file est conservée pour les fixtures de tests existantes.
 """
 
@@ -217,7 +217,7 @@ def load_timeseries(
 
 # Cache process-local des chargements année-entière pour le bulk Sencrop.
 # Évite N téléchargements S3 redondants quand `load_sencrop` est appelé en boucle
-# par BulkSencropDataset (Lot C entraînement). Clé : (root, year, bbox_tuple).
+# par BulkSencropDataset (KarposSR entraînement). Clé : (root, year, bbox_tuple).
 _BULK_YEAR_CACHE: dict = {}
 
 

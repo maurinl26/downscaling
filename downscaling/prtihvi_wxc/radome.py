@@ -9,7 +9,7 @@ Schéma CSV (séparateur ``;``) :
     NUM_POSTE;NOM_USUEL;LAT;LON;ALTI;AAAAMMJJ;RR;QRR;TN;QTN;HTN;QHTN;TX;QTX;HTX;...
 
 On extrait juste ``NUM_POSTE, NOM_USUEL, LAT, LON, ALTI, AAAAMMJJ, TN, HTN``
-pour la supervision sparse Lot C (Tmin nocturne par station par nuit).
+pour la supervision sparse KarposSR (Tmin nocturne par station par nuit).
 
 Densité 2022-2024 par dept (mesurée 2026-06-22) :
     26 Drôme       : 36 stations (51-1400 m)

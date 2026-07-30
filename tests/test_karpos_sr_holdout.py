@@ -1,4 +1,4 @@
-"""Smoke tests du leave-station-out Lot C (#33) — sans GPU.
+"""Smoke tests du leave-station-out KarposSR (#33) — sans GPU.
 
 Valide : (1) le filtre holdout de ``night_station_targets`` (train = hors bbox,
 val = dans bbox, all = tout) ; (2) le role-split du ``UNetSparseDataModule``

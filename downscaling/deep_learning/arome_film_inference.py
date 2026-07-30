@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Live AROME → FiLM downscaling → canonical Tmin zarr (Lot C serving adapter).
+"""Live AROME → FiLM downscaling → canonical Tmin zarr (KarposSR serving adapter).
 
-Increment 1 of the "serve a Lot C frost map on /alerte" story. Closes the gap
+Increment 1 of the "serve a KarposSR frost map on /alerte" story. Closes the gap
 identified in the audit: there was **no** path from a live AROME forecast zarr to
 a high-resolution nightly-Tmin field written back as a canonical zarr consumable
 by the titiler serving layer.
@@ -13,11 +13,11 @@ What this does
    leadtimes are grouped into forecast nights.
 2. Loads the 1 km terrain-attribute DEM aligned on the FiLM target grid
    (elevation, slope, aspect, curvature, sky-view-factor).
-3. Loads the Lot C checkpoint (``UNetSparseCalibrationModule`` — the *sparse
+3. Loads the KarposSR checkpoint (``UNetSparseCalibrationModule`` — the *sparse
    Sencrop calibration* Lightning module, NOT the legacy ``DLInferencePipeline``,
    see "Why not DLInferencePipeline" below) and runs it per night.
 4. Extracts the downscaled **nightly Tmin** field.
-5. Writes a canonical zarr (variable ``t2m_lotc``) to
+5. Writes a canonical zarr (variable ``t2m_karpos_sr``) to
    ``s3://karpos-downscaling/lot_c/<run>.zarr`` (already SSRF-whitelisted by the
    titiler serving), plus a reproducibility sidecar.
 
@@ -26,7 +26,7 @@ Why not ``DLInferencePipeline``
 The audit named ``DLInferencePipeline`` / ``build_model(use_film=True)`` as the
 inference path. That class is the **legacy** loader: it expects a Trainer-saved
 ``.pt`` with a ``model_state_dict`` key, ``met_in_ch=5`` (t2m, tp, u10, v10, sp)
-and an external normalisation-stats JSON. The operational Lot C checkpoints
+and an external normalisation-stats JSON. The operational KarposSR checkpoints
 (``checkpoints/multiyear_<year>/<year>-best.ckpt``) are **PyTorch-Lightning**
 checkpoints of :class:`UNetSparseCalibrationModule` with a completely different
 contract:
@@ -38,11 +38,11 @@ contract:
 * pinball q=0.10 tail-aware loss, ``clamp=False``.
 
 This adapter therefore drives the *sparse-calibration* module, which is the real
-Lot C serving path.
+KarposSR serving path.
 
 Input-semantics caveat (OPEN, for Lot D calibration)
 ----------------------------------------------------
-The Lot C model was trained with **CERRA** as the coarse background, fed as a
+The KarposSR model was trained with **CERRA** as the coarse background, fed as a
 single snapshot per night, and learns snapshot → station nightly Tmin. Two shifts
 are NOT resolved by this plumbing increment and must be validated in Lot D before
 any customer-facing use:
@@ -53,7 +53,7 @@ any customer-facing use:
   coarse field per night (default ``min``) is not identical to the single-snapshot
   the model saw in training. ``--reduce min`` risks a cold double-count.
 
-The output is labelled ``t2m_lotc`` (downscaled nightly Tmin, °C). It is an
+The output is labelled ``t2m_karpos_sr`` (downscaled nightly Tmin, °C). It is an
 UNCALIBRATED-against-AROME field until Lot D signs it off.
 
 Usage
@@ -93,8 +93,8 @@ from downscaling.deep_learning.sparse_calibration import UNetSparseCalibrationMo
 log = logging.getLogger("arome_film_inference")
 
 # Canonical output variable name (must match backtest/api zarr_writer CANONICAL_VARS
-# and the titiler serving contract for the Lot C layer).
-LOTC_VAR = "t2m_lotc"
+# and the titiler serving contract for the KarposSR layer).
+KARPOS_SR_VAR = "t2m_karpos_sr"
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def load_dem(dem_path: str) -> tuple[torch.Tensor, np.ndarray, np.ndarray, list[
 # ---------------------------------------------------------------------------
 # Checkpoint loading
 # ---------------------------------------------------------------------------
-def load_lotc_module(
+def load_karpos_sr_module(
     checkpoint: str,
     *,
     dem_in_ch: int,
@@ -178,12 +178,12 @@ def load_lotc_module(
     n_levels: int = 3,
     device: str = "cpu",
 ) -> UNetSparseCalibrationModule:
-    """Rebuild the U-Net and load a Lot C Lightning checkpoint.
+    """Rebuild the U-Net and load a KarposSR Lightning checkpoint.
 
     ``model`` is an injected object excluded from the checkpoint hyper-params
     (``save_hyperparameters(ignore=["model", ...])``), so it must be reconstructed
     and passed explicitly to ``load_from_checkpoint``. ``met_in_ch`` is always 1
-    for the Lot C sparse-calibration model.
+    for the KarposSR sparse-calibration model.
     """
     model = build_model(
         "unet", met_in_ch=1, dem_in_ch=dem_in_ch, base_ch=base_ch, n_levels=n_levels,
@@ -195,7 +195,7 @@ def load_lotc_module(
     lit.eval()
     lit.to(device)
     log.info(
-        "Lot C checkpoint loaded: %s (target_mode=%s, reduce=%s, clamp=%s, denorm=%s)",
+        "KarposSR checkpoint loaded: %s (target_mode=%s, reduce=%s, clamp=%s, denorm=%s)",
         checkpoint, lit.target_mode, lit.reduce, lit.clamp, lit.denorm,
     )
     return lit
@@ -303,7 +303,7 @@ def run_inference(
     *,
     device: str = "cpu",
 ) -> xr.Dataset:
-    """Downscale each night's coarse T2m to the 1 km grid → Dataset(t2m_lotc)."""
+    """Downscale each night's coarse T2m to the 1 km grid → Dataset(t2m_karpos_sr)."""
     x_dem = x_dem.to(device)
     grids = []
     with torch.no_grad():
@@ -316,10 +316,10 @@ def run_inference(
                     pred.astype(np.float32),
                     dims=("latitude", "longitude"),
                     coords={"latitude": lat, "longitude": lon},
-                    name=LOTC_VAR,
+                    name=KARPOS_SR_VAR,
                 ).expand_dims(time=[pd.Timestamp(night)])
             )
-    return xr.Dataset({LOTC_VAR: xr.concat(grids, dim="time")})
+    return xr.Dataset({KARPOS_SR_VAR: xr.concat(grids, dim="time")})
 
 
 # ---------------------------------------------------------------------------
@@ -356,12 +356,12 @@ def write_canonical(ds: xr.Dataset, zarr_uri: str, *, source: str, source_versio
         {
             "source": source,
             "source_version": source_version,
-            "variables": LOTC_VAR,
+            "variables": KARPOS_SR_VAR,
             "lot": "C",
             "model": "unet-film-sparse-calibration",
         }
     )
-    enc = {LOTC_VAR: {"chunks": (1, ds.sizes["latitude"], ds.sizes["longitude"])}}
+    enc = {KARPOS_SR_VAR: {"chunks": (1, ds.sizes["latitude"], ds.sizes["longitude"])}}
     if _is_remote(zarr_uri):
         import s3fs
 
@@ -378,10 +378,10 @@ def write_canonical(ds: xr.Dataset, zarr_uri: str, *, source: str, source_versio
 # CLI
 # ---------------------------------------------------------------------------
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="AROME → FiLM Lot C downscaling → canonical Tmin zarr")
+    p = argparse.ArgumentParser(description="AROME → FiLM KarposSR downscaling → canonical Tmin zarr")
     p.add_argument("--arome", required=True, help="AROME run zarr (s3://karpos-forecasts/arome/<run>.zarr or local)")
     p.add_argument("--dem", required=True, help="Terrain-attribute DEM NetCDF aligned on the FiLM grid (SVF DEM)")
-    p.add_argument("--checkpoint", required=True, help="Lot C Lightning .ckpt (checkpoints/multiyear_<year>/<year>-best.ckpt)")
+    p.add_argument("--checkpoint", required=True, help="KarposSR Lightning .ckpt (checkpoints/multiyear_<year>/<year>-best.ckpt)")
     p.add_argument("--out", required=True, help="Output root (s3://karpos-downscaling/lot_c or local dir)")
     p.add_argument("--run-id", required=True, help="Run identifier → <out>/<run-id>.zarr")
     p.add_argument("--reduce", choices=("min", "mean", "snapshot"), default="min",
@@ -391,7 +391,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--base-ch", type=int, default=32)
     p.add_argument("--n-levels", type=int, default=3)
     p.add_argument("--device", default="auto", choices=("auto", "cuda", "mps", "cpu"))
-    p.add_argument("--wandb-project", default="karpos-lot-c-serving")
+    p.add_argument("--wandb-project", default="karpos-sr-serving")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
@@ -419,7 +419,7 @@ def main() -> int:
     x_dem, lat, lon, dem_vars = load_dem(args.dem)
     log.info("DEM: %d channels %s, grid %dx%d", len(dem_vars), dem_vars, len(lat), len(lon))
 
-    lit = load_lotc_module(
+    lit = load_karpos_sr_module(
         args.checkpoint, dem_in_ch=len(dem_vars), base_ch=args.base_ch,
         n_levels=args.n_levels, device=device,
     )
@@ -438,7 +438,7 @@ def main() -> int:
 
     zarr_uri = f"{str(args.out).rstrip('/')}/{args.run_id}.zarr"
     write_info = write_canonical(
-        ds_out, zarr_uri, source="KARPOS-LOTC-FILM", source_version=args.run_id
+        ds_out, zarr_uri, source="KARPOS-SR-FILM", source_version=args.run_id
     )
     log.info("Wrote %s (%s)", zarr_uri, write_info["writer"])
 
@@ -458,7 +458,7 @@ def main() -> int:
         "night_hours": list(args.night_hours),
         "nights": [n for n, _ in nights],
         "device": device,
-        "output_var": LOTC_VAR,
+        "output_var": KARPOS_SR_VAR,
         "output_zarr": zarr_uri,
         "writer": write_info["writer"],
         "sha256": write_info["sha256"],

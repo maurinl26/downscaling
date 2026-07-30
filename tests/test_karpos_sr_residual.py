@@ -1,4 +1,4 @@
-"""Smoke tests de la cible RÉSIDU Lot C v2 (first-guess + résidu) — sans GPU.
+"""Smoke tests de la cible RÉSIDU KarposSR v2 (first-guess + résidu) — sans GPU.
 
 Valide : (1) validation de ``target_mode`` ; (2) invariant résidu
 ``pred_residual = pred_raw + first_guess`` ; (3) plancher physique (résidu → 0
