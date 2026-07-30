@@ -28,3 +28,6 @@ docs/_build/
 artifacts/
 checkpoints/
 wandb/
+
+# Artefacts métriques opposabilité (#88) — caches/paires volumineux
+artifacts/arome_sencrop/*.pkl

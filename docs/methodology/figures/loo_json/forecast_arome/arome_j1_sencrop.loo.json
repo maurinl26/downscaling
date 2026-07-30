@@ -1,0 +1,89 @@
+{
+  "lot": "forecast_arome_j1_sencrop",
+  "description": "Pr\u00e9vision AROME J-1 brute vs cal\u00e9e sur capteurs Sencrop (quantile mapping), v\u00e9rit\u00e9 terrain Sencrop, seuil gel -2,2 \u00b0C.",
+  "source_forecast": "Open-Meteo Historical Forecast API, model=meteofrance_arome_france (~2,5 km)",
+  "lead_time": "J-1 (~24 h) \u2014 archive de pr\u00e9vision Open-Meteo",
+  "threshold_c": -2.2,
+  "years": [
+    2024,
+    2025
+  ],
+  "bbox": {
+    "la0": 44.0,
+    "la1": 45.5,
+    "lo0": 4.0,
+    "lo1": 5.5
+  },
+  "n_stations": 35,
+  "n_pairs": 6190,
+  "n_frost_events": 133,
+  "git_sha": "ebf5473c0b2c6b65632e65ae7f490bb48df2f825",
+  "generated_utc": "2026-07-30T07:02:05.108641Z",
+  "command": "python downscaling/scripts/arome_forecast_skill.py --emit-json ...",
+  "modes": {
+    "arome_raw": {
+      "n": 6190,
+      "evts": 133,
+      "TP": 7,
+      "FP": 1,
+      "FN": 126,
+      "TN": 6056,
+      "POD": 0.05263157894736842,
+      "FAR": 0.125,
+      "CSI": 0.05223880597014925,
+      "ETS": 0.05102149213661099,
+      "RMSE": 1.6427466334107375,
+      "bias": 0.46298623358080804
+    },
+    "arome_sencrop_loso_spatial": {
+      "n": 6190,
+      "evts": 133,
+      "TP": 66,
+      "FP": 73,
+      "FN": 67,
+      "TN": 5984,
+      "POD": 0.49624060150375937,
+      "FAR": 0.5251798561151079,
+      "CSI": 0.32038834951456313,
+      "ETS": 0.31039037825079796,
+      "RMSE": 1.6233308089159608,
+      "bias": -0.05527757197741263
+    },
+    "arome_sencrop_temporal_2024_to_2025": {
+      "n": 3110,
+      "evts": 126,
+      "TP": 54,
+      "FP": 34,
+      "FN": 72,
+      "TN": 2950,
+      "POD": 0.42857142857142855,
+      "FAR": 0.38636363636363635,
+      "CSI": 0.3375,
+      "ETS": 0.3224010918538494,
+      "RMSE": 1.7100261348317216,
+      "bias": -0.002071527980762874
+    },
+    "arome_sencrop_temporal_2025_to_2024": {
+      "n": 3080,
+      "evts": 7,
+      "TP": 1,
+      "FP": 20,
+      "FN": 6,
+      "TN": 3053,
+      "POD": 0.14285714285714285,
+      "FAR": 0.9523809523809523,
+      "CSI": 0.037037037037037035,
+      "ETS": 0.0353318154987773,
+      "RMSE": 1.5009683453951512,
+      "bias": -0.058465401709829744
+    }
+  },
+  "headline_lift": {
+    "POD_raw": 0.05263157894736842,
+    "POD_calibrated": 0.49624060150375937,
+    "POD_multiplier": 9.428571428571429,
+    "CSI_raw": 0.05223880597014925,
+    "CSI_calibrated": 0.32038834951456313,
+    "CSI_multiplier": 6.133148404993066
+  }
+}

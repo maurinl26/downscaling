@@ -110,7 +110,8 @@ def scores(m, o, thr=THR):
     FN = int((~mf & of).sum()); TN = int((~mf & ~of).sum()); N = len(m)
     r = lambda a, b: a / b if b else float("nan")
     hr = (TP+FP)*(TP+FN)/N if N else 0
-    return dict(n=N, evts=TP+FN, POD=r(TP, TP+FN), FAR=r(FP, TP+FP), CSI=r(TP, TP+FP+FN),
+    return dict(n=N, evts=TP+FN, TP=TP, FP=FP, FN=FN, TN=TN,
+                POD=r(TP, TP+FN), FAR=r(FP, TP+FP), CSI=r(TP, TP+FP+FN),
                 ETS=r(TP-hr, TP+FP+FN-hr), RMSE=float(np.sqrt(np.mean((m-o)**2))),
                 bias=float(np.mean(m-o)))
 
@@ -135,6 +136,9 @@ def main():
     ap.add_argument("--catalog", default=None, help="stations_integrated.csv (défaut: <sencrop>/stations_integrated.csv)")
     ap.add_argument("--cache", default=None, help="pkl cache AROME/Sencrop (skip fetch si présent)")
     ap.add_argument("--no-fetch", action="store_true")
+    ap.add_argument("--emit-json", default=None,
+                    help="Chemin d'un JSON opposable (format loo_json/) résumant les "
+                         "modes brut / LOSO spatial / split temporel (issue #88).")
     a = ap.parse_args()
     cat = a.catalog or f"{a.sencrop}/stations_integrated.csv"
 
@@ -161,7 +165,10 @@ def main():
                 M.append(float(at)); O.append(float(ot))
 
     print("\n=== Skill prévision AROME vs Sencrop (Tmin nocturne, seuil -2,2°C, 2024+2025) ===")
-    print(_fmt("1. AROME brut", scores(M, O)))
+    modes: dict[str, dict] = {}
+    s_raw = scores(M, O)
+    modes["arome_raw"] = s_raw
+    print(_fmt("1. AROME brut", s_raw))
 
     # 2. LOSO quantile mapping (CV spatiale)
     sids = [s for s in pairs if len(pairs[s]) >= 3]
@@ -171,7 +178,9 @@ def main():
         to = [x[2] for s in sids if s != held for x in pairs[s]]
         xs = [x[1] for x in pairs[held]]
         Mc += list(_qmap(ta, to, xs)); Oc += [x[2] for x in pairs[held]]
-    print(_fmt("2. + Sencrop, LOSO (spatial)", scores(Mc, Oc)))
+    s_loso = scores(Mc, Oc)
+    modes["arome_sencrop_loso_spatial"] = s_loso
+    print(_fmt("2. + Sencrop, LOSO (spatial)", s_loso))
 
     # 3. Split temporel : train saison A -> test saison B
     for train_y, test_y in [(2024, 2025), (2025, 2024)]:
@@ -182,7 +191,47 @@ def main():
         if not xs or not ta:
             continue
         mc = _qmap(ta, to, xs)
-        print(_fmt(f"3. + Sencrop, train {train_y}->test {test_y}", scores(mc, ys)))
+        s_tmp = scores(mc, ys)
+        modes[f"arome_sencrop_temporal_{train_y}_to_{test_y}"] = s_tmp
+        print(_fmt(f"3. + Sencrop, train {train_y}->test {test_y}", s_tmp))
+
+    # JSON opposable (issue #88) : ×10 AROME brut → calé Sencrop, reproductible.
+    if a.emit_json:
+        try:
+            sha = __import__("subprocess").check_output(
+                ["git", "rev-parse", "HEAD"], cwd=os.path.dirname(os.path.abspath(__file__)),
+                stderr=__import__("subprocess").DEVNULL).decode().strip()
+        except Exception:
+            sha = "unknown"
+        raw, cal = modes["arome_raw"], modes["arome_sencrop_loso_spatial"]
+        payload = {
+            "lot": "forecast_arome_j1_sencrop",
+            "description": "Prévision AROME J-1 brute vs calée sur capteurs Sencrop "
+                           "(quantile mapping), vérité terrain Sencrop, seuil gel -2,2 °C.",
+            "source_forecast": "Open-Meteo Historical Forecast API, "
+                               "model=meteofrance_arome_france (~2,5 km)",
+            "lead_time": "J-1 (~24 h) — archive de prévision Open-Meteo",
+            "threshold_c": THR,
+            "years": YEARS,
+            "bbox": BBOX,
+            "n_stations": len({sid for sid in pairs}),
+            "n_pairs": s_raw["n"],
+            "n_frost_events": s_raw["evts"],
+            "git_sha": sha,
+            "generated_utc": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "command": "python downscaling/scripts/arome_forecast_skill.py --emit-json ...",
+            "modes": modes,
+            "headline_lift": {
+                "POD_raw": raw["POD"], "POD_calibrated": cal["POD"],
+                "POD_multiplier": (cal["POD"] / raw["POD"]) if raw["POD"] else None,
+                "CSI_raw": raw["CSI"], "CSI_calibrated": cal["CSI"],
+                "CSI_multiplier": (cal["CSI"] / raw["CSI"]) if raw["CSI"] else None,
+            },
+        }
+        os.makedirs(os.path.dirname(os.path.abspath(a.emit_json)), exist_ok=True)
+        with open(a.emit_json, "w") as fh:
+            json.dump(payload, fh, indent=2)
+        print(f"JSON opposable -> {a.emit_json}")
 
     # cache + export paires
     outdir = os.path.dirname(a.cache) if a.cache else "."
