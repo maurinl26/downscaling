@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DL FiLM recalibration with sparse Sencrop calibration.
 
-Known internally as the "Lot C" deliverable of the Sencrop S23 campaign. Thin
+Known internally as the "KarposSR" deliverable of the Sencrop S23 campaign. Thin
 orchestrator that wires:
 - `build_model("unet", use_film=True)` from `downscaling.deep_learning.model`
 - `UNetSparseCalibrationModule` from `downscaling.deep_learning.sparse_calibration`

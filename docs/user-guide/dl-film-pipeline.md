@@ -1,4 +1,4 @@
-# Deep learning FiLM pipeline (Lot C)
+# Deep learning FiLM pipeline (KarposSR)
 
 > 📝 **Stub** — full user-guide section to be written.
 

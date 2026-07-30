@@ -5,11 +5,11 @@ Reproductible : lit uniquement des données déjà persistées et écrit des fig
 PNG (300 dpi) + PDF vectoriel dans ``docs/methodology/figures/``.
 
 Sources de données (voir aussi la provenance annotée sur chaque figure) :
-  * LOO Lot B / Lot C : JSON persistés sous ``docs/methodology/figures/loo_json/``
+  * LOO Lot B / KarposSR : JSON persistés sous ``docs/methodology/figures/loo_json/``
     (copies des sorties de validation leave-one-station-out, seuil -2,2 °C,
     aussi disponibles sur S3 ``analyses/c5_lot_b/`` et ``analyses/c5_lot_c/``).
   * CERRA brut (hindcast) : CSI 0,17 — note vault « Métriques trackées — Lot B
-    vs Lot C » §6 (non recalculé ici, absent des JSON).
+    vs KarposSR » §6 (non recalculé ici, absent des JSON).
   * AROME : run live de ``downscaling/scripts/arome_forecast_skill.py``
     (2026-07-27), identique à la note vault §6.
 
@@ -152,7 +152,7 @@ def fig_f5_rev(data_dir: Path, out_dir: Path, year: int = 2023, mode: str = "sta
 
     # Enveloppe V_env(α)
     ax.plot(alphas, venv, color=OKABE_ITO["bleu"], lw=2.2,
-            label="Enveloppe de valeur V(α), Lot C")
+            label="Enveloppe de valeur V(α), KarposSR")
 
     # Plage coût-perte réelle α ∈ [0,02 ; 0,10]
     ax.axvspan(a_lo, a_hi, color=OKABE_ITO["orange"], alpha=0.12)
@@ -190,13 +190,13 @@ def fig_f5_rev(data_dir: Path, out_dir: Path, year: int = 2023, mode: str = "sta
 
     ax.set_xlabel("Ratio coût-perte  α = C / L  (échelle log)")
     ax.set_ylabel("Valeur économique relative  V(α)")
-    ax.set_title(f"F5 — Valeur décisionnelle (REV), Lot C {year}, mode {mode}")
+    ax.set_title(f"F5 — Valeur décisionnelle (REV), KarposSR {year}, mode {mode}")
     ax.set_ylim(-0.35, 1.0)
     ax.set_xlim(alphas.min(), min(alphas.max(), 0.5))
     ax.legend(loc="upper left", fontsize=8.5)
-    prov(fig, "Provenance : JSON LOO persisté (Lot C, modes.station.rev). "
+    prov(fig, "Provenance : JSON LOO persisté (KarposSR, modes.station.rev). "
               "Modèle coût-perte Richardson 2000 / Wilks.")
-    save(fig, out_dir, "F5_rev_lotc")
+    save(fig, out_dir, "F5_rev_karpos_sr")
 
 
 # --------------------------------------------------------------------------- #
@@ -249,7 +249,7 @@ def fig_f2_skill(data_dir: Path, out_dir: Path):
     stages = [
         ("CERRA brut\n(5,5 km)", CERRA_CSI, OKABE_ITO["gris"], "note §6"),
         ("Calibration\nstatistique (Lot B)", b["CSI"], OKABE_ITO["bleu_ciel"], "JSON pooled"),
-        ("Deep learning\n+ supervision (Lot C)", c["CSI"], OKABE_ITO["bleu"], "JSON pooled"),
+        ("Deep learning\n+ supervision (KarposSR)", c["CSI"], OKABE_ITO["bleu"], "JSON pooled"),
     ]
     fig, ax = plt.subplots(figsize=(8.2, 4.8))
     x = np.arange(len(stages))
@@ -274,14 +274,14 @@ def fig_f2_skill(data_dir: Path, out_dir: Path):
     ax.set_ylabel("CSI (LOO station-out, seuil −2,2 °C, pooled 2022-2025)")
     ax.set_ylim(0, max(vals) * 1.35)
     ax.set_title("F2 — Skill de descente d'échelle par étage (hindcast)")
-    prov(fig, "Provenance : CERRA = note vault §6 (0,17) ; Lot B / Lot C = CSI "
+    prov(fig, "Provenance : CERRA = note vault §6 (0,17) ; Lot B / KarposSR = CSI "
               "pooled (contingences sommées) depuis JSON LOO persisté. "
-              f"Lot B CSI={b['CSI']:.3f}, Lot C CSI={c['CSI']:.3f}.")
+              f"Lot B CSI={b['CSI']:.3f}, KarposSR CSI={c['CSI']:.3f}.")
     save(fig, out_dir, "F2_skill_hindcast")
 
 
 # --------------------------------------------------------------------------- #
-# F3 — biais résiduel par station, avant/après (Lot B → Lot C)
+# F3 — biais résiduel par station, avant/après (Lot B → KarposSR)
 # --------------------------------------------------------------------------- #
 def fig_f3_bias(data_dir: Path, out_dir: Path):
     b = per_station_bias(data_dir, "b")
@@ -300,7 +300,7 @@ def fig_f3_bias(data_dir: Path, out_dir: Path):
             label="y = x (biais inchangé)")
     # bande |biais| < 0,5 °C
     ax.axhspan(-0.5, 0.5, color=OKABE_ITO["vert"], alpha=0.10)
-    ax.text(-lim * 0.95, 0.0, "|biais Lot C| < 0,5 °C", fontsize=8,
+    ax.text(-lim * 0.95, 0.0, "|biais KarposSR| < 0,5 °C", fontsize=8,
             va="center", color=OKABE_ITO["vert"])
 
     ax.scatter(bx, cy, color=OKABE_ITO["bleu"], s=42, alpha=0.8, edgecolor="white",
@@ -309,11 +309,11 @@ def fig_f3_bias(data_dir: Path, out_dir: Path):
     ax.set_ylim(-lim, lim)
     ax.set_aspect("equal")
     ax.set_xlabel("Biais station — Lot B (statistique)  [°C]")
-    ax.set_ylabel("Biais station — Lot C (deep learning)  [°C]")
-    ax.set_title("F3 — Resserrement du biais par station (Lot B → Lot C)")
+    ax.set_ylabel("Biais station — KarposSR (deep learning)  [°C]")
+    ax.set_title("F3 — Resserrement du biais par station (Lot B → KarposSR)")
     ax.text(0.03, 0.97,
             f"n = {len(common)} stations\n"
-            f"biais absolu moyen :\n  Lot B = {mab_b:.2f} °C\n  Lot C = {mab_c:.2f} °C "
+            f"biais absolu moyen :\n  Lot B = {mab_b:.2f} °C\n  KarposSR = {mab_c:.2f} °C "
             f"(−{100 * (1 - mab_c / mab_b):.0f} %)",
             transform=ax.transAxes, va="top", ha="left", fontsize=9,
             bbox=dict(boxstyle="round,pad=0.4", fc="white", ec=OKABE_ITO["gris"], alpha=0.9))

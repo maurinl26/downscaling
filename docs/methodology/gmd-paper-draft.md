@@ -90,9 +90,9 @@ Nous validons d'abord la chaîne en *hindcast* (réanalyse CERRA descendue), en 
 |---|---|---|---|
 | CERRA brute (5,5 km) | — | — | 0,17 |
 | Calibration statistique (Lot B) | 0,36 | 0,48 | 0,27 |
-| DL + supervision station (Lot C) | 0,48 | 0,36 | 0,38 |
+| DL + supervision station (KarposSR) | 0,48 | 0,36 | 0,38 |
 
-Le CSI progresse à chaque étage de la chaîne, de **0,17** (réanalyse brute) à **0,27** (calibration statistique) puis **0,38** (réseau supervisé par les stations) ; le Lot C améliore **simultanément** la détection (POD 0,36 → 0,48) et le taux de fausses alertes (FAR 0,48 → 0,36). Le skill est homogène entre saisons à événements (CSI Lot C : 0,38 en 2022, 0,42 en 2023, 0,33 en 2025 ; 2024, sans gel, n'est pas informative). Le **saut décisif provient de la supervision par capteurs** : l'apport du socle atmosphérique et de la profondeur du réseau est secondaire devant celui de l'assimilation in situ (§3.2).
+Le CSI progresse à chaque étage de la chaîne, de **0,17** (réanalyse brute) à **0,27** (calibration statistique) puis **0,38** (réseau supervisé par les stations) ; le KarposSR améliore **simultanément** la détection (POD 0,36 → 0,48) et le taux de fausses alertes (FAR 0,48 → 0,36). Le skill est homogène entre saisons à événements (CSI KarposSR : 0,38 en 2022, 0,42 en 2023, 0,33 en 2025 ; 2024, sans gel, n'est pas informative). Le **saut décisif provient de la supervision par capteurs** : l'apport du socle atmosphérique et de la profondeur du réseau est secondaire devant celui de l'assimilation in situ (§3.2).
 
 ### 5.2 Le socle de réanalyse prime sur la profondeur du réseau
 
@@ -160,7 +160,7 @@ La détection du gel à l'échelle de la parcelle bute sur un problème d'échel
 | Item | État | Action |
 |---|---|---|
 | Chiffres LOO honnêtes (hindcast + AROME) | ✅ persistés | figés |
-| Posthoc Lot C opposable (#222) | ✅ | — |
+| Posthoc KarposSR opposable (#222) | ✅ | — |
 | Figures F2-F5 | ✅ #235 (faites) | Fig. 1 restante |
 | CERRA vs ERA5-Land **en LOO** | 🔴 #233 | 1-2 j |
 | Régimes **hors-station** | 🔴 #234 | 2-3 j |
@@ -181,7 +181,7 @@ La détection du gel à l'échelle de la parcelle bute sur un problème d'échel
 
 ## D. Liens
 - [[Méthodo — Valeur économique des prévisions gel (REV + risque de base)]]
-- [[Métriques trackées — Lot B vs Lot C]]
+- [[Métriques trackées — Lot B vs KarposSR]]
 - [[Audit — Architecture downscaling gel (clamp + Sencrop-SURFEX)]]
 - [[Produit - 27-07-2026]]
 - [[Trame publication JOSS — parametric_insurance]]

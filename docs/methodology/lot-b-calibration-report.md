@@ -18,7 +18,7 @@ status: brouillon — première itération
 
 ## Résumé exécutif
 
-Première mise en production du pipeline de recalibration statistique pour le **Lot B** (statistical downscaling + correction sparse Sencrop) sur l'**abricot des Baronnies**, dans la fenêtre frost-flo (février-avril). Pipeline fonctionnel sur 2 années (2022, 2023), métriques POD/FAR/CSI extraites pour 2023 (référence). Sensibilité maximale atteinte (**POD = 100 %**) ; spécificité encore insuffisante (**FAR = 74 %** au seuil flo -2,2 °C) liée à un biais systématique +10 °C qu'il faut diagnostiquer avant le Lot C.
+Première mise en production du pipeline de recalibration statistique pour le **Lot B** (statistical downscaling + correction sparse Sencrop) sur l'**abricot des Baronnies**, dans la fenêtre frost-flo (février-avril). Pipeline fonctionnel sur 2 années (2022, 2023), métriques POD/FAR/CSI extraites pour 2023 (référence). Sensibilité maximale atteinte (**POD = 100 %**) ; spécificité encore insuffisante (**FAR = 74 %** au seuil flo -2,2 °C) liée à un biais systématique +10 °C qu'il faut diagnostiquer avant le KarposSR.
 
 > [!warning] Statut
 > Rapport à froid post-pitch Corréard 17 juin 2026. Les conclusions sont préliminaires : seulement 2 années traitées sur 4 prévues (2024 et 2025 ont systématiquement crashé), et 18 nuits matchées sur 90 pour 2023 (couverture partielle). À reconduire après correction des bugs identifiés.
@@ -115,7 +115,7 @@ Lectures
 | **CERRA-Land brut (V1)** | 2015-2020 Nyons | 100 % | **87 %** | `bias_summary.csv` |
 | **ERA5-Land brut** | 2022-2025 Sencrop | 60 % | 69 % | `lot_d_metrics.csv` |
 | **Lot B Stage 2 (ce rapport)** | 2023 fév-avr Sencrop | **100 %** | **74,3 %** | `2023.posthoc.json` |
-| **Lot C DL FiLM (cible)** | 2022-2025 | ≥ 90 % | ≤ 20 % | non encore mesuré |
+| **KarposSR DL FiLM (cible)** | 2022-2025 | ≥ 90 % | ≤ 20 % | non encore mesuré |
 
 Lot B vs ERA5-Land : **+ 40 pts de POD** (gain net sur la sensibilité), **+ 5 pts de FAR** (légère dégradation due au biais). Au pitch, on peut dire : *« le pipeline Lot B sature la détection mais reste à affiner sur la spécificité »*.
 
@@ -194,7 +194,7 @@ W&B project karpos-recalibrate-statistical
 - [ ] **Bug #11 (Python 3.11.0rc1)** : upgrade venv → Python 3.11.x stable ou 3.12 dans l'image Docker `karpos-downscaling`. Tester import torch.dynamo / lightning.
 - [ ] **Bug #12 (time coord Zarr int)** : modifier `recalibrate_statistical.py` pour explicit `encoding={'time': {'units': 'days since YEAR-02-01', 'dtype': 'int32'}}` ou `decode_times=True` lors du to_zarr. Validate roundtrip.
 
-### Priorité 2 — Lot C DL FiLM
+### Priorité 2 — KarposSR DL FiLM
 
 - [ ] Une fois Stage 2 stable, reprendre Stage 3 sur les Zarrs Stage 2 calibrés.
 - [ ] Architecture U-Net FiLM + W&B logging (déjà préparé dans `recalibrate_dl_film.py`).
@@ -337,13 +337,13 @@ Coût total : 4-6 h. Testable sur pod 4 h avec 2024-2025.
 
 1. **Sortie de la climato mais sans calibration** : le 32/3 régresse vers la moyenne (POD=0 en 2022/2023, modèle n'ose jamais < -2.2°C). Le 64/4 ose prédire du froid (POD passe à 23-43%) mais lâche des fausses alertes à grande échelle (FAR 58-100%). Le modèle a appris à parier sur le froid sans discriminer.
 
-2. **Biais chaud persiste sur les deux configs** : +1.09 à +1.79°C sur 64/4, +0.64 à +2.43°C sur 32/3. Le DL FiLM ne corrige pas vers le froid, il replique CERRA + bruit station. Issue #18 a fixé le biais d'orographie du Lot B mais pas celui du Lot C.
+2. **Biais chaud persiste sur les deux configs** : +1.09 à +1.79°C sur 64/4, +0.64 à +2.43°C sur 32/3. Le DL FiLM ne corrige pas vers le froid, il replique CERRA + bruit station. Issue #18 a fixé le biais d'orographie du Lot B mais pas celui du KarposSR.
 
 3. **EarlyStopping inopérant** : les 4 runs ont fait les 30 epochs entiers, best ckpts trouvés à epoch 3 / 8 / 10 / 11. Trajectoire val/rmse en yo-yo, `min_delta=1e-3` trop laxiste pour discriminer les micro-améliorations bruitées. À durcir à `min_delta=0.05` ou supérieur si on relance.
 
 **Conclusion opérationnelle** : la capacité **n'est pas le verrou**. Augmenter le modèle sans changer la loss ni la supervision = plus d'overfit, point final. La voie est **issue #5 (loss redesign)** : first-guess physique + résiduel + pinball multi-quantile + splits anti-fuite + densification via Lot B (issue #23). PR #31 (downscaling) et #73 (parametric_insurance) restent valables comme infra A/B mais les défauts (32/3, ES off) ne doivent **pas** changer.
 
-**Lot C reste hors-gate à V1.** Lot B + QDM reste la voie commerciale juin-juillet.
+**KarposSR reste hors-gate à V1.** Lot B + QDM reste la voie commerciale juin-juillet.
 
 W&B runs : [2022](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/tlp3zql1) · [2023](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/cmvc4ikx) · [2024](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/cds6se0s) · [2025](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/wxs90bxu).
 

@@ -4,7 +4,7 @@ Each script is invocable as ``python -m downscaling.scripts.<name>`` and
 exposes ``--help`` for argument documentation. The main entry points are:
 
 - ``recalibrate_statistical`` — Lot B: lapse-rate + QDM + sparse Sencrop residual
-- ``recalibrate_dl_film`` — Lot C: U-Net FiLM trained on sparse Sencrop calibration loss
+- ``recalibrate_dl_film`` — KarposSR: U-Net FiLM trained on sparse Sencrop calibration loss
 - ``calibrate_qdm`` — fit quantile delta mapping joblib for use by ``recalibrate_statistical``
 - ``flag_regimes`` — classify frost-flo nights into synoptic regimes (R1/R2/R3/R4a/R4b)
 - ``analyze_recalibrated_statistical`` — compute POD/FAR/CSI/RMSE/bias metrics,

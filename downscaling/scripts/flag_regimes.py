@@ -263,7 +263,7 @@ def _classify(f: dict[str, float]) -> str:
     - **R0** : feature manquant (catch-all NaN)
 
     Note : T850-T2m (téléchargé en parallèle) reste enregistré comme feature
-    dans le CSV pour conditioning futur Lot C (FiLM token), mais pas utilisé
+    dans le CSV pour conditioning futur KarposSR (FiLM token), mais pas utilisé
     pour la classification (couche limite < 1500 m mal résolue par T850).
     """
     if not f or any(np.isnan(v) for v in f.values() if not (isinstance(v, float) and np.isnan(v))):
