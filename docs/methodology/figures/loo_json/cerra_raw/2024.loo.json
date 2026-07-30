@@ -1,0 +1,349 @@
+{
+  "year": 2024,
+  "threshold_c": -2.2,
+  "source": "CERRA brute (r\u00e9analyse 5,5 km, sans calibration) \u2014 cerra_atm_2024.nc",
+  "calibration": "none",
+  "n_stations": 48,
+  "bbox": {
+    "lat_min": 44.0,
+    "lat_max": 45.5,
+    "lon_min": 4.0,
+    "lon_max": 5.5
+  },
+  "modes": {
+    "raw": {
+      "n_pairs": 3080,
+      "aggregate": {
+        "threshold_c": -2.2,
+        "TP": 4,
+        "FP": 16,
+        "FN": 3,
+        "TN": 3057,
+        "POD": 0.5714285714285714,
+        "FAR": 0.8,
+        "CSI": 0.17391304347826086,
+        "bias_score": 2.857142857142857,
+        "rmse": 1.8348306683750837,
+        "bias": 0.4922004379899837
+      },
+      "per_station": [
+        {
+          "station_id": 11426,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.5642307868519452,
+          "bias": 0.8151347926458968
+        },
+        {
+          "station_id": 11535,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.3422998446691314,
+          "bias": -0.4803263361608318
+        },
+        {
+          "station_id": 12092,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.1929812214739048,
+          "bias": 0.3366945089882418
+        },
+        {
+          "station_id": 12534,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.7337051870814668,
+          "bias": 0.789085532882008
+        },
+        {
+          "station_id": 13762,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 2.1665604981096247,
+          "bias": 1.4067154288591905
+        },
+        {
+          "station_id": 14136,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.67295597269465,
+          "bias": -0.792725638238414
+        },
+        {
+          "station_id": 14313,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.2754321587119704,
+          "bias": 0.0842773864069245
+        },
+        {
+          "station_id": 14327,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.7713607253451848,
+          "bias": 1.101039080331676
+        },
+        {
+          "station_id": 14711,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 2.2770819457726934,
+          "bias": 1.218608981377404
+        },
+        {
+          "station_id": 14738,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.1832531608427594,
+          "bias": 0.05105636488971444
+        },
+        {
+          "station_id": 14935,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 2.4625764762432785,
+          "bias": 1.8375884559618132
+        },
+        {
+          "station_id": 15018,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.3387076478353237,
+          "bias": -0.23787938709815112
+        },
+        {
+          "station_id": 15926,
+          "n_pairs": 91,
+          "POD": 0.6666666666666666,
+          "FAR": 0.3333333333333333,
+          "CSI": 0.5,
+          "rmse": 1.8889320132188,
+          "bias": 0.9451966717334345
+        },
+        {
+          "station_id": 16482,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 0.8578638108816544,
+          "bias": -0.03030508776664824
+        },
+        {
+          "station_id": 17766,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 2.386565166610811,
+          "bias": 1.1993984530421449
+        },
+        {
+          "station_id": 20516,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 1.7938837310192475,
+          "bias": 0.947498753833778
+        },
+        {
+          "station_id": 21096,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.3338281384128585,
+          "bias": -0.2805320210784752
+        },
+        {
+          "station_id": 21801,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.464306834632734,
+          "bias": -0.7103465606691312
+        },
+        {
+          "station_id": 21804,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.2956404349570845,
+          "bias": -0.5242387177169167
+        },
+        {
+          "station_id": 21869,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.9267163572229096,
+          "bias": 0.5677607866890135
+        },
+        {
+          "station_id": 21871,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.168805502143208,
+          "bias": 0.10146576673181666
+        },
+        {
+          "station_id": 22502,
+          "n_pairs": 91,
+          "POD": 1.0,
+          "FAR": 0.5,
+          "CSI": 0.5,
+          "rmse": 1.9551056203259918,
+          "bias": 1.398008548029557
+        },
+        {
+          "station_id": 22585,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.2923338530951074,
+          "bias": -0.7370017440180239
+        },
+        {
+          "station_id": 22592,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.0661832133171196,
+          "bias": -0.280233655605955
+        },
+        {
+          "station_id": 22699,
+          "n_pairs": 91,
+          "POD": 1.0,
+          "FAR": 0.5,
+          "CSI": 0.5,
+          "rmse": 2.063455222614245,
+          "bias": 1.478821987613989
+        },
+        {
+          "station_id": 22978,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.3363128351758151,
+          "bias": -0.1645678990202165
+        },
+        {
+          "station_id": 23655,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.744591466857694,
+          "bias": 0.2822997692735895
+        },
+        {
+          "station_id": 23862,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 3.7212455163457463,
+          "bias": 2.561100518927706
+        },
+        {
+          "station_id": 24089,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.5894393843030035,
+          "bias": 0.8242112268452543
+        },
+        {
+          "station_id": 24529,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 1.9887470380183792,
+          "bias": 1.6082081334658336
+        },
+        {
+          "station_id": 25834,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": 1.0,
+          "CSI": 0.0,
+          "rmse": 2.329178331330416,
+          "bias": 1.1449702068773053
+        },
+        {
+          "station_id": 25844,
+          "n_pairs": 91,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 1.277720516755258,
+          "bias": -0.4527817659733571
+        },
+        {
+          "station_id": 25655,
+          "n_pairs": 82,
+          "POD": 0.0,
+          "FAR": NaN,
+          "CSI": 0.0,
+          "rmse": 2.370963601468089,
+          "bias": -1.5631652448622624
+        },
+        {
+          "station_id": 22971,
+          "n_pairs": 47,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 2.5663110506905187,
+          "bias": 2.2622471000228077
+        },
+        {
+          "station_id": 13260,
+          "n_pairs": 39,
+          "POD": NaN,
+          "FAR": NaN,
+          "CSI": NaN,
+          "rmse": 2.6903282646539415,
+          "bias": 2.0790988220335307
+        }
+      ]
+    }
+  },
+  "git_sha": "c8c112d22182fa98b8f8ba4b59b4daa194293108"
+}

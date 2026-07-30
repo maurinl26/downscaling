@@ -1,0 +1,59 @@
+{
+  "lot": "cerra_raw",
+  "description": "Baseline CERRA brute (sans calibration), micro-pool\u00e9 sur les ann\u00e9es. Premier maillon du lift CERRA\u2192Lot B\u2192Lot C (issue #89).",
+  "threshold_c": -2.2,
+  "years": [
+    2022,
+    2023,
+    2024,
+    2025
+  ],
+  "calibration": "none",
+  "n_pairs": 12582,
+  "aggregate": {
+    "threshold_c": -2.2,
+    "TP": 286,
+    "FP": 299,
+    "FN": 210,
+    "TN": 11787,
+    "POD": 0.5766129032258065,
+    "FAR": 0.5111111111111111,
+    "CSI": 0.35974842767295595,
+    "bias_score": 1.1794354838709677,
+    "rmse": 2.0278535940708777,
+    "bias": 0.5674691244337088
+  },
+  "per_year": [
+    {
+      "year": 2022,
+      "n_pairs": 3238,
+      "POD": 0.6524822695035462,
+      "FAR": 0.6017316017316018,
+      "CSI": 0.32857142857142857
+    },
+    {
+      "year": 2023,
+      "n_pairs": 3151,
+      "POD": 0.6891891891891891,
+      "FAR": 0.44964028776978415,
+      "CSI": 0.4409221902017291
+    },
+    {
+      "year": 2024,
+      "n_pairs": 3080,
+      "POD": 0.5714285714285714,
+      "FAR": 0.8,
+      "CSI": 0.17391304347826086
+    },
+    {
+      "year": 2025,
+      "n_pairs": 3113,
+      "POD": 0.29365079365079366,
+      "FAR": 0.3392857142857143,
+      "CSI": 0.25517241379310346
+    }
+  ],
+  "git_sha": "c8c112d22182fa98b8f8ba4b59b4daa194293108",
+  "command": "python /Users/loicmaurin/karpos-engine/downscaling/downscaling/scripts/analyze_cerra_baseline.py --cerra-glob /Users/loicmaurin/kDrive/karpos_datasets/output/regen_cerra_2023/cerra_atm_{year}.nc --sencrop /Users/loicmaurin/kDrive/karpos_datasets/data/raw/sencrop --out-dir docs/methodology/figures/loo_json/cerra_raw",
+  "reconciliation_note": "ATTENTION opposabilit\u00e9 : ce baseline \u00e9chantillonne la CERRA BRUTE 5,5 km (maille la plus proche, Tmin nocturne). Il ne reproduit PAS le 0,17 annonc\u00e9 au manuscrit GMD \u00a75.1 (table 'CERRA brute 5,5 km'). Ce 0,17 correspond en r\u00e9alit\u00e9 au FIRST-GUESS descendu bilin\u00e9airement \u00e0 1 km (+ lapse), c.-\u00e0-d. la variable t2m_prerbf des Zarrs Lot B/C \u2014 grille qui r\u00e9chauffe les cuvettes et effondre le POD. Cette grille n'est plus disponible localement ni sur S3 (bucket karpos-backtest-data vide), donc le 0,17 n'est pas re-v\u00e9rifiable ici (m\u00eame blocage que #90). Constat honn\u00eate : la CERRA brute nearest-cell est COLD-BIASED (POD~0,58 / FAR~0,51) \u2192 CSI comparable au Lot C mais ~3x plus de fausses alertes. La valeur de la cha\u00eene est donc la R\u00c9DUCTION du FAR / la fiabilit\u00e9, pas un gain de CSI sur une baseline froide. Le framing 'lift 0,17\u21920,38' exige d'expliciter que 0,17 = first-guess 1 km, sinon challengeable."
+}
