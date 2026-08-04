@@ -94,6 +94,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
             lambda_tv=lw.get("tv", 0.01),
             lambda_smooth=lw.get("smooth", 0.001),
             loss_quantile=loss_quantile,
+            lambda_disp=lw.get("disp", 0.0),
         )
         self.target_channel = target_channel
         self.kelvin_to_celsius = kelvin_to_celsius
