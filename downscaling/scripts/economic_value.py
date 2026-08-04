@@ -157,9 +157,7 @@ def _rev_over_alphas(
     return V_env, tau_star, arg_star
 
 
-def _degenerate_result(
-    alphas: np.ndarray, base_rate: float, reason: str
-) -> dict:
+def _degenerate_result(alphas: np.ndarray, base_rate: float, reason: str) -> dict:
     """Dict bien formé quand la REV est indéfinie (n=0, pas de gel, tout gel)."""
     A = int(np.asarray(alphas).size)
     return {

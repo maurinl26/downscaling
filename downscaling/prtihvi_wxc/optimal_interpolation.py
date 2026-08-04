@@ -372,21 +372,37 @@ def _oi_solve(bg, glat, glon, gelev, olat, olon, oelev, oval, sigma_b, sigma_o, 
     innov = np.asarray(oval, float) - Hxb
     dss = (ox[:, None] - ox[None, :]) ** 2 + (oy[:, None] - oy[None, :]) ** 2
     Coo = sigma_b**2 * np.exp(-dss / (2 * L_h_km**2)) * np.exp(
-        -(oz[:, None] - oz[None, :]) ** 2 / (2 * L_z_m**2)
+        -((oz[:, None] - oz[None, :]) ** 2) / (2 * L_z_m**2)
     ) + sigma_o**2 * np.eye(len(oval))
     w = np.linalg.solve(Coo, innov)
     dgs = (gx[:, None] - ox[None, :]) ** 2 + (gy[:, None] - oy[None, :]) ** 2
-    Cgo = sigma_b**2 * np.exp(-dgs / (2 * L_h_km**2)) * np.exp(
-        -(gz[:, None] - oz[None, :]) ** 2 / (2 * L_z_m**2)
+    Cgo = (
+        sigma_b**2
+        * np.exp(-dgs / (2 * L_h_km**2))
+        * np.exp(-((gz[:, None] - oz[None, :]) ** 2) / (2 * L_z_m**2))
     )
     return (Cgo @ w).reshape(bg.shape), w, Hxb
 
 
-def terrain_aware_oi(bg, glat, glon, gelev, olat, olon, oelev, oval, *,
-                     sigma_b=1.5, sigma_o=0.8, L_h_km=15.0, L_z_m=150.0):
+def terrain_aware_oi(
+    bg,
+    glat,
+    glon,
+    gelev,
+    olat,
+    olon,
+    oelev,
+    oval,
+    *,
+    sigma_b=1.5,
+    sigma_o=0.8,
+    L_h_km=15.0,
+    L_z_m=150.0,
+):
     """Champ analysé = background + incrément OI terrain-aware (numpy 2D)."""
-    incr, _, _ = _oi_solve(bg, glat, glon, gelev, olat, olon, oelev, oval,
-                           sigma_b, sigma_o, L_h_km, L_z_m)
+    incr, _, _ = _oi_solve(
+        bg, glat, glon, gelev, olat, olon, oelev, oval, sigma_b, sigma_o, L_h_km, L_z_m
+    )
     return bg + incr
 
 
@@ -401,9 +417,18 @@ def leave_one_out_stations(bg, glat, glon, gelev, olat, olon, oelev, oval, **kw)
     idx_all = np.arange(n)
     for i in range(n):
         j = np.delete(idx_all, i)
-        analysed = terrain_aware_oi(bg, glat, glon, gelev,
-                                    np.asarray(olat)[j], np.asarray(olon)[j],
-                                    np.asarray(oelev)[j], np.asarray(oval)[j], **kw)
-        out[i] = RegularGridInterpolator((glat, glon), analysed, bounds_error=False,
-                                         fill_value=None)([[olat[i], olon[i]]])[0]
+        analysed = terrain_aware_oi(
+            bg,
+            glat,
+            glon,
+            gelev,
+            np.asarray(olat)[j],
+            np.asarray(olon)[j],
+            np.asarray(oelev)[j],
+            np.asarray(oval)[j],
+            **kw,
+        )
+        out[i] = RegularGridInterpolator(
+            (glat, glon), analysed, bounds_error=False, fill_value=None
+        )([[olat[i], olon[i]]])[0]
     return out

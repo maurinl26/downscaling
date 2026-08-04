@@ -13,6 +13,21 @@ import xarray as xr
 
 K0 = 273.15
 
+# CI: `uv sync --extra statistical` (sans extra dl) => torch absent. Les tests DL
+# importent torch à la collecte => on les ignore proprement quand torch manque.
+import importlib.util as _ilu  # noqa: E402
+
+if _ilu.find_spec("torch") is None:
+    collect_ignore_glob = [
+        "test_clamp_bound.py",
+        "test_cerra_provider.py",
+        "test_lightning*.py",
+        "test_lot_c_*.py",
+        "test_karpos_sr_*.py",
+        "test_radome_loader.py",
+        "test_unet_calibration.py",
+    ]
+
 
 def daily_series(values, start="2020-01-01", name="t", extra_dims=None):
     """DataArray 1-D (time) ou (time, y, x) à pas journalier.

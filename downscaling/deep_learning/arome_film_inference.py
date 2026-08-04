@@ -140,7 +140,9 @@ def _open_zarr(uri: str) -> xr.Dataset:
         import s3fs
 
         fs = s3fs.S3FileSystem(client_kwargs={"endpoint_url": _s3_endpoint()})
-        return xr.open_zarr(s3fs.S3Map(root=_normalize_s3(uri)[len("s3://") :], s3=fs), consolidated=False)
+        return xr.open_zarr(
+            s3fs.S3Map(root=_normalize_s3(uri)[len("s3://") :], s3=fs), consolidated=False
+        )
     return xr.open_zarr(uri)
 
 
@@ -186,8 +188,13 @@ def load_karpos_sr_module(
     for the KarposSR sparse-calibration model.
     """
     model = build_model(
-        "unet", met_in_ch=1, dem_in_ch=dem_in_ch, base_ch=base_ch, n_levels=n_levels,
-        use_film=True, cond_dim=0,
+        "unet",
+        met_in_ch=1,
+        dem_in_ch=dem_in_ch,
+        base_ch=base_ch,
+        n_levels=n_levels,
+        use_film=True,
+        cond_dim=0,
     )
     lit = UNetSparseCalibrationModule.load_from_checkpoint(
         checkpoint, model=model, map_location=device
@@ -196,7 +203,11 @@ def load_karpos_sr_module(
     lit.to(device)
     log.info(
         "KarposSR checkpoint loaded: %s (target_mode=%s, reduce=%s, clamp=%s, denorm=%s)",
-        checkpoint, lit.target_mode, lit.reduce, lit.clamp, lit.denorm,
+        checkpoint,
+        lit.target_mode,
+        lit.reduce,
+        lit.clamp,
+        lit.denorm,
     )
     return lit
 
@@ -240,9 +251,13 @@ def group_arome_nights(
     lonname = "longitude" if "longitude" in ds.coords else "lon"
     ds = ds.rename({latname: "latitude", lonname: "longitude"}) if latname != "latitude" else ds
     # Crop to DEM extent ± margin (robust to ascending/descending coords).
-    ds = ds.sortby("latitude").sortby("longitude").sel(
-        latitude=slice(float(dem_lat.min()) - margin, float(dem_lat.max()) + margin),
-        longitude=slice(float(dem_lon.min()) - margin, float(dem_lon.max()) + margin),
+    ds = (
+        ds.sortby("latitude")
+        .sortby("longitude")
+        .sel(
+            latitude=slice(float(dem_lat.min()) - margin, float(dem_lat.max()) + margin),
+            longitude=slice(float(dem_lon.min()) - margin, float(dem_lon.max()) + margin),
+        )
     )
     if ds.sizes.get("latitude", 0) < 2 or ds.sizes.get("longitude", 0) < 2:
         raise ValueError(
@@ -344,7 +359,10 @@ def write_canonical(ds: xr.Dataset, zarr_uri: str, *, source: str, source_versio
         from backtest.api.zarr_writer import write_canonical_zarr  # type: ignore
 
         manifest = write_canonical_zarr(
-            ds, zarr_uri, source=source, source_version=source_version,
+            ds,
+            zarr_uri,
+            source=source,
+            source_version=source_version,
             extra_attrs={"lot": "C", "model": "unet-film-sparse-calibration"},
         )
         log.info("Wrote via authoritative write_canonical_zarr (manifest parity).")
@@ -378,16 +396,42 @@ def write_canonical(ds: xr.Dataset, zarr_uri: str, *, source: str, source_versio
 # CLI
 # ---------------------------------------------------------------------------
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="AROME → FiLM KarposSR downscaling → canonical Tmin zarr")
-    p.add_argument("--arome", required=True, help="AROME run zarr (s3://karpos-forecasts/arome/<run>.zarr or local)")
-    p.add_argument("--dem", required=True, help="Terrain-attribute DEM NetCDF aligned on the FiLM grid (SVF DEM)")
-    p.add_argument("--checkpoint", required=True, help="KarposSR Lightning .ckpt (checkpoints/multiyear_<year>/<year>-best.ckpt)")
-    p.add_argument("--out", required=True, help="Output root (s3://karpos-downscaling/karpos_sr or local dir)")
+    p = argparse.ArgumentParser(
+        description="AROME → FiLM KarposSR downscaling → canonical Tmin zarr"
+    )
+    p.add_argument(
+        "--arome",
+        required=True,
+        help="AROME run zarr (s3://karpos-forecasts/arome/<run>.zarr or local)",
+    )
+    p.add_argument(
+        "--dem",
+        required=True,
+        help="Terrain-attribute DEM NetCDF aligned on the FiLM grid (SVF DEM)",
+    )
+    p.add_argument(
+        "--checkpoint",
+        required=True,
+        help="KarposSR Lightning .ckpt (checkpoints/multiyear_<year>/<year>-best.ckpt)",
+    )
+    p.add_argument(
+        "--out", required=True, help="Output root (s3://karpos-downscaling/karpos_sr or local dir)"
+    )
     p.add_argument("--run-id", required=True, help="Run identifier → <out>/<run-id>.zarr")
-    p.add_argument("--reduce", choices=("min", "mean", "snapshot"), default="min",
-                   help="Hourly→night reduction of AROME T2m. See input-semantics caveat.")
-    p.add_argument("--night-hours", type=int, nargs=2, default=[18, 8], metavar=("START", "END"),
-                   help="Night window in UTC hours (default 18→08).")
+    p.add_argument(
+        "--reduce",
+        choices=("min", "mean", "snapshot"),
+        default="min",
+        help="Hourly→night reduction of AROME T2m. See input-semantics caveat.",
+    )
+    p.add_argument(
+        "--night-hours",
+        type=int,
+        nargs=2,
+        default=[18, 8],
+        metavar=("START", "END"),
+        help="Night window in UTC hours (default 18→08).",
+    )
     p.add_argument("--base-ch", type=int, default=32)
     p.add_argument("--n-levels", type=int, default=3)
     p.add_argument("--device", default="auto", choices=("auto", "cuda", "mps", "cpu"))
@@ -420,14 +464,20 @@ def main() -> int:
     log.info("DEM: %d channels %s, grid %dx%d", len(dem_vars), dem_vars, len(lat), len(lon))
 
     lit = load_karpos_sr_module(
-        args.checkpoint, dem_in_ch=len(dem_vars), base_ch=args.base_ch,
-        n_levels=args.n_levels, device=device,
+        args.checkpoint,
+        dem_in_ch=len(dem_vars),
+        base_ch=args.base_ch,
+        n_levels=args.n_levels,
+        device=device,
     )
 
     ds_arome = _open_zarr(args.arome)
     nights = group_arome_nights(
-        ds_arome, dem_lat=lat, dem_lon=lon,
-        night_hours=tuple(args.night_hours), reduce=args.reduce,
+        ds_arome,
+        dem_lat=lat,
+        dem_lon=lon,
+        night_hours=tuple(args.night_hours),
+        reduce=args.reduce,
     )
     if not nights:
         log.error("No forecast nights extracted from AROME run — aborting.")
@@ -446,7 +496,16 @@ def main() -> int:
     sha, dirty = _git_sha()
     meta = {
         "run_id": args.run_id,
-        "command": " ".join(["uv", "run", "python", "-m", "downscaling.deep_learning.arome_film_inference", *sys.argv[1:]]),
+        "command": " ".join(
+            [
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "downscaling.deep_learning.arome_film_inference",
+                *sys.argv[1:],
+            ]
+        ),
         "git_sha": sha,
         "git_dirty": dirty,
         "checkpoint": str(args.checkpoint),
@@ -472,7 +531,9 @@ def main() -> int:
     if _is_remote(meta_uri):
         import fsspec
 
-        with fsspec.open(_normalize_s3(meta_uri), "w", client_kwargs={"endpoint_url": _s3_endpoint()}) as f:
+        with fsspec.open(
+            _normalize_s3(meta_uri), "w", client_kwargs={"endpoint_url": _s3_endpoint()}
+        ) as f:
             f.write(json.dumps(meta, indent=2))
     else:
         Path(meta_uri).parent.mkdir(parents=True, exist_ok=True)
