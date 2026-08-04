@@ -432,3 +432,19 @@ def leave_one_out_stations(bg, glat, glon, gelev, olat, olon, oelev, oval, **kw)
             (glat, glon), analysed, bounds_error=False, fill_value=None
         )([[olat[i], olon[i]]])[0]
     return out
+
+
+def smooth_analysis(field, glat, glon, *, sigma_km=1.5):
+    """Post-traitement : lissage gaussien LÉGER du champ analysé (issue #103).
+
+    Retire le *blocking* sous-maille hérité du background grossier (CERRA 5,5 km
+    bilinéaire → 1 km) et le *banding* d'altitude du terme vertical, SANS toucher
+    la structure de poche froide (~10 km) : `sigma_km` (défaut 1,5) reste petit
+    devant l'échelle du signal → pas de perte de skill (à vérifier en LOO).
+    Cohérence de méthode / crédibilité visuelle (pas de discontinuité erratique).
+    """
+    from scipy.ndimage import gaussian_filter
+
+    res_km = float(np.mean(np.abs(np.diff(glat)))) * 111.0
+    sig = max(sigma_km / max(res_km, 1e-6), 0.0)
+    return gaussian_filter(np.asarray(field, dtype=float), sigma=sig, mode="nearest")
