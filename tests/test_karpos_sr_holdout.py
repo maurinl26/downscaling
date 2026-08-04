@@ -140,9 +140,7 @@ def test_empty_sample_guard_skips_without_nan():
 
 
 def test_fast_dev_run_holdout():
-    lit = UNetSparseCalibrationModule(
-        _toy_unet(), lr=1e-3, max_epochs=2, kelvin_to_celsius=False
-    )
+    lit = UNetSparseCalibrationModule(_toy_unet(), lr=1e-3, max_epochs=2, kelvin_to_celsius=False)
     dm = UNetSparseDataModule(_HoldoutDataset(), num_workers=0)
     trainer = pl.Trainer(
         fast_dev_run=True,

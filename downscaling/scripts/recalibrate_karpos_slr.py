@@ -66,11 +66,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 from downscaling.prtihvi_wxc.sencrop import (
     load_stations_catalog,
     load_timeseries,
 )
-from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 from downscaling.utils.io import describe, is_remote, make_zarr_store, write_sidecar
 
 log = logging.getLogger("recalibrate_karpos_slr")

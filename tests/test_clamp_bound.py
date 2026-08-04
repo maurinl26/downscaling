@@ -21,7 +21,7 @@ class _BigModel(nn.Module):
 
 def _batch(h, w, seed=0):
     torch.manual_seed(seed)
-    cerra = torch.rand(h, w) * 10 - 5   # [-5, 5] °C
+    cerra = torch.rand(h, w) * 10 - 5  # [-5, 5] °C
     surfex = torch.rand(h, w) * 10 - 8  # [-8, 2] °C
     x_env = torch.stack([cerra, surfex], 0).unsqueeze(0)  # (1, 2, H, W)
     batch = {
@@ -36,8 +36,9 @@ def _batch(h, w, seed=0):
 
 def test_output_strictly_inside_envelope():
     h, w = 16, 12
-    mod = UNetSparseCalibrationModule(_BigModel(h, w), clamp=True, clamp_margin=0.0,
-                                      kelvin_to_celsius=False)
+    mod = UNetSparseCalibrationModule(
+        _BigModel(h, w), clamp=True, clamp_margin=0.0, kelvin_to_celsius=False
+    )
     batch, lo, hi = _batch(h, w)
     for _ in range(100):  # sortie CNN aléatoire à chaque passe
         pred = mod._predict_target(batch)[0, 0]
@@ -48,8 +49,9 @@ def test_output_strictly_inside_envelope():
 def test_margin_widens_envelope():
     h, w = 8, 8
     m = 1.5
-    mod = UNetSparseCalibrationModule(_BigModel(h, w), clamp=True, clamp_margin=m,
-                                      kelvin_to_celsius=False)
+    mod = UNetSparseCalibrationModule(
+        _BigModel(h, w), clamp=True, clamp_margin=m, kelvin_to_celsius=False
+    )
     batch, lo, hi = _batch(h, w, seed=3)
     pred = mod._predict_target(batch)[0, 0]
     assert bool((pred >= lo - m - 1e-4).all())

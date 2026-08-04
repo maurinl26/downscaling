@@ -23,9 +23,9 @@ import numpy as np
 import xarray as xr
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 from downscaling.paths import CONFIG_DIR
 from downscaling.shared.indices import compute_all_indices
-from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 
 log = logging.getLogger(__name__)
 

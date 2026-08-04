@@ -13,8 +13,8 @@ import numpy as np
 import xarray as xr
 
 from downscaling.config import load_config
-from downscaling.shared.indices import compute_all_indices
 from downscaling.karpos_slr.pipeline import KarposSLRPipeline
+from downscaling.shared.indices import compute_all_indices
 
 
 def create_dummy_dem(domain_cfg, out_path="dummy_dem.nc"):

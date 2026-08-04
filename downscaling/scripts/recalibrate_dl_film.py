@@ -259,10 +259,13 @@ class BulkSencropDataset(Dataset):
                 rlat, rlon, ralt, rtn = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
                 if self.holdout_bbox is not None and self.role == "train":
                     la0, la1, lo0, lo1 = self.holdout_bbox
-                    outside = ~(
-                        (rlat >= la0) & (rlat <= la1) & (rlon >= lo0) & (rlon <= lo1)
+                    outside = ~((rlat >= la0) & (rlat <= la1) & (rlon >= lo0) & (rlon <= lo1))
+                    rlat, rlon, ralt, rtn = (
+                        rlat[outside],
+                        rlon[outside],
+                        ralt[outside],
+                        rtn[outside],
                     )
-                    rlat, rlon, ralt, rtn = rlat[outside], rlon[outside], ralt[outside], rtn[outside]
                 if rtn.size:
                     rrow, rcol = assign_to_grid(rlat, rlon, self.lat_grid, self.lon_grid)
                     rdz = elevation_offset(ralt, rrow, rcol, self.elevation_grid)
@@ -460,7 +463,7 @@ class _AnnealState:
         self.alpha = float(alpha)
 
 
-def _build_annealed_provider(nm_path, oi_path, dem_path, state: "_AnnealState", orog=None):
+def _build_annealed_provider(nm_path, oi_path, dem_path, state: _AnnealState, orog=None):
     """Provider curriculum *increment-annealing* (issue #99).
 
     ``x_met = background + alpha·(OI − background)`` où ``alpha`` (dans ``state``,
@@ -513,7 +516,12 @@ def _build_surfex_provider(
     _, idx = tree.query(np.column_stack([LO2.ravel(), LA2.ravel()]))
     log.info(
         "SURFEX envelope: %s var=%s (%d pas), régrid NN %s → grille fine (%d, %d)",
-        Path(local).name, var, T.shape[0], tuple(LAT.shape), H_fine, W_fine,
+        Path(local).name,
+        var,
+        T.shape[0],
+        tuple(LAT.shape),
+        H_fine,
+        W_fine,
     )
 
     def surfex_provider(d: str) -> np.ndarray:
@@ -621,8 +629,15 @@ def main() -> int:
         "--cerra-atm = background ; x_met = bg + alpha·(OI−bg), alpha recuit alpha0→alphaT. "
         "Amortit l'assimilation → inférence obs-free (alpha=0).",
     )
-    p.add_argument("--anneal-alpha0", type=float, default=1.0, help="[anneal] alpha initial (1.0 = analyse OI).")
-    p.add_argument("--anneal-alphaT", type=float, default=0.0, help="[anneal] alpha final (0.0 = obs-free).")
+    p.add_argument(
+        "--anneal-alpha0",
+        type=float,
+        default=1.0,
+        help="[anneal] alpha initial (1.0 = analyse OI).",
+    )
+    p.add_argument(
+        "--anneal-alphaT", type=float, default=0.0, help="[anneal] alpha final (0.0 = obs-free)."
+    )
     p.add_argument(
         "--anneal-epochs",
         type=int,
@@ -759,8 +774,7 @@ def main() -> int:
             args.cerra_atm, args.anneal_oi, args.dem, anneal_state, orog=orog_for_fg
         )
         log.info(
-            "Increment-annealing ACTIF (issue #99) : alpha %.2f→%.2f sur %d epochs "
-            "(bg=%s, OI=%s)",
+            "Increment-annealing ACTIF (issue #99) : alpha %.2f→%.2f sur %d epochs (bg=%s, OI=%s)",
             args.anneal_alpha0,
             args.anneal_alphaT,
             args.anneal_epochs or args.epochs,
@@ -895,7 +909,9 @@ def main() -> int:
         log.info(
             "Target : residual (first-guess=%s + résidu appris) — plancher %s",
             args.first_guess,
-            "≈ KarposSLR lapse (~1,6°C)" if args.first_guess == "lapse" else "CERRA bilinéaire (~2,8°C)",
+            "≈ KarposSLR lapse (~1,6°C)"
+            if args.first_guess == "lapse"
+            else "CERRA bilinéaire (~2,8°C)",
         )
     else:
         log.info("Target : raw Tmin (baseline)")

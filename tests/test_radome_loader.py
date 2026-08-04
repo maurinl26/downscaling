@@ -24,13 +24,17 @@ def _write_radome_fixture(tmp_path):
     sdir.mkdir(parents=True)
     # CSV MF : séparateur ';', décimales virgule ; TN vide le 05 → fallback TNSOL.
     (sdir / "2023_frost.csv").write_text(
-        "POSTE;DATE;TN;QTN;TNSOL\n"
-        "26050001;20230404;-2,2;1;-4,0\n"
-        "26050001;20230405;;1;-3,1\n"
+        "POSTE;DATE;TN;QTN;TNSOL\n26050001;20230404;-2,2;1;-4,0\n26050001;20230405;;1;-3,1\n"
     )
     cat = tmp_path / "catalogue_2023.csv"
     pd.DataFrame(
-        {"station_id": [26050001], "name": ["BESIGNAN"], "lat": [44.32], "lon": [5.31], "alt_m": [1445]}
+        {
+            "station_id": [26050001],
+            "name": ["BESIGNAN"],
+            "lat": [44.32],
+            "lon": [5.31],
+            "alt_m": [1445],
+        }
     ).to_csv(cat, index=False)
     return str(obs_root), str(cat)
 

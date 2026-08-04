@@ -64,7 +64,6 @@ from downscaling.prtihvi_wxc.sencrop import (
     load_stations_catalog,
     load_timeseries,
 )
-from downscaling.scripts.economic_value import relative_economic_value
 
 log = logging.getLogger("analyze_stat")
 
@@ -524,7 +523,12 @@ def _analyze_year_loo(
         ]
         log.info(
             "station-bbox lat[%.3f,%.3f] lon[%.3f,%.3f] : %d → %d stations",
-            la0, la1, lo0, lo1, n_before, len(stations_df),
+            la0,
+            la1,
+            lo0,
+            lo1,
+            n_before,
+            len(stations_df),
         )
     bucket_ids = stations_df["bucket_id"].astype(int).tolist()
     ts = load_timeseries(years=[year], root=sencrop_root, station_only=True, bucket_ids=bucket_ids)
@@ -756,8 +760,14 @@ def _run_loo(zarrs: list[str], args: argparse.Namespace) -> int:
                 for mode, md in s["modes"].items():
                     a = md["aggregate"]
                     tbl.add_data(
-                        s["year"], mode, md["n_pairs"],
-                        a.get("POD"), a.get("FAR"), a.get("CSI"), a.get("rmse"), a.get("bias"),
+                        s["year"],
+                        mode,
+                        md["n_pairs"],
+                        a.get("POD"),
+                        a.get("FAR"),
+                        a.get("CSI"),
+                        a.get("rmse"),
+                        a.get("bias"),
                     )
                     wandb.log(
                         {

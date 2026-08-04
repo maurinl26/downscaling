@@ -51,6 +51,7 @@ def load_radome_targets(obs_root: str, catalogue_path: str) -> RadomeTargets:
             (chemin local ou URI ``s3://``).
         catalogue_path: CSV avec colonnes ``station_id, lat, lon, alt_m``.
     """
+
     def _norm_id(x) -> str:
         """Normalise un id station (drop zéros initiaux : path '05126001' ↔ POSTE 5126001)."""
         s = str(x).strip()
