@@ -105,13 +105,13 @@ def main():
     def crop(F):
         return F[np.ix_(zi, zj)]
 
-    tn = TwoSlopeNorm(vmin=-9, vcenter=0, vmax=3)
+    tn = TwoSlopeNorm(vmin=-9, vcenter=-2.2, vmax=3)  # pivot blanc = seuil gel −2,2 °C
     tm = "RdBu_r"
 
     fig, ax = plt.subplots(2, 2, figsize=(12.5, 11), constrained_layout=True)
     imE = ax[0, 0].imshow(crop(elev), origin="lower", extent=zext, cmap="terrain", aspect="auto")
     ax[0, 0].scatter(slo, sla, c="k", s=14, zorder=5)
-    ax[0, 0].set_title("① Terrain / MNT — OÙ le froid s'accumule", fontsize=11)
+    ax[0, 0].set_title("① Terrain / MNT (altitude)", fontsize=11)
     fig.colorbar(imE, ax=ax[0, 0], shrink=0.8, label="altitude (m)")
     ax[0, 1].contour(
         zLON, zLAT, zel, levels=[400, 600, 800, 1000, 1200], colors="0.6", linewidths=0.4
@@ -121,7 +121,7 @@ def main():
     )
     ax[0, 1].set_xlim(zo)
     ax[0, 1].set_ylim(zl)
-    ax[0, 1].set_title("② Stations Sencrop seules — COMBIEN il fait froid", fontsize=11)
+    ax[0, 1].set_title("② Stations Sencrop (Tmin observé)", fontsize=11)
     fig.colorbar(imS, ax=ax[0, 1], shrink=0.8, label="Tmin obs (°C)")
     imB = ax[1, 0].imshow(crop(bg), origin="lower", extent=zext, cmap=tm, norm=tn, aspect="auto")
     ax[1, 0].contour(
@@ -130,7 +130,7 @@ def main():
     ax[1, 0].scatter(
         slo, sla, c=sv, cmap=tm, norm=tn, s=55, edgecolors="k", linewidths=0.5, zorder=5
     )
-    ax[1, 0].set_title("③ CERRA 5,5 km (background) — rate les poches froides", fontsize=11)
+    ax[1, 0].set_title("③ CERRA 5,5 km (background)", fontsize=11)
     imO = ax[1, 1].imshow(crop(oi), origin="lower", extent=zext, cmap=tm, norm=tn, aspect="auto")
     ax[1, 1].contour(
         zLON, zLAT, zel, levels=[400, 600, 800, 1000, 1200], colors="k", linewidths=0.3, alpha=0.3
@@ -138,25 +138,31 @@ def main():
     ax[1, 1].scatter(
         slo, sla, c=sv, cmap=tm, norm=tn, s=55, edgecolors="k", linewidths=0.5, zorder=5
     )
-    ax[1, 1].set_title("④ CERRA-OI PRODUCTION (assimilée + lissée) = ① × ②", fontsize=11)
-    fig.colorbar(imO, ax=ax[1, :], shrink=0.6, label="Tmin nocturne (°C)", location="right")
+    ax[1, 1].set_title("④ CERRA-OI (analyse assimilée)", fontsize=11)
+    cb = fig.colorbar(
+        imO,
+        ax=ax[1, :],
+        shrink=0.6,
+        label="Tmin nocturne (°C) · pivot blanc = seuil gel −2,2 °C",
+        location="right",
+    )
+    cb.ax.axhline((-2.2 - (-9)) / (3 - (-9)), color="k", lw=1.0)  # trait au seuil de gel
     for a in (ax[0, 0], ax[1, 0], ax[1, 1]):
         a.set_xticks([])
         a.set_yticks([])
     ax[0, 1].set_xticks([])
     ax[0, 1].set_yticks([])
     fig.suptitle(
-        "Décomposition des contributions — méthode de production (gel 14→15 fév 2025, Baronnies)\n"
-        "le terrain dit OÙ, les stations DISENT COMBIEN, l'assimilation OI fusionne les deux",
+        "Décomposition des contributions — nuit de gel 14→15 février 2025 (Baronnies)\n"
+        "points = stations Sencrop · contours = altitude · pivot couleur = seuil gel −2,2 °C",
         fontsize=13,
         fontweight="bold",
     )
     fig.text(
         0.5,
         0.005,
-        "Pipeline de production : CERRA 5,5 km (background) → downscaling U-Net léger (structure) → "
-        "assimilation OI terrain-aware Sencrop (H×V) → lissage post-traitement (#103, σ≈1,5 km). "
-        "Détection portée par l'assimilation ; U-Net = structure fine (§5.2).",
+        "Pipeline : CERRA 5,5 km (background) → downscaling U-Net → "
+        "assimilation OI terrain-aware Sencrop (décorrélation H×V) → lissage post-traitement (σ≈1,5 km).",
         ha="center",
         fontsize=8.5,
         style="italic",
