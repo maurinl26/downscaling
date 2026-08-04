@@ -453,6 +453,34 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path, cerra_orog_path: st
     return provider, ds_cerra, ds_dem, fg_dz
 
 
+class _AnnealState:
+    """Conteneur mutable de ``alpha`` partagé entre le provider et le callback."""
+
+    def __init__(self, alpha: float = 1.0):
+        self.alpha = float(alpha)
+
+
+def _build_annealed_provider(nm_path, oi_path, dem_path, state: "_AnnealState", orog=None):
+    """Provider curriculum *increment-annealing* (issue #99).
+
+    ``x_met = background + alpha·(OI − background)`` où ``alpha`` (dans ``state``,
+    mis à jour par époque via le callback) recuit 1→0 : l'entrée passe d'ancrée-obs
+    (analyse OI) à obs-free (background brut), forçant le réseau à AMORTIR l'incrément
+    d'assimilation dans ses poids → inférence obs-free (alpha=0) en J-1, ou obs-ancrée
+    (alpha>0) pour les rapports. Les deux fichiers partagent la grille/DEM.
+    """
+    p_nm, ds_nm, ds_dem, fg_dz = _build_coarse_provider(nm_path, dem_path, orog)
+    p_oi, _, _, _ = _build_coarse_provider(oi_path, dem_path, orog)
+
+    def provider(d: str):
+        xm_nm, xd = p_nm(d)
+        xm_oi, _ = p_oi(d)
+        a = float(state.alpha)
+        return xm_nm + a * (xm_oi - xm_nm), xd
+
+    return provider, ds_nm, ds_dem, fg_dz
+
+
 def _build_surfex_provider(
     surfex_path: str, lat_grid: np.ndarray, lon_grid: np.ndarray, var: str = "T2M"
 ):
@@ -578,6 +606,30 @@ def main() -> int:
         "(misses cost ×9 false alarms). Issue #5.",
     )
     p.add_argument(
+        "--dispersion-weight",
+        type=float,
+        default=0.0,
+        help="Poids lambda_disp du terme variance-matching L_disp = |std(pred@stations) "
+        "- std(obs)| (unité K). >0 combat la régression-vers-la-moyenne (sous-dispersion) "
+        "en alignant la dispersion prédite sur l'observée. Compromis calibration/RMSE.",
+    )
+    p.add_argument(
+        "--anneal-oi",
+        type=Path,
+        default=None,
+        help="Curriculum increment-annealing (issue #99) : surface assimilée OI. "
+        "--cerra-atm = background ; x_met = bg + alpha·(OI−bg), alpha recuit alpha0→alphaT. "
+        "Amortit l'assimilation → inférence obs-free (alpha=0).",
+    )
+    p.add_argument("--anneal-alpha0", type=float, default=1.0, help="[anneal] alpha initial (1.0 = analyse OI).")
+    p.add_argument("--anneal-alphaT", type=float, default=0.0, help="[anneal] alpha final (0.0 = obs-free).")
+    p.add_argument(
+        "--anneal-epochs",
+        type=int,
+        default=None,
+        help="[anneal] nb epochs du recuit alpha0→alphaT (défaut = --epochs).",
+    )
+    p.add_argument(
         "--target-mode",
         choices=("raw", "residual"),
         default="raw",
@@ -700,9 +752,25 @@ def main() -> int:
     # ---- Coarse provider + dates --------------------------------------------
     # dz (first-guess lapse) chargé seulement en mode lapse.
     orog_for_fg = args.cerra_orog if args.first_guess == "lapse" else None
-    provider, ds_cerra, ds_dem, fg_dz = _build_coarse_provider(
-        args.cerra_atm, args.dem, cerra_orog_path=orog_for_fg
-    )
+    anneal_state = None
+    if args.anneal_oi is not None:
+        anneal_state = _AnnealState(alpha=args.anneal_alpha0)
+        provider, ds_cerra, ds_dem, fg_dz = _build_annealed_provider(
+            args.cerra_atm, args.anneal_oi, args.dem, anneal_state, orog=orog_for_fg
+        )
+        log.info(
+            "Increment-annealing ACTIF (issue #99) : alpha %.2f→%.2f sur %d epochs "
+            "(bg=%s, OI=%s)",
+            args.anneal_alpha0,
+            args.anneal_alphaT,
+            args.anneal_epochs or args.epochs,
+            args.cerra_atm.name,
+            args.anneal_oi.name,
+        )
+    else:
+        provider, ds_cerra, ds_dem, fg_dz = _build_coarse_provider(
+            args.cerra_atm, args.dem, cerra_orog_path=orog_for_fg
+        )
     dates = _dates_in_year(ds_cerra, args.year)
     log.info("Year=%d, %d candidate dates", args.year, len(dates))
 
@@ -802,6 +870,7 @@ def main() -> int:
         warmup_epochs=2,
         max_epochs=args.epochs,
         loss_quantile=args.loss_quantile,
+        loss_weights={"disp": args.dispersion_weight},
         kelvin_to_celsius=False,  # CERRA atm is already °C in our pipeline
         elevation_aware=True,
         hourly=False,
@@ -858,6 +927,21 @@ def main() -> int:
             args.early_stopping_patience,
             args.es_min_delta,
         )
+
+    if anneal_state is not None:
+        _n = args.anneal_epochs or args.epochs
+        _a0, _aT = args.anneal_alpha0, args.anneal_alphaT
+
+        class _IncrementAnneal(pl.Callback):
+            """Recuit alpha alpha0→alphaT sur _n epochs (linéaire), lu par le provider."""
+
+            def on_train_epoch_start(self, trainer, pl_module):
+                e = trainer.current_epoch
+                frac = 1.0 if _n <= 1 else min(1.0, e / max(1, _n - 1))
+                anneal_state.alpha = _a0 + (_aT - _a0) * frac
+                log.info("increment-anneal: epoch %d alpha=%.3f", e, anneal_state.alpha)
+
+        callbacks.append(_IncrementAnneal())
 
     logger = False
     wandb_run_url = None
