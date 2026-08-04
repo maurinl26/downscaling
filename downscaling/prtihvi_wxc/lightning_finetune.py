@@ -51,11 +51,13 @@ class SparseSupervisedLoss(nn.Module):
         lambda_tv: float = 0.01,
         lambda_smooth: float = 0.001,
         loss_quantile: float | None = None,
+        lambda_disp: float = 0.0,
     ):
         super().__init__()
         self.lambda_obs = lambda_obs
         self.lambda_tv = lambda_tv
         self.lambda_smooth = lambda_smooth
+        self.lambda_disp = lambda_disp
         if loss_quantile is not None and not (0.0 < loss_quantile < 1.0):
             raise ValueError(f"loss_quantile must be in (0,1), got {loss_quantile}")
         self.loss_quantile = loss_quantile
@@ -103,12 +105,26 @@ class SparseSupervisedLoss(nn.Module):
         )
         l_smooth = torch.mean(laplacian**2)
 
-        loss = self.lambda_obs * l_obs + self.lambda_tv * l_tv + self.lambda_smooth * l_smooth
+        # L_disp : variance-matching (anti-régression-vers-la-moyenne). Aligne la
+        # dispersion prédite sur la dispersion observée aux stations, via l'écart-type
+        # (même unité K que le RMSE → lambda_disp interprétable). Actif si >0 et ≥2 obs.
+        if self.lambda_disp > 0.0 and obs_tmin.numel() > 1:
+            l_disp = torch.abs(pred_at_obs.std(unbiased=False) - obs_tmin.std(unbiased=False))
+        else:
+            l_disp = torch.zeros((), device=pred.device, dtype=pred.dtype)
+
+        loss = (
+            self.lambda_obs * l_obs
+            + self.lambda_tv * l_tv
+            + self.lambda_smooth * l_smooth
+            + self.lambda_disp * l_disp
+        )
         return loss, {
             "loss_total": loss.item(),
             "loss_obs": l_obs.item(),
             "loss_tv": l_tv.item(),
             "loss_smooth": l_smooth.item(),
+            "loss_disp": l_disp.item(),
             "rmse_obs": rmse_obs.item(),
         }
 
