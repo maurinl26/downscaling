@@ -83,6 +83,8 @@ Parmi les variantes explorées, la **configuration de production** est explicite
 
 Ne relèvent **pas** de la production, écartés par la mesure : le conditionnement synoptique du FiLM (inerte et nuisible), les backbones à attention (surdimensionnés pour la densité d'observations disponible, ~49 stations), l'assimilation SURFEX offline (n'ajoute rien sur le background CERRA), l'inflation de variance par la loss (compromis calibration/RMSE défavorable). Principe directeur : **la méthode ne dépasse pas la dimensionnalité que les données peuvent superviser.**
 
+**Pipeline complet (Fig. 1).** La chaîne de production, illustrée sur la nuit de gel du 15 février 2025, enchaîne dans l'ordre : ① background **CERRA 5,5 km** → ② **downscaling U-Net léger** (structure spatiale fine, §3.1) → ③ **assimilation OI terrain-aware Sencrop** (décorrélation H×V, §3.2) → ④ **lissage post-traitement final** (`σ ≈ 1,5 km`, §3.2, continuité C⁰ sans perte de skill). La **détection** est portée par l'étape ③ (l'assimilation), la **structure fine** par l'étape ② (le réseau), la **cohérence visuelle** par l'étape ④ (le lissage). C'est la méthode extensive à considérer comme le produit.
+
 ## 4. Protocole de validation
 
 - **Juge** : **CSI au seuil agronomique −2,2 °C**, en **leave-one-station-out** (station évaluée jamais dans le calage).
@@ -136,7 +138,7 @@ Un skill ne vaut que par la décision qu'il améliore. Nous quantifions la **val
 
 ### 5.6 Figures et tables
 
-Fig. 2 (CSI par étage, LOO), Fig. 3 (biais résiduel par station avant/après, −45 %), Fig. 4 (AROME brut vs calibré — résultat-phare), Fig. 5 (REV `V(α)` et zone de valeur) sont produites (`scripts/make_gmd_figures.py`, colorblind-safe, PNG + PDF). Restent Fig. 1 (zone d'étude + stations + MNT) et les tables de stratification en LOO (#234).
+**Fig. 1** (décomposition des contributions et **méthode de production** : ① MNT × ② stations Sencrop → ③ CERRA background → ④ CERRA-OI assimilée et lissée, sur la nuit de gel 14→15 février 2025) est produite par `scripts/make_f1_decomposition.py`. Fig. 2 (CSI par étage, LOO), Fig. 3 (biais résiduel par station avant/après, −45 %), Fig. 4 (AROME brut vs calibré — résultat-phare), Fig. 5 (REV `V(α)` et zone de valeur) sont produites (`scripts/make_gmd_figures.py`), colorblind-safe, PNG + PDF. Restent les tables de stratification en LOO (#234).
 
 ## 6. Discussion
 
@@ -183,20 +185,20 @@ La détection du gel à l'échelle de la parcelle bute sur un problème d'échel
 |---|---|---|
 | Chiffres LOO honnêtes (hindcast + AROME) | ✅ persistés | figés |
 | Posthoc KarposSR opposable (#222) | ✅ | — |
-| Figures F2-F5 | ✅ #235 (faites) | Fig. 1 restante |
+| Figures F1-F5 | ✅ faites (F1 = décomposition/méthode de production, `make_f1_decomposition.py`) |
 | CERRA vs ERA5-Land **en LOO** | 🔴 #233 | 1-2 j |
 | Régimes **hors-station** | 🔴 #234 | 2-3 j |
 | Seed + `deterministic=True` | 🔴 #228 | 0,5 j |
 | Déconvolution retard capteur | 🔴 #236 | à cadrer |
 | ~~PhenoFlex z_c~~ | ✅ retiré (feature app, #232) | — |
 
-**Aucun verrou bloquant** : le corps est rédigé ; restent des recomputes LOO et Fig. 1 avant soumission.
+**Aucun verrou bloquant** : le corps est rédigé ; restent des recomputes LOO (SLR/SR baseline unifié) avant soumission ; figures F1-F5 faites.
 
 ## C. Calendrier (recadré — S31, 27/07/2026)
 
 | Étape | Charge | Cible |
 |---|---|---|
-| Recompute LOO (#233/#234) + seed (#228) + Fig. 1 | ~6-8 j | août-sept |
+| Recompute LOO (#233/#234) + seed (#228) | ~6-8 j | août-sept |
 | Co-auteurs (Ubbiali, Dalhaus) | 2-3 réunions | sept |
 | Finalisation prose + relecture interne | 5-7 j | oct |
 | Soumission GMD | 1 j | **nov 2026** |
