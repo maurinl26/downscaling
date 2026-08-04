@@ -232,7 +232,7 @@ indépendants du choix de chemin (A ou B).
 > [`methodology/canonical-input.md`](methodology/canonical-input.md)).
 > Migration AROME 1.3 km planifiée septembre 2026 ([downscaling#70](https://github.com/maurinl26/karpos-downscaling/issues/70)).
 > ERA5-Land 9 km reste utilisable comme baseline comparative (cf. tables
-> `gmd-paper-draft.md` et `lot-b-calibration-report.md`) mais n'est plus
+> `gmd-paper-draft.md` et `karpos-slr-calibration-report.md`) mais n'est plus
 > alimenté côté production.
 - **+** s'appuie sur le **socle CERRA** (cœur Karpos), pipelines déjà en place,
   pas de dépendance MERRA-2/foundation model, validable rapidement.

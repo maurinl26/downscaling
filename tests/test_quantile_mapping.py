@@ -1,6 +1,6 @@
 """Tests de la correction de biais par cartographie des quantiles.
 
-(``downscaling.statistical.quantile_mapping``)
+(``downscaling.karpos_slr.quantile_mapping``)
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from downscaling.statistical.quantile_mapping import (
+from downscaling.karpos_slr.quantile_mapping import (
     EmpiricalQuantileMapping,
     QuantileDeltaMapping,
 )

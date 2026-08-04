@@ -6,7 +6,7 @@ Once you have a working install (see [Installation](installation.md)) and
 CDS credentials, the full sequence below takes ~30 minutes on a modern
 laptop.
 
-We use the **statistical Lot B pipeline** (lapse-rate + quantile delta
+We use the **statistical KarposSLR pipeline** (lapse-rate + quantile delta
 mapping + sparse Sencrop residual correction) — it has no GPU requirement
 and is the fastest path to a first usable output.
 
@@ -66,7 +66,7 @@ For production work, replace SRTM by IGN BD ALTI 25 m if you have access.
 
 ## Step 2 — Download CERRA for the year and bounding box
 
-CERRA download uses the CDS API. For Lot B we need:
+CERRA download uses the CDS API. For KarposSLR we need:
 
 - `cerra_atm_2024.nc` — 2-meter temperature (single levels)
 - `cerra_land_2024.nc` — skin temperature (CERRA-Land), loaded for symmetry
@@ -119,7 +119,7 @@ This is the core step. It:
 6. Writes a Zarr dataset at ~1 km
 
 ```bash
-uv run python -m downscaling.scripts.recalibrate_statistical \
+uv run python -m downscaling.scripts.recalibrate_karpos_slr \
   --year 2024 \
   --cerra-atm  /tmp/karpos-quickstart/cerra-atm/cerra_atm_2024.nc \
   --cerra-land /tmp/karpos-quickstart/cerra-land/cerra_land_2024.nc \
@@ -157,7 +157,7 @@ ds.tmin_calibrated.sel(time="2024-04-08").plot(cmap="RdBu_r")
 To evaluate against in-situ observations:
 
 ```bash
-uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
+uv run python -m downscaling.scripts.analyze_karpos_slr \
   --root /tmp/karpos-quickstart/recalibrated \
   --sencrop /path/to/your/sencrop/bulk \
   --years 2024 \
@@ -182,7 +182,7 @@ or `~/.aws/credentials`):
 
 ```bash
 AWS_ENDPOINT_URL=https://s3.fr-par.scw.cloud \
-uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
+uv run python -m downscaling.scripts.analyze_karpos_slr \
   --root s3://karpos-backtest-data/recalibrated/statistical \
   --sencrop s3://karpos-backtest-data/sencrop \
   --years 2022 2023 2024 \
@@ -217,7 +217,7 @@ uv run python -m downscaling.scripts.flag_regimes \
   --out /tmp/karpos-quickstart/regimes
 
 # 3. Re-run the analyzer with regime stratification
-uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
+uv run python -m downscaling.scripts.analyze_karpos_slr \
   --root /tmp/karpos-quickstart/recalibrated \
   --sencrop /path/to/your/sencrop/bulk \
   --years 2024 \
@@ -239,6 +239,6 @@ POD/FAR/CSI/RMSE per regime, as described in
 - **DL FiLM pipeline**: see
   [user-guide / dl-film-pipeline](../user-guide/dl-film-pipeline.md).
 - **Methodology and validation**: see
-  [methodology / lot-b-calibration-report](../methodology/lot-b-calibration-report.md).
+  [methodology / karpos-slr-calibration-report](../methodology/karpos-slr-calibration-report.md).
 - **Indices for parametric insurance**: read out the Zarr nightly minimum
   and combine with the BBCH-stage thresholds (Proebsting & Mills 1978).

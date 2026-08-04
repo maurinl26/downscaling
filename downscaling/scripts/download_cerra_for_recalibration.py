@@ -178,7 +178,7 @@ def main() -> int:
     # NB: l'orographie CERRA (time-invariant) est gérée hors de ce script :
     # downloadée une fois via backtest/scripts/download_cerra.py --variable orography
     # depuis parametric_insurance, puis upload S3 Scaleway ; le pod la lit via
-    # recalibrate_statistical --cerra-orog s3://karpos-backtest-data/...
+    # recalibrate_karpos_slr --cerra-orog s3://karpos-backtest-data/...
 
     for y in years:
         for m in FROST_MONTHS:

@@ -195,7 +195,7 @@ class UNetSparseCalibrationModule(pl.LightningModule):
         - ``bilinear`` : canal météo cible (CERRA bilinéaire à 1 km, °C). Plancher
           faible (≈ valeur coarse brute, biais chaud) — le résidu part quasi de zéro.
         - ``lapse``    : + correction lapse-rate GRILLE
-          ``lapse_rate·(z_DEM_1km − z_orog_coarse_1km)`` → plancher ≈ Lot B (~1,6°C).
+          ``lapse_rate·(z_DEM_1km − z_orog_coarse_1km)`` → plancher ≈ KarposSLR (~1,6°C).
           ⚠️ Correction GRILLE (maille 1 km vs orographie coarse), DISTINCTE de la
           correction STATION↔maille (``lapse_rate·obs_dz``) faite dans la loss : deux
           ``dz`` différents, pas de double-comptage.

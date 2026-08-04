@@ -17,7 +17,7 @@ dewpoint depression).
 
 The classification is implemented in
 [`scripts/flag_regimes.py`](https://github.com/maurinl26/karpos-downscaling/blob/main/scripts/flag_regimes.py)
-and consumed by `analyze_recalibrated_statistical.py` via the `--regimes-csv`
+and consumed by `analyze_karpos_slr.py` via the `--regimes-csv`
 option, which produces stratified POD/FAR/CSI/RMSE/bias metrics per regime.
 
 This stratification is described in detail in the methodology section and in

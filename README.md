@@ -93,7 +93,7 @@ Ajouter une région = un petit `experiment/<region>.yaml` (+ `domain/` + `data/`
 **pas** une copie intégrale de la config. Les surcharges se passent en *dotlist* :
 
 ```bash
-downscaling-run experiment=drome_ardeche cluster=cloud statistical.quantile_mapping.enabled=false
+downscaling-run experiment=drome_ardeche cluster=cloud karpos_slr.quantile_mapping.enabled=false
 ```
 
 En code, `downscaling.config.load_config(overrides)` renvoie un dict « à plat »

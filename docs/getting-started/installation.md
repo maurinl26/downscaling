@@ -55,8 +55,8 @@ uv sync --extra statistical
 ```
 
 This installs the lapse-rate, quantile mapping (QDM), and RBF sparse
-calibration toolkit on CPU only. Adequate for running `recalibrate_statistical`,
-`calibrate_qdm`, `flag_regimes`, and `analyze_recalibrated_statistical`.
+calibration toolkit on CPU only. Adequate for running `recalibrate_karpos_slr`,
+`calibrate_qdm`, `flag_regimes`, and `analyze_karpos_slr`.
 
 ### Statistical + deep learning
 

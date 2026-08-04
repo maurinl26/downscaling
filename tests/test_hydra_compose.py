@@ -27,7 +27,7 @@ def test_config_dir_exists():
 def test_default_config_composes():
     cfg = _compose()
     # Les groupes attendus sont présents.
-    for group in ("domain", "data", "statistical", "dl", "indices", "cluster", "run"):
+    for group in ("domain", "data", "karpos_slr", "dl", "indices", "cluster", "run"):
         assert group in cfg, f"groupe '{group}' manquant"
 
 
@@ -36,7 +36,7 @@ def test_drome_ardeche_values():
     assert cfg.domain.nx == 118
     assert cfg.domain.ny == 167
     # Gradient mensuel : 12 valeurs, toutes négatives (refroidissement en altitude).
-    gamma = OmegaConf.to_container(cfg.statistical.lapse_rate.monthly_gamma)
+    gamma = OmegaConf.to_container(cfg.karpos_slr.lapse_rate.monthly_gamma)
     assert len(gamma) == 12
     assert all(g < 0 for g in gamma)
     # Le run par défaut de l'expérience calcule les indices.
@@ -52,7 +52,7 @@ def test_cluster_override():
 
 
 def test_dotlist_override_reaches_leaf():
-    cfg = _compose(["statistical.quantile_mapping.enabled=false"])
-    assert cfg.statistical.quantile_mapping.enabled is False
+    cfg = _compose(["karpos_slr.quantile_mapping.enabled=false"])
+    assert cfg.karpos_slr.quantile_mapping.enabled is False
     # Inchangé par ailleurs.
-    assert cfg.statistical.quantile_mapping.n_quantiles == 100
+    assert cfg.karpos_slr.quantile_mapping.n_quantiles == 100

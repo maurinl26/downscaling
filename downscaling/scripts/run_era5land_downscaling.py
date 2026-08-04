@@ -14,7 +14,7 @@ import xarray as xr
 
 from downscaling.config import load_config
 from downscaling.shared.indices import compute_all_indices
-from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
+from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 
 
 def create_dummy_dem(domain_cfg, out_path="dummy_dem.nc"):
@@ -56,7 +56,7 @@ def parse_args():
         "--override",
         nargs="*",
         default=[],
-        help="Overrides Hydra (ex: statistical.quantile_mapping.enabled=false)",
+        help="Overrides Hydra (ex: karpos_slr.quantile_mapping.enabled=false)",
     )
     p.add_argument("--era5land-dir", default="../data/raw/era5land/2m_temperature/")
     p.add_argument("--dem", default=None, help="Path to DEM file. If None, uses dummy_dem.nc")
@@ -76,7 +76,7 @@ def main():
 
     cfg = load_config(args.override)
 
-    stat_cfg = cfg.get("statistical", {})
+    stat_cfg = cfg.get("karpos_slr", {})
     lapse_cfg = stat_cfg.get("lapse_rate", {})
 
     gamma = np.array(lapse_cfg.get("monthly_gamma", [-6.5e-3] * 12))
@@ -88,7 +88,7 @@ def main():
         )
         dem_path = create_dummy_dem(cfg.get("domain", {}), "dummy_dem.nc")
 
-    pipeline = StatisticalDownscalingPipeline(
+    pipeline = KarposSLRPipeline(
         dem_path=dem_path,
         obs_ref_path=None,
         lapse_rate=gamma,

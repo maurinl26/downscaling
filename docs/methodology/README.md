@@ -14,7 +14,7 @@ The goal is twofold :
 
 | Document | Purpose |
 |---|---|
-| `lot-b-calibration-report.md` | Detailed methodology of the statistical downscaling pipeline (Lot B) : CERRA → 1 km via lapse-rate, QDM, RBF Sencrop residual ; bias diagnostics ; regime-stratified POD/FAR/CSI evaluation. 9 annexes covering bug catalog, cold audit, run #28, QDM A/B verdict. |
+| `karpos-slr-calibration-report.md` | Detailed methodology of the statistical downscaling pipeline (KarposSLR) : CERRA → 1 km via lapse-rate, QDM, RBF Sencrop residual ; bias diagnostics ; regime-stratified POD/FAR/CSI evaluation. 9 annexes covering bug catalog, cold audit, run #28, QDM A/B verdict. |
 | `chilling-model-baronnies.md` | Phenological complement : chilling unit accumulation model for apricot in Drôme Baronnies (Corréard, Plaisians, Mirabel-aux-Baronnies). |
 | `gmd-paper-draft.md` | Skeleton outline of the GMD (Geoscientific Model Development) paper — "A regime-aware statistical downscaling framework for spring frost forecasting in mountainous arboriculture". Target submission : autumn 2026. |
 | `joss-paper-draft.md` | Skeleton outline of the JOSS (Journal of Open Source Software) paper — `karpos-downscaling: A toolkit for sparse-network anchored statistical downscaling of frost risk in arboriculture`. Target submission : late summer 2026. |

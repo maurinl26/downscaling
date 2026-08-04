@@ -13,5 +13,5 @@ Key implementation points (to be detailed):
 - **Out-of-sample bias adjustment** per station (median bias over training
   years, applied as offset at inference)
 - **Fallback** to global bias for stations not seen in training
-- **RBF residual propagation** (Lot B) to spread sparse corrections across
+- **RBF residual propagation** (KarposSLR) to spread sparse corrections across
   the full grid

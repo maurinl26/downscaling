@@ -7,7 +7,7 @@ n'avait pas l'instrumentation W&B (cas runs antérieurs sur le pod
 karpos-recalibration, 2026-06-16).
 
 Pour chaque année dont le Zarr existe sous `--root`, le script :
-1. Ouvre `<year>.zarr` (sortie recalibrate_statistical).
+1. Ouvre `<year>.zarr` (sortie recalibrate_karpos_slr).
 2. Recharge les stations Sencrop dans la bbox du Zarr.
 3. Pour chaque nuit, extrait la valeur du grid à chaque station.
 4. Calcule le résidu obs - prediction (in-sample, après calibration).
@@ -20,15 +20,15 @@ Usage
 -----
 
     # Local
-    python -m downscaling.scripts.analyze_recalibrated_statistical \\
+    python -m downscaling.scripts.analyze_karpos_slr \\
         --root /workspace/data/output/recalibrated_statistical \\
         --sencrop s3://karpos-backtest-data/sencrop \\
         --threshold-c -2.2 \\
-        --wandb-project karpos-recalibrate-statistical
+        --wandb-project karpos-recalibrate-slr
 
     # S3 (Scaleway endpoint via AWS_ENDPOINT_URL ou AWS_S3_ENDPOINT)
     AWS_ENDPOINT_URL=https://s3.fr-par.scw.cloud \\
-    python -m downscaling.scripts.analyze_recalibrated_statistical \\
+    python -m downscaling.scripts.analyze_karpos_slr \\
         --root s3://karpos-backtest-data/recalibrated/statistical \\
         --sencrop s3://karpos-backtest-data/sencrop \\
         --years 2022 2023 \\
@@ -38,7 +38,7 @@ Usage
 W&B
 ---
 
-Le script utilise les mêmes conventions que `recalibrate_statistical.py` :
+Le script utilise les mêmes conventions que `recalibrate_karpos_slr.py` :
 `WANDB_API_KEY` doit être présent dans l'env. `--wandb-disabled` saute
 W&B et imprime le résumé sur stdout / metadata.json à côté de chaque Zarr.
 """
@@ -81,7 +81,7 @@ def _is_remote(url: str) -> bool:
 def _storage_options() -> dict:
     """Storage options pour fsspec / s3fs : endpoint custom (Scaleway) si défini.
 
-    Cohérent avec ``recalibrate_statistical.py:291`` : on lit
+    Cohérent avec ``recalibrate_karpos_slr.py:291`` : on lit
     ``AWS_ENDPOINT_URL`` (convention boto3) ou ``AWS_S3_ENDPOINT`` (legacy).
     """
     # skip_instance_cache=True : un S3FileSystem frais par appel, lié au contexte
@@ -230,7 +230,7 @@ def _loo_predict(
 ) -> dict[int, dict[str, list[float]]]:
     """Rejoue le RBF résiduel de prod en laissant dehors le groupe de la station cible.
 
-    Reproduit fidèlement ``recalibrate_statistical._residual_correction`` :
+    Reproduit fidèlement ``recalibrate_karpos_slr._residual_correction`` :
     - résidu donneur = ``obs_j - t2m_prerbf(cell_j)`` (grille AVANT RBF)
     - poids gaussien ``exp(-d²/2σ²)`` entre la maille de S et la station donneuse j,
       ``cos`` évalué à la latitude du donneur (comme en prod)
@@ -493,7 +493,7 @@ def _analyze_year_loo(
     if "t2m_prerbf" not in ds.data_vars:
         raise ValueError(
             f"{year_zarr}: mode LOO requiert la variable 't2m_prerbf'. "
-            "Régénère le Zarr avec `recalibrate_statistical.py --emit-prerbf` (#33)."
+            "Régénère le Zarr avec `recalibrate_karpos_slr.py --emit-prerbf` (#33)."
         )
     da = ds["t2m_prerbf"]
     # Détection Kelvin robuste (médiane globale) — cf. _analyze_year, bug #17.
@@ -613,7 +613,7 @@ def _run_loo(zarrs: list[str], args: argparse.Namespace) -> int:
     """Exécute la validation hors-station sur toutes les années → CSV + JSON.
 
     Sortie (dans --out-dir, ou CWD) :
-    - ``lot_b_loo_<variant>.csv`` : une ligne par (année × mode × station) + agrégats,
+    - ``karpos_slr_loo_<variant>.csv`` : une ligne par (année × mode × station) + agrégats,
       avec audit trail (git_sha, command) — matière du livrable opposable C5.
     - ``<year>.loo.json`` : détail complet par année.
     """
@@ -644,7 +644,7 @@ def _run_loo(zarrs: list[str], args: argparse.Namespace) -> int:
         log.error("Aucune année LOO produite (t2m_prerbf manquant ?)")
         return 2
 
-    csv_path = out_dir / f"lot_b_loo_{args.variant}.csv"
+    csv_path = out_dir / f"karpos_slr_loo_{args.variant}.csv"
     fields = [
         "variant",
         "grouping",
@@ -790,7 +790,7 @@ def main() -> int:
         action="store_true",
         help="Validation HORS-STATION (out-of-sample) : rejoue le RBF en leave-one-out "
         "station-par-station ET leave-one-cluster-out. Exige la var t2m_prerbf dans le "
-        "Zarr (recalibrate --emit-prerbf). Produit lot_b_loo_<variant>.csv (#33).",
+        "Zarr (recalibrate --emit-prerbf). Produit karpos_slr_loo_<variant>.csv (#33).",
     )
     p.add_argument(
         "--sigma-km",
@@ -827,7 +827,7 @@ def main() -> int:
         help="CSV avec colonnes 'date' et 'regime' (cf. flag_regimes.py). "
         "Active la stratification POD/FAR/CSI par régime synoptique (C5.3).",
     )
-    p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
+    p.add_argument("--wandb-project", default="karpos-recalibrate-slr")
     p.add_argument("--wandb-disabled", action="store_true")
     p.add_argument(
         "--years", type=int, nargs="*", default=None, help="Subset, défaut: tous les *.zarr trouvés"

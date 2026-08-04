@@ -8,7 +8,7 @@ C5.1 (issue maurinl26/karpos-downscaling#TBD). Pulls the variables needed by
 Why ERA5 not CERRA :
 - Regimes are synoptic-scale (> 100 km) → ERA5 0.25° suffit.
 - Cheap : ~30-50 MB par année (vs CERRA atm enrichi ≫ 1 GB).
-- N'interfère pas avec le pipeline CERRA Lot B existant.
+- N'interfère pas avec le pipeline CERRA KarposSLR existant.
 
 Variables :
 - 2m_temperature                  → T2m

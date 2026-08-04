@@ -8,19 +8,19 @@
 La source d'entrée canonique du chemin produit Karpos est **CERRA**.
 
 ERA5-Land est conservé uniquement comme **baseline comparative** dans les
-rapports scientifiques (cf. `gmd-paper-draft.md`, `lot-b-calibration-report.md`)
+rapports scientifiques (cf. `gmd-paper-draft.md`, `karpos-slr-calibration-report.md`)
 — il n'alimente plus aucun pipeline de production.
 
 ## Raisons
 
-1. **Lot B (calibration QDM) tourne déjà sur CERRA atm.** Le workflow
+1. **KarposSLR (calibration QDM) tourne déjà sur CERRA atm.** Le workflow
    `calibrate-qdm.yml` (côté `karpos-engine`) consomme `cerra_atm_{year}.nc` et
    produit le joblib transfer-function exposé à la production via
    `vars.QDM_JOBLIB_URI`. C'est la source de vérité de la chaîne d'indices
    aujourd'hui.
 
-2. **CERRA bat ERA5-Land en RAW.** L'audit Lot B documenté dans
-   `lot-b-calibration-report.md` (table POD/FAR Sencrop 2022-2025) montre que
+2. **CERRA bat ERA5-Land en RAW.** L'audit KarposSLR documenté dans
+   `karpos-slr-calibration-report.md` (table POD/FAR Sencrop 2022-2025) montre que
    **CERRA brut détecte +40 pts de POD** vs ERA5-Land brut. Le socle de
    réanalyse domine la profondeur du réseau de descente d'échelle.
 
@@ -32,7 +32,7 @@ rapports scientifiques (cf. `gmd-paper-draft.md`, `lot-b-calibration-report.md`)
 
 **AROME-native** (1.3 km) est planifié pour la **release de septembre 2026**
 (cf. [downscaling#70](https://github.com/maurinl26/karpos-downscaling/issues/70)).
-La bascule remplacera CERRA par AROME en entrée de QDM Lot B, sans changer
+La bascule remplacera CERRA par AROME en entrée de QDM KarposSLR, sans changer
 l'architecture (le `CERRACoarseProvider` deviendra source-agnostique ou un
 `AROMECoarseProvider` parallèle).
 

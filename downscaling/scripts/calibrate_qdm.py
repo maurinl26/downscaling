@@ -2,11 +2,11 @@
 """Fit QDM monthly transfer functions on (CERRA-lapse, Sencrop) point pairs.
 
 C4.1 (issue maurinl26/karpos-downscaling#32). Fixes the placeholder
-`pipe.calibrate(ref_ds, ref_ds)` in `recalibrate_statistical.py`.
+`pipe.calibrate(ref_ds, ref_ds)` in `recalibrate_karpos_slr.py`.
 
 Pools (predicted_lapse_at_station, sencrop_tmin) point pairs across train years
 × stations, fits `QuantileDeltaMapping(kind='delta', by_month=True)` and saves
-as joblib. The fitted QDM is then loaded by `recalibrate_statistical.py` via
+as joblib. The fitted QDM is then loaded by `recalibrate_karpos_slr.py` via
 `--qdm-joblib` and applied **after lapse-rate**, **before** RBF residual.
 
 Inputs
@@ -52,8 +52,8 @@ import pandas as pd
 import xarray as xr
 
 from downscaling.prtihvi_wxc.sencrop import load_stations_catalog, load_timeseries
-from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
-from downscaling.statistical.quantile_mapping import QuantileDeltaMapping
+from downscaling.karpos_slr.pipeline import KarposSLRPipeline
+from downscaling.karpos_slr.quantile_mapping import QuantileDeltaMapping
 
 log = logging.getLogger("calibrate_qdm")
 
@@ -70,7 +70,7 @@ def _git_sha() -> str:
 
 
 def _nightly_tmin(da: xr.DataArray) -> xr.DataArray:
-    """Same convention as recalibrate_statistical: shift -9h, daily min, time = morning date."""
+    """Same convention as recalibrate_karpos_slr: shift -9h, daily min, time = morning date."""
     if (
         "valid_time" in da.dims
         and "time" not in da.dims
@@ -158,7 +158,7 @@ def _maybe_init_wandb(args, bbox, stations_df, git_sha):
             project=os.environ.get("WANDB_PROJECT", "karpos-downscaling"),
             entity=os.environ.get("WANDB_ENTITY"),
             job_type="calibrate-qdm",
-            tags=["qdm", "lot-b", "calibration"] + [f"year-{y}" for y in args.years],
+            tags=["qdm", "karpos-slr", "calibration"] + [f"year-{y}" for y in args.years],
             config={
                 # Hyperparams calibration
                 "n_quantiles": args.n_quantiles,
@@ -251,7 +251,7 @@ def main() -> int:
     orog_local = _maybe_download_s3(args.cerra_orog, "cerra_orography.nc")
     orog_da = _load_cerra_orog(orog_local)
 
-    pipe = StatisticalDownscalingPipeline(
+    pipe = KarposSLRPipeline(
         dem_path=args.dem,
         obs_ref_path=None,
         use_qdm=False,  # lapse-rate only, no QDM, no RBF

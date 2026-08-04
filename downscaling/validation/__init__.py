@@ -1,7 +1,7 @@
 """Cadre de validation actuarielle du risque de base résiduel Karpos.
 
 Ce sous-paquet regroupe les outils de bornage probabiliste utilisés en aval
-des pipelines de descente d'échelle (statistique Lot B et DL FiLM KarposSR)
+des pipelines de descente d'échelle (statistique KarposSLR et DL FiLM KarposSR)
 pour produire des intervalles de prédiction et des bornes de queue
 opposables (audit Atekka).
 

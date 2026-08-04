@@ -39,7 +39,7 @@ def night_station_targets(
     Tmin par station valide, leur position sur la grille HR, et le décalage
     d'altitude ``dz`` (m) pour la correction lapse-rate.
 
-    Leave-station-out (parité avec le LOO Lot B #33) : si ``holdout_bbox``
+    Leave-station-out (parité avec le LOO KarposSLR #33) : si ``holdout_bbox``
     ``(lat_min, lat_max, lon_min, lon_max)`` est fourni et ``role != "all"`` :
     - ``role="train"`` : ne garde que les stations HORS de la bbox (fit sans elles) ;
     - ``role="val"``   : ne garde que les stations DEDANS (éval out-of-station).
