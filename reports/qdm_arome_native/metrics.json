@@ -1,0 +1,54 @@
+{
+  "issue": "maurinl26/karpos-downscaling#105",
+  "threshold_C": -2.2,
+  "protocol": "leave-one-year-out x leave-one-station-out (no leakage)",
+  "predictor": "AROME-HD Open-Meteo at stations (short-lead, #91 caveat)",
+  "target": "Sencrop nightly Tmin (assimilated analysis at station point)",
+  "years": [
+    2023,
+    2024,
+    2025
+  ],
+  "n_station_nights": 12104,
+  "n_stations": 35,
+  "levels": {
+    "arome_raw": {
+      "n": 12104,
+      "rmse": 1.6218935645329229,
+      "bias": 0.39654095188036703,
+      "pod": 0.43691899070385126,
+      "far": 0.1712846347607053,
+      "csi": 0.4007308160779537
+    },
+    "qdm_anchored": {
+      "n": 12104,
+      "rmse": 1.4649280195101817,
+      "bias": -0.003562515312293421,
+      "pod": 0.7250996015936255,
+      "far": 0.33088235294117646,
+      "csi": 0.533724340175953
+    },
+    "qdm_generalized": {
+      "n": 12104,
+      "rmse": 1.6566130882155796,
+      "bias": 0.03170074126094832,
+      "pod": 0.6440903054448871,
+      "far": 0.38373570520965694,
+      "csi": 0.4597156398104265
+    }
+  },
+  "lift_vs_arome_raw": {
+    "qdm_anchored": {
+      "pod_ratio": 1.6595744680851063,
+      "csi_from": 0.4007308160779537,
+      "csi_to": 0.533724340175953
+    },
+    "qdm_generalized": {
+      "pod_ratio": 1.4741641337386018,
+      "csi_from": 0.4007308160779537,
+      "csi_to": 0.4597156398104265
+    }
+  },
+  "git_sha": "afe07e52b4fdefd57f2a131563145e853617f7ed",
+  "command": "uv run python -m downscaling.scripts.qdm_arome_native"
+}
