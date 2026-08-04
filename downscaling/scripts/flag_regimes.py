@@ -165,6 +165,7 @@ def _night_features_cerra(ds_night: xr.Dataset, bbox: dict[str, float]) -> dict[
         "mslp_med": float(np.nanmedian(msl)),
         "dewpoint_dep_med": float(np.nanmedian(dewpoint_dep)),
         "t2m_med": float(np.nanmedian(t2m_c)),
+        "d2m_med": float(np.nanmedian(td_c)) + 273.15,  # Td en K (parité voie ERA5, requis par _HYGRO_FEATURES)
         "rh_med": float(np.nanmedian(rh_frac)),
         "dewpoint_dep_min": float(np.nanmin(dewpoint_dep)),
         "rh_min": float(np.nanmin(rh_frac)),
