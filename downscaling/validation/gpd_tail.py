@@ -8,7 +8,7 @@ selection) et 5 (inférence GPD par maximum de vraisemblance).
 
 Contexte Karpos
 ---------------
-Le QDM (Cannon et al. 2015, cf. `downscaling.statistical.quantile_mapping`) ajuste
+Le QDM (Cannon et al. 2015, cf. `downscaling.karpos_slr.quantile_mapping`) ajuste
 la distribution marginale de Tn par appariement de quantiles empiriques. Hors de
 la plage de calibration, l'extrapolation linéaire de la fonction de transfert
 revient implicitement à supposer une queue gaussienne. Pour défendre un produit

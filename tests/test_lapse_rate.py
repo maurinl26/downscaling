@@ -1,4 +1,4 @@
-"""Tests de la correction lapse-rate (``downscaling.statistical.lapse_rate``)."""
+"""Tests de la correction lapse-rate (``downscaling.karpos_slr.lapse_rate``)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 import xarray as xr
 from conftest import daily_series
 
-from downscaling.statistical.lapse_rate import (
+from downscaling.karpos_slr.lapse_rate import (
     STANDARD_LAPSE_RATE,
     LapseRateCorrector,
     MonthlyLapseRate,

@@ -39,7 +39,7 @@ Deux formats d'entrée supportés
    un seul fichier au schéma ad-hoc ``SENCROP_COLUMNS`` mappable via
    ``columns=``.
 
-Pour les nouveaux entraînements (Lot B, KarposSR) la forme bulk est obligatoire ;
+Pour les nouveaux entraînements (KarposSLR, KarposSR) la forme bulk est obligatoire ;
 la forme single-file est conservée pour les fixtures de tests existantes.
 """
 

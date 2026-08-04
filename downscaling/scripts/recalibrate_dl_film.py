@@ -251,7 +251,7 @@ class BulkSencropDataset(Dataset):
         # Merge des cibles RADOME de la nuit (postes d'altitude). RADOME sert au
         # TRAINING : role="train" exclut les RADOME dans la holdout-bbox (pas de
         # fuite Baronnies) ; role="val" n'ajoute AUCUN RADOME (l'éval reste Sencrop
-        # dans la bbox, comparable au baseline LOO Lot B) ; role="all" prend tout.
+        # dans la bbox, comparable au baseline LOO KarposSLR) ; role="all" prend tout.
         if self.radome_map is not None and self.role != "val":
             rad = self.radome_map.get(d)
             if rad:
@@ -306,7 +306,7 @@ def _git_sha() -> str:
 
 def _resolve_to_local(uri: str, *, label: str) -> Path:
     """Résout un input local OU ``s3://`` vers un chemin local (même logique que
-    recalibrate_statistical). s3:// → download /tmp via s3fs (endpoint Scaleway)."""
+    recalibrate_karpos_slr). s3:// → download /tmp via s3fs (endpoint Scaleway)."""
     if uri.startswith("s3://"):
         import tempfile
 
@@ -323,7 +323,7 @@ def _resolve_to_local(uri: str, *, label: str) -> Path:
 
 
 def _load_coarse_orography(orog_uri: str) -> np.ndarray:
-    """Orographie coarse CERRA → altitude 2D (m). Même détection que recalibrate_statistical
+    """Orographie coarse CERRA → altitude 2D (m). Même détection que recalibrate_karpos_slr
     (orography/orog/z/surface_geopotential ; géopotentiel m²/s² → m via /9.80665)."""
     local = _resolve_to_local(orog_uri, label="cerra_orography")
     ds = xr.open_dataset(local)
@@ -424,7 +424,7 @@ def _build_coarse_provider(cerra_path: Path, dem_path: Path, cerra_orog_path: st
         return x_met, x_dem
 
     # First-guess lapse (v2b) : dz = z_DEM_1km − z_orog_coarse_1km (m), statique.
-    # Le first-guess lapse = T_CERRA_1km + lapse_rate·dz reproduit le plancher Lot B
+    # Le first-guess lapse = T_CERRA_1km + lapse_rate·dz reproduit le plancher KarposSLR
     # (~1,6°C) au lieu du CERRA bilinéaire brut (~2,8°C).
     fg_dz = None
     if cerra_orog_path is not None:
@@ -506,7 +506,7 @@ def _dl_output_dataset(out_da: xr.DataArray) -> xr.Dataset:
     Le DL n'applique aucune correction RBF Sencrop lui-même : ``t2m`` (produit)
     et ``t2m_prerbf`` (backbone pour le RBF-LOO de ``analyze --loo``) sont donc
     identiques. Émettre ``t2m_prerbf`` permet de brancher le RBF Sencrop + LOO
-    par-dessus le DL → comparaison fair DL+RBF vs Lot B (#33).
+    par-dessus le DL → comparaison fair DL+RBF vs KarposSLR (#33).
     """
     return xr.Dataset({"t2m": out_da, "t2m_prerbf": out_da})
 
@@ -592,7 +592,7 @@ def main() -> int:
         default="bilinear",
         help="First-guess du mode résidu (v2b). 'bilinear' (défaut) = CERRA bilinéaire à "
         "1 km (plancher ~2,8°C). 'lapse' = + correction lapse-rate maille↔coarse "
-        "(plancher ≈ Lot B ~1,6°C) — requiert --cerra-orog. N'a d'effet qu'avec "
+        "(plancher ≈ KarposSLR ~1,6°C) — requiert --cerra-orog. N'a d'effet qu'avec "
         "--target-mode residual.",
     )
     p.add_argument(
@@ -624,7 +624,7 @@ def main() -> int:
         metavar=("LAT_MIN", "LAT_MAX", "LON_MIN", "LON_MAX"),
         help="Leave-station-out : tient les stations de cette bbox HORS du fit "
         "(train) et les utilise comme val out-of-station. Rend val/rmse comparable "
-        "au LOO Lot B (#33). Ex. Baronnies cold-pool : 44.15 44.45 5.15 5.40.",
+        "au LOO KarposSLR (#33). Ex. Baronnies cold-pool : 44.15 44.45 5.15 5.40.",
     )
     p.add_argument(
         "--es-min-delta",
@@ -764,7 +764,7 @@ def main() -> int:
     if args.holdout_bbox:
         log.info(
             "Leave-station-out actif : val = stations dans bbox lat[%.2f,%.2f] lon[%.2f,%.2f] "
-            "(hors du fit) — val/rmse comparable au LOO Lot B #33",
+            "(hors du fit) — val/rmse comparable au LOO KarposSLR #33",
             *args.holdout_bbox,
         )
     if len(dataset) == 0:
@@ -826,7 +826,7 @@ def main() -> int:
         log.info(
             "Target : residual (first-guess=%s + résidu appris) — plancher %s",
             args.first_guess,
-            "≈ Lot B lapse (~1,6°C)" if args.first_guess == "lapse" else "CERRA bilinéaire (~2,8°C)",
+            "≈ KarposSLR lapse (~1,6°C)" if args.first_guess == "lapse" else "CERRA bilinéaire (~2,8°C)",
         )
     else:
         log.info("Target : raw Tmin (baseline)")
@@ -943,9 +943,9 @@ def main() -> int:
 
     out_da = xr.concat(out_grids, dim="time")
     # Le champ DL est le BACKBONE 1 km (avant correction RBF Sencrop live). On l'émet
-    # aussi sous `t2m_prerbf` pour que `analyze_recalibrated_statistical.py --loo`
+    # aussi sous `t2m_prerbf` pour que `analyze_karpos_slr.py --loo`
     # applique le RBF Sencrop + leave-one-out par-dessus → comparaison fair DL+RBF
-    # vs Lot B (lapse+QDM)+RBF (#33). Le DL n'applique aucun RBF lui-même, donc
+    # vs KarposSLR (lapse+QDM)+RBF (#33). Le DL n'applique aucun RBF lui-même, donc
     # t2m == t2m_prerbf ici.
     out_ds = _dl_output_dataset(out_da)
     zarr_store = make_zarr_store(args.out, args.year)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Statistical recalibration (lapse-rate + QDM) with Sencrop residual correction.
 
-Thin orchestrator. Reuses `StatisticalDownscalingPipeline` as-is and adds a
+Thin orchestrator. Reuses `KarposSLRPipeline` as-is and adds a
 post-pass sparse residual correction on the Sencrop network for the target
-year. Outputs a Zarr grid under `--out`. Known internally as the "Lot B"
+year. Outputs a Zarr grid under `--out`. Known internally as the "KarposSLR"
 deliverable of the Sencrop S23 campaign.
 
 Inputs
@@ -23,13 +23,13 @@ Output
 ------
 
 Zarr 1-km grid for the target year (T2m daily Tmin nocturne, recalibrated):
-    --out        /workspace/data/output/lot_b_grid/<year>.zarr
+    --out        /workspace/data/output/karpos_slr_grid/<year>.zarr
 
 Method
 ------
 
 1. Open CERRA atm NetCDF, compute nightly Tmin (18h → 09h UTC).
-2. Run `StatisticalDownscalingPipeline.run(source, variables=['t2m'])` on the
+2. Run `KarposSLRPipeline.run(source, variables=['t2m'])` on the
    nightly Tmin field → 1 km grid (lapse + QDM if calibrated).
 3. For each night with ≥ 5 Sencrop stations available, compute the residual
    `tmin_obs_station - tmin_grid_at_station_cell` and apply a smooth kriging-
@@ -70,10 +70,10 @@ from downscaling.prtihvi_wxc.sencrop import (
     load_stations_catalog,
     load_timeseries,
 )
-from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
+from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 from downscaling.utils.io import describe, is_remote, make_zarr_store, write_sidecar
 
-log = logging.getLogger("recalibrate_statistical")
+log = logging.getLogger("recalibrate_karpos_slr")
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ def main() -> int:
         "leave-one-cluster-out (analyze --loo, issue #33). Off par défaut : ne change "
         "pas les artefacts zarr existants (une seule variable t2m).",
     )
-    p.add_argument("--wandb-project", default="karpos-recalibrate-statistical")
+    p.add_argument("--wandb-project", default="karpos-recalibrate-slr")
     p.add_argument("--wandb-disabled", action="store_true")
     args = p.parse_args()
 
@@ -386,7 +386,7 @@ def main() -> int:
     # (calibrait QDM sur elle-même, no-op). Remplacé par chargement joblib
     # produit par `calibrate_qdm.py` (C4.1, issue maurinl26/karpos-downscaling#32).
     dem_local = _resolve_to_local(args.dem, label="dem")
-    pipe = StatisticalDownscalingPipeline(
+    pipe = KarposSLRPipeline(
         dem_path=dem_local,
         obs_ref_path=None,
         use_qdm=False,  # QDM appliquée manuellement après pipe.run, avant RBF

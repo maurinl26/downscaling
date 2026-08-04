@@ -81,7 +81,7 @@ def _cfg(tmp_path, sources):
 
 
 def test_run_statistical_concatenates_multiple_files(tmp_path, monkeypatch):
-    monkeypatch.setattr(rd, "StatisticalDownscalingPipeline", _FakePipeline)
+    monkeypatch.setattr(rd, "KarposSLRPipeline", _FakePipeline)
     sources = ["s_avril.nc", "s_mai.nc", "s_juin.nc"]
     out = rd.run_statistical(_cfg(tmp_path, sources))
 
@@ -92,7 +92,7 @@ def test_run_statistical_concatenates_multiple_files(tmp_path, monkeypatch):
 
 
 def test_run_statistical_single_file_unchanged(tmp_path, monkeypatch):
-    monkeypatch.setattr(rd, "StatisticalDownscalingPipeline", _FakePipeline)
+    monkeypatch.setattr(rd, "KarposSLRPipeline", _FakePipeline)
     out = rd.run_statistical(_cfg(tmp_path, "solo.nc"))
 
     assert _FakePipeline.calls == ["solo.nc"]

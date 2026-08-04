@@ -6,7 +6,7 @@ projet: MVP Baronnies abricot
 tags:
   - calibration
   - downscaling
-  - lot-b
+  - karpos-slr
   - stage-2
   - CERRA
   - Sencrop
@@ -14,11 +14,11 @@ tags:
 status: brouillon — première itération
 ---
 
-# Rapport — Calibration Stage 2 statistical CERRA × Sencrop (Lot B), juin 2026
+# Rapport — Calibration Stage 2 statistical CERRA × Sencrop (KarposSLR), juin 2026
 
 ## Résumé exécutif
 
-Première mise en production du pipeline de recalibration statistique pour le **Lot B** (statistical downscaling + correction sparse Sencrop) sur l'**abricot des Baronnies**, dans la fenêtre frost-flo (février-avril). Pipeline fonctionnel sur 2 années (2022, 2023), métriques POD/FAR/CSI extraites pour 2023 (référence). Sensibilité maximale atteinte (**POD = 100 %**) ; spécificité encore insuffisante (**FAR = 74 %** au seuil flo -2,2 °C) liée à un biais systématique +10 °C qu'il faut diagnostiquer avant le KarposSR.
+Première mise en production du pipeline de recalibration statistique pour le **KarposSLR** (statistical downscaling + correction sparse Sencrop) sur l'**abricot des Baronnies**, dans la fenêtre frost-flo (février-avril). Pipeline fonctionnel sur 2 années (2022, 2023), métriques POD/FAR/CSI extraites pour 2023 (référence). Sensibilité maximale atteinte (**POD = 100 %**) ; spécificité encore insuffisante (**FAR = 74 %** au seuil flo -2,2 °C) liée à un biais systématique +10 °C qu'il faut diagnostiquer avant le KarposSR.
 
 > [!warning] Statut
 > Rapport à froid post-pitch Corréard 17 juin 2026. Les conclusions sont préliminaires : seulement 2 années traitées sur 4 prévues (2024 et 2025 ont systématiquement crashé), et 18 nuits matchées sur 90 pour 2023 (couverture partielle). À reconduire après correction des bugs identifiés.
@@ -36,7 +36,7 @@ Première mise en production du pipeline de recalibration statistique pour le **
 | **Sencrop bulk export** | températures stationsréseau | 2021-05 → 2026-05 | 49 stations Drôme + nord Vaucluse, cadence 15 min | partitionné CSV, lecture S3 (`karpos-backtest-data/sencrop`) |
 | **SRTM 30 m DEM** | altitude | bbox Drôme | ~30 m | NetCDF généré via package `elevation` |
 
-> [!note] CERRA-Land non utilisé dans Lot B
+> [!note] CERRA-Land non utilisé dans KarposSLR
 > Le pipeline charge CERRA-Land par symétrie mais n'exploite pas encore `skin_temperature` dans la correction. C'est une réserve pour intégration ultérieure (sol-air, gel sol).
 
 ### 1.2 Pipeline scientifique (Stage 2 du recalibration_pipeline.sh)
@@ -44,16 +44,16 @@ Première mise en production du pipeline de recalibration statistique pour le **
 1. **Stage 0** — DEM bootstrap : si BD ALTI IGN absent, fetch SRTM 30 m via `elevation` package → NetCDF `srtm30_drome.nc` (111 MB).
 2. **Stage 1** — Download CERRA : chunks mensuels via cdsapi, fenêtre frost-flo (fév-avr) × 4 années × 2 datasets = 24 NetCDFs.
 3. **Stage 1b** — Concat mensuels → annuel via `xr.open_dataset(...).load()` séquentiel + `xr.concat` (workaround `xr.open_mfdataset` deadlock).
-4. **Stage 2 — recalibrate_statistical** :
+4. **Stage 2 — recalibrate_karpos_slr** :
    - Charge CERRA atm yearly NetCDF, calcule **Tmin nocturne** (résample 1D après shift -9h pour aligner la nuit sur la date du matin)
-   - Initialise `StatisticalDownscalingPipeline` (lapse-rate + QDM optionnel)
+   - Initialise `KarposSLRPipeline` (lapse-rate + QDM optionnel)
    - **Pour chaque nuit** :
      - Application lapse-rate vers grille fine 1 km via SRTM DEM
      - QDM désactivé (pas de `--obs-ref` passé, placeholder)
      - **Correction RBF gaussien sparse** sur les Sencrop résidus station-par-station : `obs_Sencrop - grid_at_station` propagé sur tout le domaine avec `sigma_km = 7`
    - Concat des 90 nuits → Zarr annuel (5400 × 5400 × 90 timesteps, ~3,5 GB compressé)
 
-### 1.3 Métriques d'évaluation (script `analyze_recalibrated_statistical.py`)
+### 1.3 Métriques d'évaluation (script `analyze_karpos_slr.py`)
 
 Pour chaque année, sur l'ensemble (station × nuit) avec `temperature_source == 'station'` :
 - **Résidus** : `obs_Sencrop − pred_grid_at_station`
@@ -114,10 +114,10 @@ Lectures
 |---|---|---|---|---|
 | **CERRA-Land brut (V1)** | 2015-2020 Nyons | 100 % | **87 %** | `bias_summary.csv` |
 | **ERA5-Land brut** | 2022-2025 Sencrop | 60 % | 69 % | `lot_d_metrics.csv` |
-| **Lot B Stage 2 (ce rapport)** | 2023 fév-avr Sencrop | **100 %** | **74,3 %** | `2023.posthoc.json` |
+| **KarposSLR Stage 2 (ce rapport)** | 2023 fév-avr Sencrop | **100 %** | **74,3 %** | `2023.posthoc.json` |
 | **KarposSR DL FiLM (cible)** | 2022-2025 | ≥ 90 % | ≤ 20 % | non encore mesuré |
 
-Lot B vs ERA5-Land : **+ 40 pts de POD** (gain net sur la sensibilité), **+ 5 pts de FAR** (légère dégradation due au biais). Au pitch, on peut dire : *« le pipeline Lot B sature la détection mais reste à affiner sur la spécificité »*.
+KarposSLR vs ERA5-Land : **+ 40 pts de POD** (gain net sur la sensibilité), **+ 5 pts de FAR** (légère dégradation due au biais). Au pitch, on peut dire : *« le pipeline KarposSLR sature la détection mais reste à affiner sur la spécificité »*.
 
 ### 3.2 Pourquoi POD = 100 % ?
 
@@ -179,7 +179,7 @@ S3 Scaleway karpos-backtest-data
         ├── 2022.zarr/ (10,8 GB, ~1200 chunks)
         ├── 2022.metadata.json
         └── 2023.zarr/ (en cours, ~744 chunks)
-W&B project karpos-recalibrate-statistical
+W&B project karpos-recalibrate-slr
     └── projet créé, runs effacés par disable-wandb (à réactiver)
 ```
 
@@ -189,10 +189,10 @@ W&B project karpos-recalibrate-statistical
 
 ### Priorité 1 — Diagnostic des bugs structurels
 
-- [ ] **Bug #8 (SIGKILL silencieux)** : reproduire sur un pod neuf avec petits jobs ; instrumenter avec `dmesg`, `/sys/fs/cgroup/memory.events`, monitoring RSS process. Si OOM kernel, refactor `recalibrate_statistical.py` pour écrire chunks Zarr incrémentaux (au lieu d'accumuler 90 slabs in-memory).
+- [ ] **Bug #8 (SIGKILL silencieux)** : reproduire sur un pod neuf avec petits jobs ; instrumenter avec `dmesg`, `/sys/fs/cgroup/memory.events`, monitoring RSS process. Si OOM kernel, refactor `recalibrate_karpos_slr.py` pour écrire chunks Zarr incrémentaux (au lieu d'accumuler 90 slabs in-memory).
 - [ ] **Bug #13 (biais +10 °C)** : tracer dans la pipeline lapse-rate. Comparer Tmin grid brute (sans correction) à Sencrop. Voir si le biais est introduit avant ou après le RBF residual.
 - [ ] **Bug #11 (Python 3.11.0rc1)** : upgrade venv → Python 3.11.x stable ou 3.12 dans l'image Docker `karpos-downscaling`. Tester import torch.dynamo / lightning.
-- [ ] **Bug #12 (time coord Zarr int)** : modifier `recalibrate_statistical.py` pour explicit `encoding={'time': {'units': 'days since YEAR-02-01', 'dtype': 'int32'}}` ou `decode_times=True` lors du to_zarr. Validate roundtrip.
+- [ ] **Bug #12 (time coord Zarr int)** : modifier `recalibrate_karpos_slr.py` pour explicit `encoding={'time': {'units': 'days since YEAR-02-01', 'dtype': 'int32'}}` ou `decode_times=True` lors du to_zarr. Validate roundtrip.
 
 ### Priorité 2 — KarposSR DL FiLM
 
@@ -214,7 +214,7 @@ W&B project karpos-recalibrate-statistical
 
 ```bash
 # Stage 2 année 2023 (commande utilisée)
-uv run python -m downscaling.scripts.recalibrate_statistical \
+uv run python -m downscaling.scripts.recalibrate_karpos_slr \
   --year 2023 \
   --cerra-atm /workspace/data/cerra_zarr/cerra_atm_2023.nc \
   --cerra-land /workspace/data/cerra_land_zarr/cerra_land_2023.nc \
@@ -224,7 +224,7 @@ uv run python -m downscaling.scripts.recalibrate_statistical \
   --sigma-km 7.0 --wandb-disabled
 
 # Analyze 2023
-uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
+uv run python -m downscaling.scripts.analyze_karpos_slr \
   --root /workspace/data/output/recalibrated_statistical \
   --sencrop s3://karpos-backtest-data/sencrop \
   --threshold-c -2.2 --wandb-disabled --years 2023
@@ -232,7 +232,7 @@ uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
 
 ### 6.2 Fichiers livrables
 
-- `s3://karpos-backtest-data/recalibrated/statistical/2022.zarr/` (Lot B Stage 2 2022)
+- `s3://karpos-backtest-data/recalibrated/statistical/2022.zarr/` (KarposSLR Stage 2 2022)
 - `s3://karpos-backtest-data/recalibrated/statistical/2022.metadata.json`
 - `s3://karpos-backtest-data/recalibrated/statistical/2023.zarr/` (en cours d'upload)
 - `s3://karpos-backtest-data/recalibrated/statistical/2023.posthoc.json` (à pousser manuellement)
@@ -250,33 +250,33 @@ uv run python -m downscaling.scripts.analyze_recalibrated_statistical \
 
 ## 7. Annexe — Audit à froid (subagent, post-pitch 2026-06-17)
 
-Diagnostic complet après lecture ligne à ligne de `recalibrate_statistical.py`, `analyze_recalibrated_statistical.py`, `statistical/pipeline.py`, `statistical/lapse_rate.py`, `prtihvi_wxc/sencrop.py`, `scripts/download_cerra_for_recalibration.py`.
+Diagnostic complet après lecture ligne à ligne de `recalibrate_karpos_slr.py`, `analyze_karpos_slr.py`, `statistical/pipeline.py`, `statistical/lapse_rate.py`, `prtihvi_wxc/sencrop.py`, `scripts/download_cerra_for_recalibration.py`.
 
 ### 7.1 Verdict sur le biais +10 °C : **double cause confirmée**
 
 **Cause A — orographie source manquante (z_source = 0 m)**
 
-- `pipeline.py:205-224` cherche `z`, `orog` ou `oro` dans le Dataset source. `recalibrate_statistical.py:309-311` passe uniquement `xr.Dataset({"t2m": slab})`, **sans orographie**. Le téléchargement (`download_cerra_for_recalibration.py:52`) ne demande que `2m_temperature`.
+- `pipeline.py:205-224` cherche `z`, `orog` ou `oro` dans le Dataset source. `recalibrate_karpos_slr.py:309-311` passe uniquement `xr.Dataset({"t2m": slab})`, **sans orographie**. Le téléchargement (`download_cerra_for_recalibration.py:52`) ne demande que `2m_temperature`.
 - Conséquence : fallback `z_coarse = zeros((H, W))` avec un `warnings.warn` muet.
 - Sur Baronnies (SRTM moyen ~600 m), `dz = z_SRTM - 0 ≈ 600 m` → correction lapse-rate `γ × dz = -6,5e-3 × 600 = -3,9 K` **artificielle**. Pic à -9,75 K sur les crêtes 1500 m.
 
 **Cause B — mix Kelvin/Celsius dans le RBF residual**
 
 - `lapse_rate.py:71-76` retourne `t_corrected` en **Kelvin** (CERRA T2m natif K).
-- `recalibrate_statistical.py:165` : `residuals = obs_tmin - nearest_vals` avec `obs_tmin` Sencrop en **°C** et `nearest_vals` grille en **K** → résidu ≈ -273 °C aux stations.
+- `recalibrate_karpos_slr.py:165` : `residuals = obs_tmin - nearest_vals` avec `obs_tmin` Sencrop en **°C** et `nearest_vals` grille en **K** → résidu ≈ -273 °C aux stations.
 - Le RBF propage cette correction massive sur les voisinages stations → la grille devient ~Celsius **dans les zones stations**, reste en Kelvin **ailleurs**.
 - Le `sample = 0,00` détecté par analyze (`analyze:111`) suggère que la zone des stations Baronnies a été ramenée en Celsius, mais avec un biais cumulatif de +10 °C (Cause A + résiduel mauvaise correction).
 
 **Fix canonique** :
 1. `download_cerra_for_recalibration.py` : ajouter le téléchargement `orography` CERRA (one-shot, pas par mois). Si non dispo sur CDS single-levels, dégrader le SRTM à 5,5 km avec `xesmf` conservatif.
-2. `recalibrate_statistical.py` : conversion K → °C **explicite** au chargement du t2m (`nightly = nightly - 273.15` si `attrs["units"]=="K"`). Puis charger l'orographie dans le `xr.Dataset` du slab.
+2. `recalibrate_karpos_slr.py` : conversion K → °C **explicite** au chargement du t2m (`nightly = nightly - 273.15` si `attrs["units"]=="K"`). Puis charger l'orographie dans le `xr.Dataset` du slab.
 3. Tester sur 2023 (1 année) avant de relancer 2022/2024/2025.
 
 ### 7.2 Bugs additionnels détectés (non listés en §3.5)
 
 | # | Description | Impact | Effort |
 |---|---|---|---|
-| **15** | `recalibrate_statistical.py:251` charge `load_stations_catalog` **deux fois** (sans bbox puis avec bbox), gaspillage S3 | 1/5 | 5 min |
+| **15** | `recalibrate_karpos_slr.py:251` charge `load_stations_catalog` **deux fois** (sans bbox puis avec bbox), gaspillage S3 | 1/5 | 5 min |
 | **16** | QDM "calibrate" placeholder : `pipe.calibrate(ref_ds, ref_ds)` calibre sur soi-même, branche cassée même quand activée | 2/5 | 4 h (besoin référence HR vraie) |
 | **17** | Détection K vs C dans `analyze:111` fragile (`sample > 100` sur médiane d'une grille bimodale possiblement à 0) | 5/5 si rate | 30 min (check explicite + paramétrer threshold) |
 | **18** | **Mix K/C résidu RBF** (voir 7.1 Cause B), co-cause principale biais | 5/5 | 30 min |
@@ -296,7 +296,7 @@ Diagnostic complet après lecture ligne à ligne de `recalibrate_statistical.py`
 
 ### 7.4 Recommandations infra (Bug #8)
 
-Quatre changements ciblés dans `recalibrate_statistical.py` (~50 lignes) :
+Quatre changements ciblés dans `recalibrate_karpos_slr.py` (~50 lignes) :
 
 1. **Écriture Zarr incrémentale** : `to_zarr(append_dim="time")` par nuit. Borne RAM à ~120 MB au lieu de ~10 GB.
 2. **Checkpointing** : au démarrage, `last_d = xr.open_zarr(zarr_path)["time"].max()` → reprise après SIGKILL.
@@ -337,17 +337,17 @@ Coût total : 4-6 h. Testable sur pod 4 h avec 2024-2025.
 
 1. **Sortie de la climato mais sans calibration** : le 32/3 régresse vers la moyenne (POD=0 en 2022/2023, modèle n'ose jamais < -2.2°C). Le 64/4 ose prédire du froid (POD passe à 23-43%) mais lâche des fausses alertes à grande échelle (FAR 58-100%). Le modèle a appris à parier sur le froid sans discriminer.
 
-2. **Biais chaud persiste sur les deux configs** : +1.09 à +1.79°C sur 64/4, +0.64 à +2.43°C sur 32/3. Le DL FiLM ne corrige pas vers le froid, il replique CERRA + bruit station. Issue #18 a fixé le biais d'orographie du Lot B mais pas celui du KarposSR.
+2. **Biais chaud persiste sur les deux configs** : +1.09 à +1.79°C sur 64/4, +0.64 à +2.43°C sur 32/3. Le DL FiLM ne corrige pas vers le froid, il replique CERRA + bruit station. Issue #18 a fixé le biais d'orographie du KarposSLR mais pas celui du KarposSR.
 
 3. **EarlyStopping inopérant** : les 4 runs ont fait les 30 epochs entiers, best ckpts trouvés à epoch 3 / 8 / 10 / 11. Trajectoire val/rmse en yo-yo, `min_delta=1e-3` trop laxiste pour discriminer les micro-améliorations bruitées. À durcir à `min_delta=0.05` ou supérieur si on relance.
 
-**Conclusion opérationnelle** : la capacité **n'est pas le verrou**. Augmenter le modèle sans changer la loss ni la supervision = plus d'overfit, point final. La voie est **issue #5 (loss redesign)** : first-guess physique + résiduel + pinball multi-quantile + splits anti-fuite + densification via Lot B (issue #23). PR #31 (downscaling) et #73 (parametric_insurance) restent valables comme infra A/B mais les défauts (32/3, ES off) ne doivent **pas** changer.
+**Conclusion opérationnelle** : la capacité **n'est pas le verrou**. Augmenter le modèle sans changer la loss ni la supervision = plus d'overfit, point final. La voie est **issue #5 (loss redesign)** : first-guess physique + résiduel + pinball multi-quantile + splits anti-fuite + densification via KarposSLR (issue #23). PR #31 (downscaling) et #73 (parametric_insurance) restent valables comme infra A/B mais les défauts (32/3, ES off) ne doivent **pas** changer.
 
-**KarposSR reste hors-gate à V1.** Lot B + QDM reste la voie commerciale juin-juillet.
+**KarposSR reste hors-gate à V1.** KarposSLR + QDM reste la voie commerciale juin-juillet.
 
 W&B runs : [2022](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/tlp3zql1) · [2023](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/cmvc4ikx) · [2024](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/cds6se0s) · [2025](https://wandb.ai/maurin-loic-ac-karpos-pro/karpos-recalibrate-dl-film/runs/wxs90bxu).
 
-## 9. Annexe — A/B Lot B nu vs Lot B + QDM (2026-06-18 matin)
+## 9. Annexe — A/B KarposSLR nu vs KarposSLR + QDM (2026-06-18 matin)
 
 **Hypothèse testée** : activer le QDM conditionnel mensuel (placeholder cassé jusque-là, cf. bug #16) doit corriger les biais distributionnels résiduels après lapse-rate et améliorer POD/FAR sur les queues froides.
 
@@ -368,7 +368,7 @@ Seul gain net : seuil -5°C année 2023, POD 0.22 → 0.24, FAR 0.45 → 0.37 (q
 **Diagnostic mécanique** : le RBF résiduel s'appuie sur les mêmes stations utilisées pour l'évaluation in-sample et écrase l'effet QDM. Le QDM contribue uniquement aux pixels loin des stations. Sans validation LOO, son apport reste théorique.
 
 **Décision produit V1** :
-- **Lot B nu** = pipeline V1 commerciale Karpos. Gate Go/No-Go atteint sur 2026 hold-out (POD 86%, FAR 14%, CSI 0.75).
+- **KarposSLR nu** = pipeline V1 commerciale Karpos. Gate Go/No-Go atteint sur 2026 hold-out (POD 86%, FAR 14%, CSI 0.75).
 - **PR #31 (calibrate_qdm + --qdm-joblib)** reste mergeable comme infra A/B mais QDM **non activé par défaut**.
 
 **Issues d'amélioration ouvertes pour septembre** (post-V1, conditions partenariats) :
@@ -378,4 +378,4 @@ Seul gain net : seuil -5°C année 2023, POD 0.22 → 0.24, FAR 0.45 → 0.37 (q
 
 ---
 
-*Rédigé par Claude (Karpos collaboratif) le 2026-06-17 post-RDV Corréard. Annexe 7 audit à froid ajoutée le même jour après lecture ligne à ligne du pipeline. Annexe 8 ajoutée le 2026-06-18 après le run nocturne #28. Annexe 9 ajoutée le même jour après l'A/B Lot B nu vs +QDM.*
+*Rédigé par Claude (Karpos collaboratif) le 2026-06-17 post-RDV Corréard. Annexe 7 audit à froid ajoutée le même jour après lecture ligne à ligne du pipeline. Annexe 8 ajoutée le 2026-06-18 après le run nocturne #28. Annexe 9 ajoutée le même jour après l'A/B KarposSLR nu vs +QDM.*

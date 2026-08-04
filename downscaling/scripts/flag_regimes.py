@@ -3,7 +3,7 @@
 
 C5.2 (issue maurinl26/karpos-downscaling#TBD). Sortie : un CSV par année avec un label
 de régime par nuit + les features synoptiques. Le label est ensuite consommé
-par `analyze_recalibrated_statistical.py --regimes-csv` pour stratifier POD/FAR.
+par `analyze_karpos_slr.py --regimes-csv` pour stratifier POD/FAR.
 
 Cinq régimes (rule-based, médiane spatiale sur bbox Drôme, fenêtre nuit 18-09 UTC) :
 

@@ -5,10 +5,10 @@ Reproductible : lit uniquement des données déjà persistées et écrit des fig
 PNG (300 dpi) + PDF vectoriel dans ``docs/methodology/figures/``.
 
 Sources de données (voir aussi la provenance annotée sur chaque figure) :
-  * LOO Lot B / KarposSR : JSON persistés sous ``docs/methodology/figures/loo_json/``
+  * LOO KarposSLR / KarposSR : JSON persistés sous ``docs/methodology/figures/loo_json/``
     (copies des sorties de validation leave-one-station-out, seuil -2,2 °C,
-    aussi disponibles sur S3 ``analyses/c5_lot_b/`` et ``analyses/c5_karpos_sr/``).
-  * CERRA brut (hindcast) : CSI 0,17 — note vault « Métriques trackées — Lot B
+    aussi disponibles sur S3 ``analyses/c5_karpos_slr/`` et ``analyses/c5_karpos_sr/``).
+  * CERRA brut (hindcast) : CSI 0,17 — note vault « Métriques trackées — KarposSLR
     vs KarposSR » §6 (non recalculé ici, absent des JSON).
   * AROME : run live de ``downscaling/scripts/arome_forecast_skill.py``
     (2026-07-27), identique à la note vault §6.
@@ -248,7 +248,7 @@ def fig_f2_skill(data_dir: Path, out_dir: Path):
     c = pooled_csi(data_dir, "c", "station")
     stages = [
         ("CERRA brut\n(5,5 km)", CERRA_CSI, OKABE_ITO["gris"], "note §6"),
-        ("Calibration\nstatistique (Lot B)", b["CSI"], OKABE_ITO["bleu_ciel"], "JSON pooled"),
+        ("Calibration\nstatistique (KarposSLR)", b["CSI"], OKABE_ITO["bleu_ciel"], "JSON pooled"),
         ("Deep learning\n+ supervision (KarposSR)", c["CSI"], OKABE_ITO["bleu"], "JSON pooled"),
     ]
     fig, ax = plt.subplots(figsize=(8.2, 4.8))
@@ -274,14 +274,14 @@ def fig_f2_skill(data_dir: Path, out_dir: Path):
     ax.set_ylabel("CSI (LOO station-out, seuil −2,2 °C, pooled 2022-2025)")
     ax.set_ylim(0, max(vals) * 1.35)
     ax.set_title("F2 — Skill de descente d'échelle par étage (hindcast)")
-    prov(fig, "Provenance : CERRA = note vault §6 (0,17) ; Lot B / KarposSR = CSI "
+    prov(fig, "Provenance : CERRA = note vault §6 (0,17) ; KarposSLR / KarposSR = CSI "
               "pooled (contingences sommées) depuis JSON LOO persisté. "
-              f"Lot B CSI={b['CSI']:.3f}, KarposSR CSI={c['CSI']:.3f}.")
+              f"KarposSLR CSI={b['CSI']:.3f}, KarposSR CSI={c['CSI']:.3f}.")
     save(fig, out_dir, "F2_skill_hindcast")
 
 
 # --------------------------------------------------------------------------- #
-# F3 — biais résiduel par station, avant/après (Lot B → KarposSR)
+# F3 — biais résiduel par station, avant/après (KarposSLR → KarposSR)
 # --------------------------------------------------------------------------- #
 def fig_f3_bias(data_dir: Path, out_dir: Path):
     b = per_station_bias(data_dir, "b")
@@ -308,12 +308,12 @@ def fig_f3_bias(data_dir: Path, out_dir: Path):
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
     ax.set_aspect("equal")
-    ax.set_xlabel("Biais station — Lot B (statistique)  [°C]")
+    ax.set_xlabel("Biais station — KarposSLR (statistique)  [°C]")
     ax.set_ylabel("Biais station — KarposSR (deep learning)  [°C]")
-    ax.set_title("F3 — Resserrement du biais par station (Lot B → KarposSR)")
+    ax.set_title("F3 — Resserrement du biais par station (KarposSLR → KarposSR)")
     ax.text(0.03, 0.97,
             f"n = {len(common)} stations\n"
-            f"biais absolu moyen :\n  Lot B = {mab_b:.2f} °C\n  KarposSR = {mab_c:.2f} °C "
+            f"biais absolu moyen :\n  KarposSLR = {mab_b:.2f} °C\n  KarposSR = {mab_c:.2f} °C "
             f"(−{100 * (1 - mab_c / mab_b):.0f} %)",
             transform=ax.transAxes, va="top", ha="left", fontsize=9,
             bbox=dict(boxstyle="round,pad=0.4", fc="white", ec=OKABE_ITO["gris"], alpha=0.9))

@@ -56,7 +56,7 @@ user-guide/calibration
 
 methodology/README
 methodology/chilling-model-baronnies
-methodology/lot-b-calibration-report
+methodology/karpos-slr-calibration-report
 methodology/gmd-paper-draft
 methodology/joss-paper-draft
 ```

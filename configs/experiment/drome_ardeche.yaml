@@ -7,7 +7,7 @@
 defaults:
   - /domain: drome_ardeche
   - /data: drome_ardeche
-  - /statistical: default
+  - /karpos_slr: default
   - /dl: unet
   - /indices: default
 

@@ -6,7 +6,7 @@ composition Hydra. La région et le compute se sélectionnent par groupe :
     downscaling-run                                   # drome_ardeche / local
     downscaling-run cluster=cloud
     downscaling-run experiment=drome_ardeche run.compute_indices=true
-    downscaling-run statistical.quantile_mapping.enabled=false
+    downscaling-run karpos_slr.quantile_mapping.enabled=false
 
 Le ``config_path`` est **absolu** (``downscaling.paths.CONFIG_DIR``) : sinon
 Hydra, lancé depuis l'entry point console, chercherait un module Python
@@ -25,7 +25,7 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from downscaling.paths import CONFIG_DIR
 from downscaling.shared.indices import compute_all_indices
-from downscaling.statistical.pipeline import StatisticalDownscalingPipeline
+from downscaling.karpos_slr.pipeline import KarposSLRPipeline
 
 log = logging.getLogger(__name__)
 
@@ -63,10 +63,10 @@ def run_statistical(cfg: DictConfig) -> Path:
 
     Retourne le chemin du NetCDF haute résolution écrit.
     """
-    stat = cfg.statistical
+    stat = cfg.karpos_slr
     gamma = np.asarray(OmegaConf.to_container(stat.lapse_rate.monthly_gamma), dtype=float)
 
-    pipeline = StatisticalDownscalingPipeline(
+    pipeline = KarposSLRPipeline(
         dem_path=cfg.data.dem_raw,
         obs_ref_path=cfg.data.get("obs_ref"),
         lapse_rate=gamma,

@@ -27,7 +27,7 @@ from .quantile_mapping import EmpiricalQuantileMapping, QuantileDeltaMapping
 log = logging.getLogger(__name__)
 
 
-class StatisticalDownscalingPipeline:
+class KarposSLRPipeline:
     """
     Pipeline modulaire de descente d'échelle statistique.
 
@@ -150,7 +150,7 @@ class StatisticalDownscalingPipeline:
         self,
         modeled_ref: xr.Dataset,
         observed_ref: xr.Dataset,
-    ) -> StatisticalDownscalingPipeline:
+    ) -> KarposSLRPipeline:
         """
         Calibre les correcteurs QDM sur une période de référence.
 

@@ -1,4 +1,4 @@
-"""Tests pour les helpers root local/S3 de ``analyze_recalibrated_statistical``.
+"""Tests pour les helpers root local/S3 de ``analyze_karpos_slr``.
 
 On teste le routage local vs s3:// (pas l'accès S3 réel — couvert par les
 smoke tests d'intégration). Les helpers sont l'apport de l'issue #55.
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from downscaling.scripts.analyze_recalibrated_statistical import (
+from downscaling.scripts.analyze_karpos_slr import (
     _is_remote,
     _list_zarrs,
     _storage_options,
