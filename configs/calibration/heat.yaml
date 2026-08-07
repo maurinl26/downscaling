@@ -1,0 +1,34 @@
+# Calibration sparse du U-Net — variante STRESS THERMIQUE (Tmax diurne).
+# Miroir de calibration/default.yaml (gel / Tmin nocturne), bascule min -> max.
+# Piloté par : `uv run run-calibration experiment=drome_ardeche_heat calibration=heat`.
+#
+# ⚠️ PRÉREQUIS CODE (issues karpos-downscaling — voir docs/methodology/heat-downscaling-plan.md) :
+#    la CIBLE station Tmax diurne exige une FENÊTRE DIURNE + un agrégateur tmax,
+#    aujourd'hui hardcodés nuit (20h->08h) / min. Tant que ces changements ne sont
+#    pas mergés, `reduce: max` ci-dessous ne réduit QUE la prédiction : la cible
+#    station reste nocturne/min (mismatch). Cette config prépare l'entraînement ;
+#    elle n'est correcte qu'une fois la fenêtre diurne + tmax_daytime livrés.
+
+cerra_fine_dir: data/cerra_fine/
+sencrop_dir: data/sencrop/
+file_template: "sencrop_{date}.csv"
+checkpoint: checkpoints/drome_ardeche/best_model.ckpt
+stats_file: checkpoints/drome_ardeche/normalization_stats.json
+out: checkpoints/drome_ardeche_heat/calibrated_heat.pt   # checkpoint DISTINCT (ne clobbe pas le gel)
+
+target_channel: 0          # T2m
+hourly: true               # descente horaire puis réduction temporelle
+reduce: max                # Tmax diurne (vs `min` pour le gel) — supporté par _reduce_time
+lapse_rate: -6.5e-3        # K/m — gradient diurne bien mélangé (vs -4e-3 inversions nocturnes)
+elevation_aware: true      # correction d'altitude station/maille
+min_stations: 5
+
+file_template_cerra: "cerra_{date}.nc"
+var_map: {}
+regrid: false
+regrid_method: linear
+inspect: false
+
+epochs: 30
+lr: 1.0e-4
+patience: 10               # early stopping (val/rmse)
