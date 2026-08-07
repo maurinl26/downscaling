@@ -341,6 +341,7 @@ class UNetStationDataset(Dataset):
         lapse_rate: float = -6.5e-3,
         holdout_bbox: tuple[float, float, float, float] | None = None,
         role: str = "all",
+        reduce: str = "min",  # 'min' = Tmin nocturne (gel) ; 'max' = Tmax diurne (chaleur)
         surfex_provider=None,  # #81 : callable date -> (H, W) champ SURFEX °C (enveloppe)
     ):
         self.coarse_provider = coarse_provider
@@ -352,7 +353,16 @@ class UNetStationDataset(Dataset):
         self.file_template = file_template
         self.elevation_grid = elevation_grid
         self.min_stations = min_stations
-        self.qc = NetatmoNocturnalQC(lapse_rate=lapse_rate)
+        # Cohérence cible : max -> fenêtre diurne + Tmax (#110). Défaut min -> nuit/gel.
+        self.reduce = reduce
+        self.window = "day" if reduce == "max" else "night"
+        # Plafond de plausibilité QC : relevé en diurne (sinon les Tmax d'été sont
+        # écrêtés par le plafond nocturne 25 °C). Le biais radiatif diurne reste
+        # à traiter (#111) — ceci n'est qu'un plafond, pas une correction de biais.
+        qc_kwargs = {"lapse_rate": lapse_rate}
+        if reduce == "max":
+            qc_kwargs["t_max_plausible"] = 45.0  # record Drôme ~44 °C
+        self.qc = NetatmoNocturnalQC(**qc_kwargs)
         self.holdout_bbox = holdout_bbox
         self.role = role
         self.dates = [d for d in dates if self._path(d).exists()]
@@ -382,7 +392,7 @@ class UNetStationDataset(Dataset):
             sample_env = torch.stack(
                 [cerra, torch.as_tensor(surfex, dtype=torch.float32)], dim=0
             )  # (2, H, W)
-        obs_qc = self.qc.run(self.obs_loader(str(self._path(date)), date))
+        obs_qc = self.qc.run(self.obs_loader(str(self._path(date)), date, window=self.window))
         tmin, row, col, dz = night_station_targets(
             obs_qc,
             self.lat_grid,
@@ -390,6 +400,7 @@ class UNetStationDataset(Dataset):
             self.elevation_grid,
             holdout_bbox=self.holdout_bbox,
             role=self.role,
+            reduce=self.reduce,
         )
         sample = {
             "x_met": x_met,

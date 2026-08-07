@@ -141,6 +141,7 @@ def main(cfg: DictConfig) -> None:
         elevation_grid=elevation_grid,
         min_stations=cal.min_stations,
         lapse_rate=cal.lapse_rate,
+        reduce=cal.reduce,  # cible cohérente : max -> fenêtre diurne + Tmax (#110)
     )
     log.info("Nuits de calibration disponibles : %d", len(dataset))
 

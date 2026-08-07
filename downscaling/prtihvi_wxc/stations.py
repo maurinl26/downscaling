@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .netatmo_qc import NetatmoObs, tmin_nocturnal
+from .netatmo_qc import NetatmoObs, reduce_station_target, time_window_bounds
 
 StationObs = NetatmoObs  # conteneur générique (Netatmo / Sencrop / …)
 
@@ -32,12 +32,14 @@ def night_station_targets(
     *,
     holdout_bbox: tuple[float, float, float, float] | None = None,
     role: str = "all",
+    reduce: str = "min",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Observations QC'd d'une nuit → cibles sparse ``(tmin, row, col, dz)``.
+    """Observations QC'd d'une fenêtre → cibles sparse ``(target, row, col, dz)``.
 
     Mutualise l'extraction entre les datasets de calibration (Prithvi / U-Net) :
-    Tmin par station valide, leur position sur la grille HR, et le décalage
-    d'altitude ``dz`` (m) pour la correction lapse-rate.
+    cible par station valide (``reduce="min"`` = Tmin nocturne / gel ;
+    ``reduce="max"`` = Tmax diurne / stress thermique), leur position sur la
+    grille HR, et le décalage d'altitude ``dz`` (m) pour la correction lapse-rate.
 
     Leave-station-out (parité avec le LOO KarposSLR #33) : si ``holdout_bbox``
     ``(lat_min, lat_max, lon_min, lon_max)`` est fourni et ``role != "all"`` :
@@ -46,11 +48,11 @@ def night_station_targets(
     Défaut ``role="all"`` → toutes les stations (rétro-compat). Peut retourner des
     tableaux vides (nuit sans station dans le rôle) — l'appelant doit gérer.
     """
-    tmin = tmin_nocturnal(obs_qc)
-    valid = ~np.isnan(tmin.values)
+    target = reduce_station_target(obs_qc, reduce)
+    valid = ~np.isnan(target.values)
     lat, lon = obs_qc.lat[valid], obs_qc.lon[valid]
     elev = obs_qc.elevation_m[valid]
-    vals = tmin.values[valid].astype(np.float32)
+    vals = target.values[valid].astype(np.float32)
     if holdout_bbox is not None and role != "all":
         la0, la1, lo0, lo1 = holdout_bbox
         inside = (lat >= la0) & (lat <= la1) & (lon >= lo0) & (lon <= lo1)
@@ -89,20 +91,20 @@ def elevation_offset(
 
 
 def dataframe_to_station_obs(
-    df: pd.DataFrame, date: str, bbox: dict[str, float] | None = None
+    df: pd.DataFrame, date: str, bbox: dict[str, float] | None = None, window: str = "night"
 ) -> StationObs:
     """Construit un :class:`StationObs` à partir d'un DataFrame normalisé.
 
     Colonnes attendues : ``station_id, lat, lon, elevation_m, timestamp,
-    t_celsius``. Filtre la nuit (20h → 08h+1) et pivote stations × heures.
+    t_celsius``. Filtre la fenêtre ``window`` (``night`` 20h→08h+1 par défaut,
+    ``day`` 06h→20h pour le stress thermique) et pivote stations × heures.
     Mutualise la logique entre les loaders Netatmo et Sencrop.
     """
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    night_start = pd.Timestamp(date) + pd.Timedelta("20h")
-    next_morning = pd.Timestamp(date) + pd.Timedelta("1D") + pd.Timedelta("8h")
-    df = df[(df["timestamp"] >= night_start) & (df["timestamp"] < next_morning)]
+    win_start, win_end = time_window_bounds(date, window)
+    df = df[(df["timestamp"] >= win_start) & (df["timestamp"] < win_end)]
 
     if bbox:
         df = df[
