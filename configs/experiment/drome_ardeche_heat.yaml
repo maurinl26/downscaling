@@ -1,0 +1,22 @@
+# @package _global_
+# Expérience Drôme-Ardèche — STRESS THERMIQUE (Tmax diurne), épisode chaud estival.
+#
+# Miroir de drome_ardeche.yaml (gel printanier). Sélectionne les mêmes groupes de
+# région, mais vise une DATE ESTIVALE. La bascule vers la calibration Tmax se fait
+# à la ligne de commande pour rester robuste à l'ordre de composition Hydra :
+#
+#   uv run run-calibration experiment=drome_ardeche_heat calibration=heat
+#
+# (cf. docs/methodology/heat-downscaling-plan.md pour le plan complet + prérequis code).
+defaults:
+  - /domain: drome_ardeche
+  - /data: drome_ardeche
+  - /karpos_slr: default
+  - /dl: unet
+  - /indices: default
+
+run:
+  # Épisode chaud de référence (canicule) — à ajuster selon la disponibilité des
+  # partitions Sencrop/CERRA estivales (le bulk Sencrop couvre l'été mai->sept).
+  date: "20220718"
+  compute_indices: true

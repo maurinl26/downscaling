@@ -7,6 +7,14 @@ frost:
   spring_frost_gdd_threshold: 50.0   # GDD débourrement vigne Eichhorn-Lorenz B
   spring_frost_temp_c: -2.0
 
+heat:
+  # Stress thermique / échaudage (consommé par indices.heat_stress_days /
+  # heatwave_index, qui défaultent déjà à 35 °C). Seuils PROVISOIRES, alignés sur
+  # les seuils de verdict domaine karpos-engine (risk_thresholds.yaml :
+  # vigilance 32 / alerte 35 / alerte_forte 38). À caler avec l'agro.
+  stress_threshold_c: 35.0
+  heatwave_min_days: 3               # canicule = >= N jours consécutifs au-dessus du seuil
+
 precipitation:
   extreme_threshold_mm: 20.0
   dry_spell_threshold_mm: 1.0
