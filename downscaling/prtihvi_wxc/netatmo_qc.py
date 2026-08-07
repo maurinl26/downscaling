@@ -115,12 +115,20 @@ class NetatmoNocturnalQC:
         buddy_radius_m: float = BUDDY_RADIUS_M,
         buddy_sigma: float = BUDDY_SIGMA_THRESHOLD,
         correct_tau: bool = True,
+        t_min_plausible: float = T_MIN_PLAUSIBLE_C,
+        t_max_plausible: float = T_MAX_PLAUSIBLE_C,
     ):
         self.lapse_rate = lapse_rate
         self.ref_elevation_m = reference_elevation_m
         self.buddy_radius_m = buddy_radius_m
         self.buddy_sigma = buddy_sigma
         self.correct_tau = correct_tau
+        # Plage de plausibilité (L1). Paramétrable pour le régime DIURNE (été) où
+        # le plafond nocturne de 25 °C écrêterait des Tmax légitimes (cf. variante
+        # stress thermique). ⚠️ le biais radiatif diurne des capteurs reste un point
+        # méthodologique NON résolu ici (issue QC diurne #111), c'est un plafond.
+        self.t_min_plausible = t_min_plausible
+        self.t_max_plausible = t_max_plausible
 
     def run(self, obs: NetatmoObs) -> NetatmoObs:
         """Exécute le pipeline QC complet. Modifie obs.qc_flags in-place."""
@@ -154,7 +162,7 @@ class NetatmoNocturnalQC:
 
     def _range_check(self, obs: NetatmoObs) -> None:
         """Rejette les valeurs hors plage physiquement plausible."""
-        out_of_range = (obs.t_raw < T_MIN_PLAUSIBLE_C) | (obs.t_raw > T_MAX_PLAUSIBLE_C)
+        out_of_range = (obs.t_raw < self.t_min_plausible) | (obs.t_raw > self.t_max_plausible)
         obs.qc_flags[out_of_range] = False
 
     # ------------------------------------------------------------------
@@ -263,6 +271,24 @@ class NetatmoNocturnalQC:
 # ---------------------------------------------------------------------------
 
 
+# Fenêtres horaires nommées : nuit (gel, défaut) et jour (stress thermique).
+# Décalages depuis minuit local du `date`. NUIT = 20h D → 08h D+1 (min ~ aube) ;
+# JOUR = 06h → 20h même jour (max ~ après-midi).
+_TIME_WINDOWS: dict[str, tuple[str, str]] = {
+    "night": ("20h", "1D 8h"),
+    "day": ("6h", "20h"),
+}
+
+
+def time_window_bounds(date: str, window: str = "night") -> tuple[pd.Timestamp, pd.Timestamp]:
+    """(start, end) de la fenêtre horaire nommée pour `date`. Défaut = nuit (gel)."""
+    if window not in _TIME_WINDOWS:
+        raise ValueError(f"Fenêtre inconnue : {window!r} (attendu {sorted(_TIME_WINDOWS)}).")
+    start_off, end_off = _TIME_WINDOWS[window]
+    base = pd.Timestamp(date)
+    return base + pd.Timedelta(start_off), base + pd.Timedelta(end_off)
+
+
 def tmin_nocturnal(obs: NetatmoObs) -> pd.Series:
     """
     Calcule Tmin nocturne par station à partir des observations QC'd.
@@ -273,23 +299,40 @@ def tmin_nocturnal(obs: NetatmoObs) -> pd.Series:
     return pd.Series(tmin, index=obs.station_id, name="Tmin_C")
 
 
+def tmax_daytime(obs: NetatmoObs) -> pd.Series:
+    """Tmax diurne par station (analogue max de :func:`tmin_nocturnal`, #110)."""
+    T_qc = obs.t_qc
+    tmax = np.nanmax(T_qc, axis=1)  # max sur les heures diurnes
+    return pd.Series(tmax, index=obs.station_id, name="Tmax_C")
+
+
+def reduce_station_target(obs: NetatmoObs, reduce: str = "min") -> pd.Series:
+    """Cible station par réduction temporelle : ``min`` = Tmin (gel), ``max`` = Tmax."""
+    if reduce == "max":
+        return tmax_daytime(obs)
+    if reduce == "min":
+        return tmin_nocturnal(obs)
+    raise ValueError(f"reduce inconnu : {reduce!r} (attendu 'min' ou 'max').")
+
+
 def load_netatmo_parquet(
     path: str,
     date: str,
     bbox: dict[str, float] | None = None,
+    window: str = "night",
 ) -> NetatmoObs:
     """
     Charge les données Netatmo depuis un fichier Parquet (format NDA Netatmo).
 
-    Schéma attendu : station_id, lat, lon, elevation_m, timestamp, t_celsius
+    Schéma attendu : station_id, lat, lon, elevation_m, timestamp, t_celsius.
+    ``window`` : ``night`` (gel, défaut) ou ``day`` (stress thermique).
     """
     df = pd.read_parquet(path)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-    # Filtre temporel sur la nuit donnée (20h–08h)
-    night_start = pd.Timestamp(date) + pd.Timedelta("20h")
-    next_morning = pd.Timestamp(date) + pd.Timedelta("1D") + pd.Timedelta("8h")
-    df = df[(df["timestamp"] >= night_start) & (df["timestamp"] < next_morning)]
+    # Filtre temporel sur la fenêtre demandée (nuit 20h–08h par défaut).
+    win_start, win_end = time_window_bounds(date, window)
+    df = df[(df["timestamp"] >= win_start) & (df["timestamp"] < win_end)]
 
     if bbox:
         df = df[

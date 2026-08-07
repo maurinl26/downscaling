@@ -287,16 +287,19 @@ def load_sencrop(
     date: str,
     bbox: dict[str, float] | None = None,
     columns: dict[str, str] | None = None,
+    window: str = "night",
 ) -> StationObs:
-    """Charge les observations Sencrop d'une nuit → :class:`StationObs`.
+    """Charge les observations Sencrop d'une fenêtre → :class:`StationObs`.
 
     Args:
         path: soit le **root** du bulk (chemin local ou URI ``s3://…``), soit un
             **fichier** CSV/Parquet single-date (back-compat).
-        date: nuit ciblée ``YYYY-MM-DD`` (fenêtre 20h → 08h+1).
+        date: date ciblée ``YYYY-MM-DD``.
         bbox: filtre spatial optionnel (``lat_min/lat_max/lon_min/lon_max``).
         columns: surcharge du mapping colonnes — *uniquement pour le mode
             single-file*, ignoré en mode bulk où le schéma est figé.
+        window: fenêtre horaire — ``night`` (gel, 20h→08h+1, défaut) ou ``day``
+            (stress thermique, 06h→20h).
 
     Notes:
         - En mode bulk, ``station_id == bucket_id`` du catalogue (pas
@@ -308,4 +311,4 @@ def load_sencrop(
     else:
         df = _build_normalized_df_from_file(Path(path), columns=columns)
 
-    return dataframe_to_station_obs(df, date, bbox)
+    return dataframe_to_station_obs(df, date, bbox, window)
